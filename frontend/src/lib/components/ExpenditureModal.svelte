@@ -59,7 +59,7 @@
             // Store Update erzwingen
             setTimeout(async () => {
                 const updatedApp = await pb.collection('appointments').getOne(appointment.id, { 
-                    expand: 'user,client,drive_record,time_record,tasks,expenditures', requestKey: null
+                    expand: 'user,client,drive_record,time_record,tasks,expenditures,appointment_at', requestKey: null
                 }) as any;
                 const index = orgaStore.appointments?.data.findIndex(a => a.id === appointment.id) ?? -1;
                 if (index !== -1 && orgaStore.appointments) {

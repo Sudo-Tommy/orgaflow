@@ -334,7 +334,7 @@
                                         {:else if dayTimes.length > 0 && !isPast}
                                             <div class="flex flex-col gap-px mt-0.5 items-center w-full px-0">
                                                 {#each dayTimes.slice(0, 2) as t}
-                                                    <span class="text-[7px] leading-tight font-bold {selectedDate && day.date.getTime() === selectedDate.getTime() ? 'text-brand-100' : 'text-rose-500'}">{t}</span>
+                                                <span class="text-[7px] leading-tight font-bold line-through {selectedDate && day.date.getTime() === selectedDate.getTime() ? 'text-brand-200 decoration-brand-200' : 'text-rose-500 decoration-rose-500 opacity-70'}">{t}</span>
                                                 {/each}
                                                 {#if dayTimes.length > 2}
                                                     <span class="text-[7px] leading-tight font-bold {selectedDate && day.date.getTime() === selectedDate.getTime() ? 'text-brand-100' : 'text-rose-500'}">...</span>

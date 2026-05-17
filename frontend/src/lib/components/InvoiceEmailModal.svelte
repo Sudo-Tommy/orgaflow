@@ -1,17 +1,27 @@
 <script lang="ts">
     import { pb } from "$lib/services/pocketbase";
     import { sendEmail } from "$lib/services/emailService";
+    import { toastStore } from "$lib/services/toastService.svelte";
 
     // svelte-ignore non_reactive_update
     let dialog: HTMLDialogElement;
     let invoice = $state<any>(null);
     
     let emailTo = $state("");
+    let cc = $state("");
+    let bcc = $state("");
+    let showCcBcc = $state(false);
     let emailSubject = $state("");
     let emailText = $state("");
     let isEmailSending = $state(false);
     let successMsg = $state("");
     let errorMsg = $state("");
+
+    let linkedAppointments = $state<any[]>([]);
+    let includeReports = $state(true);
+    
+    let availableContacts = $state<any[]>([]);
+    let currentSalutations = $state<string[]>([]);
 
     export function open(inv: any) {
         invoice = inv;
@@ -20,17 +30,91 @@
         const client = Array.isArray(invoice?.expand?.client) ? invoice.expand.client[0] : invoice?.expand?.client;
         emailTo = client?.email || "";
         
+        const clientSalutation = client?.salutation === 'Herr' ? `Sehr geehrter Herr ${client.name_last}` : (client?.salutation === 'Frau' ? `Sehr geehrte Frau ${client.name_last}` : `Guten Tag ${client?.name_first || ''} ${client?.name_last || ''}`.trim());
+        currentSalutations = client?.email ? [clientSalutation] : [];
+        
         emailSubject = `Ihre Dokumente (Ref: ${invoice?.invoice_nr || 'Neu'})`;
-        emailText = `Guten Tag${client?.name_last ? ` ${client.salutation === 'Herr' ? 'Herr' : (client.salutation === 'Frau' ? 'Frau' : '')} ${client.name_last}` : ''},\n\nanbei erhalten Sie Ihre Rechnung sowie ggf. zugehörige Arbeitszeitnachweise als PDF-Dokument.\n\nIhre Rechnungen und Dokumente können Sie ab sofort auch jederzeit sicher in unserem neuen Klienten-Portal einsehen:\n👉 https://www.ihre-seniorenassistenz.com/portal\n\nMit freundlichen Grüßen\nIhre Seniorenassistenz`;
+        const defaultBody = `\n\nanbei erhalten Sie Ihre Rechnung sowie ggf. zugehörige Arbeitszeitnachweise als PDF-Dokument.\n\nIhre Rechnungen und Dokumente können Sie ab sofort auch jederzeit sicher in unserem neuen Klienten-Portal einsehen:\n👉 https://www.ihre-seniorenassistenz.com/portal \n\nMit freundlichen Grüßen\nIhre Seniorenassistenz`;
+        emailText = `${currentSalutations.length > 0 ? currentSalutations.join(',\n') + ',' : 'Guten Tag,'}${defaultBody}`;
         
         successMsg = "";
         errorMsg = "";
+        cc = "";
+        bcc = "";
+        showCcBcc = false;
+        
+        // Termine und Berichte laden
+        linkedAppointments = [];
+        includeReports = true;
+        availableContacts = [];
+        
+        const appIds = Array.isArray(invoice?.appointments) ? invoice.appointments : (invoice?.appointments ? [invoice.appointments] : []);
+        
+        if (appIds.length > 0) {
+            const filterStr = appIds.map((id:string) => `id='${id}'`).join(' || ');
+            pb.collection('appointments').getFullList({ filter: filterStr, sort: 'appointment', requestKey: null }).then(res => {
+                linkedAppointments = res.map((a: any) => ({
+                    id: a.id, date: a.appointment, description: a.description, report: a.report || ''
+                }));
+            }).catch(e => console.error("Konnte Termine nicht laden", e));
+        }
+        
+        // Kontakte und Pflegeheime aus der Akte laden
+        if (client?.id) {
+            pb.collection('clients').getOne(client.id, { expand: 'contacts,retirement_homes', requestKey: null }).then(fullClient => {
+                let list: any[] = [];
+                if (fullClient.expand?.contacts) {
+                    fullClient.expand.contacts.forEach((c:any) => {
+                        if (c.email) {
+                            let sal = c.salutation === 'Herr' ? `Sehr geehrter Herr ${c.name_last}` : (c.salutation === 'Frau' ? `Sehr geehrte Frau ${c.name_last}` : `Guten Tag ${c.name_first} ${c.name_last}`);
+                            list.push({ name: `${c.name_first} ${c.name_last} (${c.company_name || 'Kontakt'})`, email: c.email, salutation: sal });
+                        }
+                    });
+                }
+                if (fullClient.expand?.retirement_homes) {
+                    fullClient.expand.retirement_homes.forEach((h:any) => {
+                        if (h.email) list.push({ name: `${h.name} (Pflegeheim)`, email: h.email, salutation: `Sehr geehrte Damen und Herren vom ${h.name}` });
+                    });
+                }
+                availableContacts = list;
+            }).catch(()=>{});
+        }
+        
         dialog?.showModal();
+    }
+
+    function addRecipient(val: string) {
+        if (!val) return;
+        const [email, salutation] = val.split('|');
+        const currentEmails = emailTo.split(',').map(e => e.trim()).filter(Boolean);
+        
+        if (!currentEmails.includes(email)) {
+            emailTo = emailTo ? `${emailTo}, ${email}` : email;
+            if (salutation && !currentSalutations.includes(salutation)) {
+                currentSalutations.push(salutation);
+                const parts = emailText.split('\n\n');
+                if (parts.length > 1) {
+                    parts[0] = currentSalutations.join(',\n') + ',';
+                    emailText = parts.join('\n\n');
+                } else {
+                    emailText = `${currentSalutations.join(',\n')},\n\n${emailText}`;
+                }
+            }
+        }
     }
 
     export function close() {
         dialog?.close();
         invoice = null;
+    }
+
+    async function saveReportToDb(id: string, reportText: string) {
+        try {
+            await pb.collection('appointments').update(id, { report: reportText });
+            toastStore.success("Bericht erfolgreich in der Datenbank gespeichert.");
+        } catch (err) {
+            toastStore.error("Fehler beim Speichern in der Datenbank.");
+        }
     }
 
     function blobToBase64(blob: Blob): Promise<string> {
@@ -75,7 +159,40 @@
             const userEmail = user?.email || 'info@ihre-seniorenassistenz.com';
             const userPhone = user?.handy || user?.tel || '0151 57515432';
 
-            const textEmail = `${emailText.trim()}\n\n--\n${userName}\nIhre Seniorenassistenz\nDreyhauptstraße 2, 06108 Halle (Saale)\nTelefon: ${userPhone}\nE-Mail: ${userEmail}\nWeb: www.ihre-seniorenassistenz.com`;
+            // HTML & Text für die Besuchsberichte generieren
+            let reportsHtml = '';
+            let reportsText = '';
+
+            if (includeReports && linkedAppointments.some(a => a.report?.trim())) {
+                reportsHtml += `
+                    <div style="margin-top: 30px; border-top: 2px dashed #e5e7eb; padding-top: 20px;">
+                        <h2 style="color: #954028; font-size: 20px; margin-bottom: 15px;">Ihre Besuchsberichte</h2>
+                `;
+                reportsText += `\n\n--- IHRE BESUCHSBERICHTE ---\n`;
+
+                for (const app of linkedAppointments) {
+                    if (!app.report?.trim()) continue;
+                    
+                    const dateStr = new Date(app.date).toLocaleDateString('de-DE');
+                    const timeStr = new Date(app.date).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+                    
+                    reportsHtml += `
+                        <div style="background-color: #f8fafc; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin-bottom: 15px;">
+                            <div style="border-bottom: 1px solid #e5e7eb; padding-bottom: 10px; margin-bottom: 10px;">
+                                <strong style="color: #111827; font-size: 16px;">Termin am ${dateStr} um ${timeStr} Uhr</strong><br>
+                                <span style="color: #6b7280; font-size: 13px;">${app.description || 'Betreuungstermin'}</span>
+                            </div>
+                            <div style="color: #374151; font-size: 14px; line-height: 1.6;">
+                                ${app.report.replace(/\n/g, '<br>')}
+                            </div>
+                        </div>
+                    `;
+                    reportsText += `\nTermin am ${dateStr} um ${timeStr} Uhr\n${app.description || 'Betreuungstermin'}\n\n${app.report}\n\n`;
+                }
+                reportsHtml += `</div>`;
+            }
+
+            const textEmail = `${emailText.trim()}${reportsText}\n\n--\n${userName}\nIhre Seniorenassistenz\nDreyhauptstraße 2, 06108 Halle (Saale)\nTelefon: ${userPhone}\nE-Mail: ${userEmail}\nWeb: www.ihre-seniorenassistenz.com`;
 
             const htmlEmail = `
                 <div style="font-family: 'Segoe UI', Arial, sans-serif; color: #374151; max-width: 650px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
@@ -84,7 +201,9 @@
                         <p style="color: #c66a4d; margin: 4px 0 0 0; font-size: 14px; font-weight: 500;">Alltagshilfe • Betreuung • Organisation</p>
                     </div>
                     <div style="padding: 30px; font-size: 15px; line-height: 1.6; color: #1f2937; background-color: #ffffff;">
-                        ${emailText.trim().replace(/\n/g, '<br>').replace('👉 https://www.ihre-seniorenassistenz.com/portal', '<br><a href="https://www.ihre-seniorenassistenz.com/portal" style="display: inline-block; background-color: #c66a4d; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; margin-top: 10px; margin-bottom: 10px;">Zum Klienten-Portal</a>')}
+                        ${emailText.trim().replace(/\n/g, '<br>').replace(/(?:<br>|\s)*(?:👉\s*)?(?:&lt;|<)?\s*https?:\/\/(?:www\.)?ihre-seniorenassistenz\.com\/portal\/?\s*(?:&gt;|>)?/gi, '<br><table role="presentation" border="0" cellpadding="0" cellspacing="0" style="margin: 15px 0;"><tr><td align="center" bgcolor="#c66a4d" style="border-radius: 8px;"><a href="https://www.ihre-seniorenassistenz.com/portal" style="display: inline-block; padding: 12px 24px; color: #ffffff; text-decoration: none; font-weight: bold; font-family: Arial, sans-serif; font-size: 15px;">Zum Klienten-Portal</a></td></tr></table><br>')}
+                        
+                        ${reportsHtml}
                     </div>
                     <div style="background-color: #f8fafc; padding: 25px 30px; border-top: 1px solid #e5e7eb;">
                         <table width="100%" cellpadding="0" cellspacing="0" style="font-size: 13px; color: #4b5563;">
@@ -111,6 +230,8 @@
 
             await sendEmail({
                 to: emailTo,
+                cc: cc || undefined,
+                bcc: bcc || undefined,
                 subject: emailSubject,
                 text: textEmail,
                 html: htmlEmail,
@@ -151,9 +272,34 @@
 
         <form onsubmit={(e) => { e.preventDefault(); sendInvoiceEmail(); }} class="space-y-4">
             <div>
-                <label for="email-to" class="block text-sm font-semibold text-neutral-700 mb-1.5">Empfänger (An)</label>
-                <input id="email-to" type="email" bind:value={emailTo} class="orga-input-clear py-2 text-sm" required disabled={isEmailSending || !!successMsg} />
+                <div class="flex items-center justify-between mb-1.5">
+                    <label for="email-to" class="block text-sm font-semibold text-neutral-700">Empfänger (An)</label>
+                    <button type="button" onclick={() => showCcBcc = !showCcBcc} class="text-xs font-bold text-indigo-600 hover:text-indigo-800 transition-colors">{showCcBcc ? '− CC / BCC ausblenden' : '+ CC / BCC hinzufügen'}</button>
+                </div>
+                <div class="flex flex-col sm:flex-row gap-2">
+                    <input id="email-to" type="text" bind:value={emailTo} class="orga-input-clear w-full flex-1 py-2 text-sm" placeholder="mail@beispiel.de, zweite@mail.de" required disabled={isEmailSending || !!successMsg} />
+                    {#if availableContacts.length > 0}
+                    <select class="orga-input-clear flex-1 sm:flex-none sm:w-auto bg-neutral-50 cursor-pointer sm:max-w-48 text-sm font-medium py-2" onchange={(e) => { addRecipient(e.currentTarget.value); e.currentTarget.value = ""; }} disabled={isEmailSending || !!successMsg}>
+                        <option value="">+ Aus Akte wählen</option>
+                        {#each availableContacts as c}
+                            <option value="{c.email}|{c.salutation}">{c.name}</option>
+                        {/each}
+                    </select>
+                    {/if}
+                </div>
             </div>
+            {#if showCcBcc}
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 animate-enter">
+                    <div>
+                        <label for="email-cc" class="block text-sm font-bold text-neutral-700 mb-1.5">CC (Kopie)</label>
+                        <input id="email-cc" type="text" bind:value={cc} placeholder="kollege@beispiel.de" class="orga-input-clear w-full py-2 text-sm" disabled={isEmailSending || !!successMsg} />
+                    </div>
+                    <div>
+                        <label for="email-bcc" class="block text-sm font-bold text-neutral-700 mb-1.5">BCC (Blindkopie)</label>
+                        <input id="email-bcc" type="text" bind:value={bcc} placeholder="privat@beispiel.de" class="orga-input-clear w-full py-2 text-sm" disabled={isEmailSending || !!successMsg} />
+                    </div>
+                </div>
+            {/if}
             <div>
                 <label for="email-subject" class="block text-sm font-semibold text-neutral-700 mb-1.5">Betreff</label>
                 <input id="email-subject" type="text" bind:value={emailSubject} class="orga-input-clear py-2 text-sm" required disabled={isEmailSending || !!successMsg} />
@@ -162,6 +308,41 @@
                 <label for="email-text" class="block text-sm font-semibold text-neutral-700 mb-1.5">Nachricht</label>
                 <textarea id="email-text" bind:value={emailText} rows="5" class="orga-input-clear py-2 text-sm resize-none" required disabled={isEmailSending || !!successMsg}></textarea>
             </div>
+            
+            {#if linkedAppointments.length > 0}
+                <div class="pt-4 mt-2 border-t border-neutral-100">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="text-sm font-bold text-neutral-900 flex items-center gap-2"><span>📝</span> Besuchsberichte</h3>
+                        <label class="flex items-center gap-2 text-sm font-semibold text-neutral-700 cursor-pointer">
+                            <input type="checkbox" bind:checked={includeReports} class="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500" disabled={isEmailSending || !!successMsg} />
+                            In E-Mail anhängen
+                        </label>
+                    </div>
+                    
+                    {#if includeReports}
+                        <div class="space-y-3 max-h-60 overflow-y-auto custom-scrollbar p-1 pr-2">
+                            {#each linkedAppointments as app}
+                                <div class="bg-white border border-indigo-100 p-4 rounded-xl flex flex-col gap-2 transition-all shadow-sm focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-300">
+                                    <div class="flex items-center justify-between mb-1">
+                                        <div class="flex items-center gap-2">
+                                            <span class="w-6 h-6 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center text-xs">📅</span>
+                                            <span class="text-sm font-bold text-neutral-900">{app.date ? new Date(app.date).toLocaleDateString('de-DE') : ''}</span>
+                                            <span class="text-xs text-neutral-500 font-medium">{app.date ? new Date(app.date).toLocaleTimeString('de-DE', {hour: '2-digit', minute:'2-digit'}) : ''} Uhr</span>
+                                        </div>
+                                        <span class="text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded truncate max-w-32 font-bold uppercase tracking-wider">{app.description || 'Termin'}</span>
+                                    </div>
+                                    <textarea bind:value={app.report} rows="3" class="orga-input-clear text-sm resize-y custom-scrollbar w-full border-neutral-200 focus:border-indigo-300 bg-neutral-50 focus:bg-white transition-colors" placeholder="Kein Bericht vorhanden. Hier tippen, um einen hinzuzufügen..." disabled={isEmailSending || !!successMsg}></textarea>
+                                    {#if app.report}
+                                        <div class="flex justify-end mt-1">
+                                            <button type="button" onclick={() => saveReportToDb(app.id, app.report)} class="text-[10px] flex items-center gap-1 uppercase tracking-wider text-indigo-600 hover:text-indigo-800 font-bold transition-colors" disabled={isEmailSending || !!successMsg}><svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg> In Datenbank sichern</button>
+                                        </div>
+                                    {/if}
+                                </div>
+                            {/each}
+                        </div>
+                    {/if}
+                </div>
+            {/if}
             
                 {#if invoice?.pdf && invoice.pdf.length > 0}
             <div class="flex flex-wrap gap-2 pt-2 mt-2 border-t border-neutral-100">

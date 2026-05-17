@@ -22,6 +22,7 @@
             <p><strong>Gute Neuigkeiten:</strong> In den allermeisten Fällen müssen Sie für unsere Leistungen keinen einzigen Cent aus eigener Tasche bezahlen!</p>
             <p>Sobald bei Ihnen oder Ihrem Angehörigen ein <strong>Pflegegrad (1 bis 5)</strong> festgestellt wurde, steht Ihnen monatlich der sogenannte Entlastungsbetrag in Höhe von <strong>131 Euro</strong> zu (§ 45b SGB XI).</p>
             <p>Da wir ein anerkannter Dienstleister sind, können wir unsere Leistungen direkt mit Ihrer Pflegekasse abrechnen. Sie müssen nicht in Vorkasse gehen und haben keinen lästigen Papierkram damit.</p>
+            <p><strong>Volle Flexibilität:</strong> Wir arbeiten auf Auftragsbasis. Es gibt bei uns keine bindenden Langzeitverträge oder versteckten Abos! Sie buchen uns genau dann, wenn Sie uns brauchen, und wir rechnen unsere Einsätze auf Wunsch völlig transparent einzeln ab.</p>
             <p>Zusätzlich gibt es die Möglichkeit der <strong>Verhinderungspflege</strong>, falls pflegende Angehörige einmal verhindert sind oder eine Auszeit brauchen. Auch hier beraten wir Sie gerne zu Ihren Ansprüchen.</p>
             <div class="bg-amber-50 border border-amber-100 p-6 rounded-2xl mt-6 shadow-sm">
                 <h3 class="font-bold text-amber-900 mb-2">Sie haben noch gar keinen Pflegegrad?</h3>

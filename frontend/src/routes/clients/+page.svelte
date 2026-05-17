@@ -8,6 +8,23 @@
 
     // svelte-ignore non_reactive_update
     let detailModal: ReturnType<typeof ClientDetailModal>;
+
+    let clientGroups = $derived.by(() => {
+        const active = filterService.filtered.filter(c => (c.status || 'Aktiv').toLowerCase() === 'aktiv');
+        const inactive = filterService.filtered.filter(c => (c.status || '').toLowerCase() === 'inaktiv');
+        const deceased = filterService.filtered.filter(c => (c.status || '').toLowerCase() === 'verstorben');
+        const other = filterService.filtered.filter(c => {
+            const s = (c.status || 'Aktiv').toLowerCase();
+            return s !== 'aktiv' && s !== 'inaktiv' && s !== 'verstorben';
+        });
+        
+        const groups = [];
+        if (active.length > 0) groups.push({ title: "Aktive Klienten", clients: active });
+        if (inactive.length > 0) groups.push({ title: "Inaktive Klienten", clients: inactive });
+        if (deceased.length > 0) groups.push({ title: "Verstorbene Klienten", clients: deceased });
+        if (other.length > 0) groups.push({ title: "Sonstige Klienten", clients: other });
+        return groups;
+    });
 </script>
 
 <div class="orga-page-header animate-enter">
@@ -38,6 +55,7 @@
             <option value="all">Alle Status anzeigen</option>
             <option value="Aktiv">Nur Aktive</option>
             <option value="Inaktiv">Nur Inaktive</option>
+            <option value="Verstorben">Nur Verstorbene</option>
         </select>
     </div>
 </div>
@@ -50,51 +68,90 @@
         <p>Versuchen Sie, die Suchkriterien anzupassen, oder legen Sie einen neuen Klienten an.</p>
     </div>
 {:else}
-    <!-- Responsive Grid: Kompakte Liste auf Handy, schöne Cards auf Tablet/Desktop -->
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-6 animate-enter delay-200">
-        {#each filterService.filtered as client, i (client.id)}
-            <button type="button" onclick={() => detailModal?.open(client.id)} class="w-full text-left orga-client-card group animate-enter overflow-hidden" style="animation-delay: {150 + (i * 50)}ms">
-                <!-- Hover-Blob nur auf Desktop -->
-                <div class="hidden sm:block absolute top-0 right-0 w-24 h-24 bg-indigo-50 rounded-full blur-2xl -mr-8 -mt-8 transition-transform duration-500 group-hover:scale-150 z-0"></div>
-                
-                <div class="relative z-10 flex flex-col sm:block">
-                    <!-- Mobile: Horizontales Listen-Layout | Desktop: Vertikales Karten-Layout -->
-                    <div class="flex items-center sm:items-start justify-between gap-3 sm:gap-4 sm:mb-4">
-                        <div class="flex items-center gap-3 w-full sm:w-auto min-w-0">
-                            <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-indigo-100 text-indigo-600 font-bold flex items-center justify-center text-base sm:text-xl shrink-0 shadow-inner">
-                                {(client.name_first?.charAt(0) || '')}{(client.name_last?.charAt(0) || '')}
-                            </div>
-                            <!-- Mobile Text Infos (in Desktop ausgeblendet) -->
-                            <div class="flex-1 min-w-0 sm:hidden">
-                                <h2 class="text-[15px] font-bold text-neutral-900 truncate group-hover:text-indigo-600 transition-colors">{client.name_first} {client.name_last}</h2>
-                                <p class="text-xs text-neutral-500 truncate">{client.email || 'Keine E-Mail'}</p>
-                            </div>
-                        </div>
-                        <span class="px-2 py-0.5 sm:px-3.5 sm:py-1 text-[10px] sm:text-xs font-bold rounded-full shrink-0 {(client.status || '').toLowerCase() === 'aktiv' ? 'bg-emerald-100 text-emerald-700' : 'bg-neutral-100 text-neutral-600'}">
-                            {(client.status || '').toLowerCase() === 'aktiv' ? 'Aktiv' : 'Inaktiv'}
-                        </span>
-                    </div>
-                    
-                    <!-- Diese Infos sind auf Mobile in der oberen Zeile integriert -->
-                    <div class="hidden sm:block">
-                        <h2 class="text-xl font-bold text-neutral-900 mb-1 line-clamp-1 group-hover:text-indigo-600 transition-colors">{client.name_first} {client.name_last}</h2>
-                        <p class="text-sm text-neutral-500 mb-4 line-clamp-1">{client.email || 'Keine E-Mail hinterlegt'}</p>
-                    </div>
-                    
-                    <div class="flex flex-row sm:flex-col gap-4 sm:gap-2 text-xs sm:text-sm mt-3 sm:mt-0 pt-3 sm:pt-0 border-t border-neutral-100 sm:border-transparent">
-                        {#if client.level_of_care}
-                            <div class="flex items-center gap-1.5 text-neutral-700 font-medium shrink-0">
-                                <span class="text-rose-500">❤️</span> <span class="hidden sm:inline">Pflegegrad</span> {client.level_of_care}
-                            </div>
-                        {/if}
-                        {#if client.phone}
-                            <div class="flex items-center gap-1.5 text-neutral-600 truncate">
-                                <span class="text-indigo-400">📞</span> {client.phone}
-                            </div>
-                        {/if}
-                    </div>
+    <div class="space-y-6">
+        {#each clientGroups as group}
+            <div class="orga-card-white overflow-hidden animate-enter delay-200">
+                <!-- Group Header -->
+                <div class="bg-neutral-50/80 border-b border-neutral-100 p-4">
+                    <h2 class="font-bold text-neutral-900 flex items-center gap-2">{group.title} <span class="text-xs font-bold text-neutral-500 bg-white px-2 py-0.5 rounded-md border border-neutral-200 shadow-sm">{group.clients.length}</span></h2>
                 </div>
-            </button>
+                
+                <!-- Desktop Table View -->
+                <div class="hidden md:block overflow-x-auto custom-scrollbar">
+                    <table class="w-full text-left border-collapse min-w-150">
+                        <thead class="bg-neutral-50/50 border-b border-neutral-100">
+                            <tr>
+                                <th class="p-4 font-bold text-neutral-500 text-xs uppercase tracking-wider">Klient</th>
+                                <th class="p-4 font-bold text-neutral-500 text-xs uppercase-tracking-wider">Kontakt</th>
+                                <th class="p-4 font-bold text-neutral-500 text-xs uppercase tracking-wider">Status</th>
+                                <th class="p-4 font-bold text-neutral-500 text-xs uppercase tracking-wider">Pflegegrad</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-neutral-50">
+                            {#each group.clients as client (client.id)}
+                                <tr onclick={() => detailModal?.open(client.id)} class="hover:bg-blue-100 transition-colors group cursor-pointer">
+                                    <td class="p-4">
+                                        <div class="flex items-center gap-3">
+                                            <div class="w-9 h-9 rounded-full bg-indigo-100 text-indigo-600 font-bold flex items-center justify-center text-sm shrink-0 shadow-inner">
+                                                {(client.name_first?.charAt(0) || '')}{(client.name_last?.charAt(0) || '')}
+                                            </div>
+                                            <div>
+                                                <p class="font-bold text-neutral-900">{client.name_first} {client.name_last}</p>
+                                                <p class="text-xs text-neutral-500">{client.city || 'Kein Ort'}</p>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td class="p-4 text-sm text-neutral-600">
+                                        <p>{client.email || '-'}</p>
+                                        <p class="text-xs">{client.phone || ''}</p>
+                                    </td>
+                                    <td class="p-4">
+                                        <span class="px-2.5 py-1 text-xs font-bold rounded-full {(client.status || '').toLowerCase() === 'aktiv' ? 'bg-emerald-100 text-emerald-700' : 'bg-neutral-100 text-neutral-600'}">
+                                            {(client.status || 'Unbekannt')}
+                                        </span>
+                                    </td>
+                                    <td class="p-4 text-sm font-bold text-neutral-800">
+                                        {client.level_of_care ? `Grad ${client.level_of_care}` : '-'}
+                                    </td>
+                                </tr>
+                            {/each}
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Mobile Card View -->
+                <div class="block md:hidden divide-y divide-neutral-100">
+                    {#each group.clients as client (client.id)}
+                        <button type="button" onclick={() => detailModal?.open(client.id)} class="w-full text-left p-4 flex flex-col gap-3 hover:bg-neutral-50/50 transition-colors">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-3 min-w-0">
+                                    <div class="w-10 h-10 rounded-full bg-indigo-100 text-indigo-600 font-bold flex items-center justify-center text-base shrink-0 shadow-inner">
+                                        {(client.name_first?.charAt(0) || '')}{(client.name_last?.charAt(0) || '')}
+                                    </div>
+                                    <div class="flex-1 min-w-0 sm:hidden">
+                                        <h2 class="text-[15px] font-bold text-neutral-900 truncate hover:text-indigo-600 transition-colors">{client.name_first} {client.name_last}</h2>
+                                        <p class="text-xs text-neutral-500 truncate">{client.city || 'Kein Ort'}</p>
+                                    </div>
+                                </div>
+                                <span class="px-2 py-0.5 text-[10px] font-bold rounded-full shrink-0 {(client.status || '').toLowerCase() === 'aktiv' ? 'bg-emerald-100 text-emerald-700' : 'bg-neutral-100 text-neutral-600'}">
+                                    {(client.status || 'Unbekannt')}
+                                </span>
+                            </div>
+                            <div class="flex items-center justify-between gap-4 pl-13">
+                                <div class="text-xs text-neutral-600">
+                                {#if client.level_of_care}
+                                    <p><span class="font-semibold">Pflegegrad:</span> {client.level_of_care}</p>
+                                {/if}
+                                {#if client.phone}
+                                    <p class="mt-1"><span class="font-semibold">Telefon:</span> {client.phone}</p>
+                                {/if}
+                                </div>
+                                <span class="text-indigo-600 text-xs font-bold">&rarr;</span>
+                            </div>
+                        </button>
+                    {/each}
+                </div>
+            </div>
         {/each}
     </div>
 {/if}

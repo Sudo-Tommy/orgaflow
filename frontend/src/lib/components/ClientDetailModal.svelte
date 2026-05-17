@@ -60,8 +60,8 @@
         }
     }
 
-    function handleAiSave(newText: string) {
-        const dateHeader = `\n\n--- Bericht vom ${new Date().toLocaleDateString('de-DE')} ---\n`;
+    function handleAiSave(newText: string, type: 'family' | 'internal', blobs?: Blob[]) {
+        const dateHeader = `\n\n--- ${type === 'internal' ? 'Interne Notiz' : 'Bericht'} vom ${new Date().toLocaleDateString('de-DE')} ---\n`;
         const formattedText = dateHeader + newText.trim();
         
         notes = (notes ? notes.trim() : '') + formattedText;
@@ -131,7 +131,7 @@
                                 <h2 class="text-base sm:text-lg font-bold text-neutral-900 flex items-center gap-2">
                                     <span>📝</span> Klienten-Notizen
                                 </h2>
-                                <button onclick={() => aiModal?.open()} class="text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2 sm:px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors shadow-sm">
+                                <button onclick={() => aiModal?.open('internal')} class="text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2 sm:px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors shadow-sm">
                                     <span>🎙️</span> KI-Diktat
                                 </button>
                             </div>

@@ -5,9 +5,14 @@ import { defineConfig } from 'vite';
 export default defineConfig({
 	plugins: [
 		tailwindcss(), // <-- WICHTIG: Tailwind-Plugin aktivieren
-		sveltekit()
-	],
+		sveltekit()],
+
+	build: {
+		chunkSizeWarningLimit: 1500 // Erhöht das Warn-Limit auf 1.5 MB
+	},
+
 	define: {
 		global: 'window' // <-- Unser Fix für PDFKit
 	}
+	
 });

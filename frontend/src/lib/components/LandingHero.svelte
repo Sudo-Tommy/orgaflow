@@ -29,6 +29,19 @@
             <button onclick={() => appModal?.open()} class="orga-button-primary w-full sm:w-auto">Kostenloses Kennenlernen</button>
             <button onclick={() => leistungenModal?.open()} class="orga-button-ghost w-full sm:w-auto bg-white border-2 border-brand-100 shadow-sm hover:border-brand-300">Was wir für Sie tun können</button>
         </div>
+        
+        <!-- Wichtige Info: Vertragsfreiheit -->
+        <div class="mt-8 flex flex-wrap items-center justify-center gap-4 sm:gap-8 text-sm sm:text-base font-bold text-neutral-700">
+            <div class="flex items-center gap-2">
+                <span class="text-emerald-500 text-xl leading-none">✓</span> Keine Vertragsbindung
+            </div>
+            <div class="flex items-center gap-2">
+                <span class="text-emerald-500 text-xl leading-none">✓</span> Arbeit nach Auftrag
+            </div>
+            <div class="flex items-center gap-2">
+                <span class="text-emerald-500 text-xl leading-none">✓</span> Einzelabrechnung möglich
+            </div>
+        </div>
     </div>
     
     <!-- Eyecatcher: Kostenübernahme -->

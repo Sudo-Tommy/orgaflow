@@ -22,6 +22,7 @@
     let zip_city = $state("");
     let request_text = $state("");
     let time = $state("");
+    let preferredContact = $state<"phone" | "email" | "mail">("phone");
 
     // Calendar State
     let currentDate = $state(new Date());
@@ -165,14 +166,31 @@
 
         // Sicherstellen, dass das Datum in der lokalen Zeitzone bleibt und nicht durch UTC-Verschiebung auf den Vortag springt
         const formattedDate = new Date(selectedDate.getTime() - selectedDate.getTimezoneOffset() * 60000).toISOString().split('T')[0];
-        const contactMethod = email ? 'e-mail-address' : 'telephone';
+        
+        if (preferredContact === 'email' && !email.trim()) {
+            errorMsg = "Bitte geben Sie Ihre E-Mail-Adresse an.";
+            isLoading = false;
+            return;
+        }
+        if (preferredContact === 'phone' && !phone.trim()) {
+            errorMsg = "Bitte geben Sie Ihre Telefonnummer an.";
+            isLoading = false;
+            return;
+        }
+        if (preferredContact === 'mail' && (!street.trim() || !zip_city.trim())) {
+            errorMsg = "Bitte geben Sie Ihre vollständige Postadresse an.";
+            isLoading = false;
+            return;
+        }
+
+        let contactMethod = preferredContact === 'email' ? 'e-mail-address' : (preferredContact === 'mail' ? 'mail-adress' : 'telephone');
 
         const final_request_text = `${request_text.trim()}
 
 --- Kontaktdaten ---
-E-Mail: ${email || '-'}
-Telefon: ${phone || '-'}
-Adresse: ${street || '-'}, ${zip_city || '-'}`;
+E-Mail: ${preferredContact === 'email' ? email : '-'}
+Telefon: ${preferredContact === 'phone' ? phone : '-'}
+Adresse: ${preferredContact === 'mail' ? `${street}, ${zip_city}` : '-'}`;
 
         try {
             await submitAppointmentRequest({
@@ -212,7 +230,7 @@ Adresse: ${street || '-'}, ${zip_city || '-'}`;
             successMsg = "Vielen Dank! Ihre Anfrage wurde erfolgreich übermittelt. Wir melden uns in Kürze.";
             
             // Reset
-            sender_name = ""; email = ""; phone = ""; street = ""; zip_city = ""; request_text = ""; time = ""; selectedDate = null;
+            sender_name = ""; email = ""; phone = ""; street = ""; zip_city = ""; request_text = ""; time = ""; selectedDate = null; preferredContact = "phone";
         } catch (err: any) {
             console.error(err);
             errorMsg = "Es gab einen Fehler beim Senden. Bitte rufen Sie uns direkt an.";
@@ -292,7 +310,7 @@ Adresse: ${street || '-'}, ${zip_city || '-'}`;
                                         {:else if dayTimes.length > 0 && !isPast}
                                             <div class="flex flex-col gap-px mt-0.5 items-center w-full px-0">
                                                 {#each dayTimes.slice(0, 2) as t}
-                                                    <span class="text-[7px] sm:text-[8px] leading-tight font-bold {selectedDate && day.date.getTime() === selectedDate.getTime() ? 'text-brand-100' : 'text-rose-500'}">{t}</span>
+                                                <span class="text-[7px] sm:text-[8px] leading-tight font-bold line-through {selectedDate && day.date.getTime() === selectedDate.getTime() ? 'text-brand-200 decoration-brand-200' : 'text-rose-500 decoration-rose-500 opacity-70'}">{t}</span>
                                                 {/each}
                                                 {#if dayTimes.length > 2}
                                                     <span class="text-[7px] sm:text-[8px] leading-tight font-bold {selectedDate && day.date.getTime() === selectedDate.getTime() ? 'text-brand-100' : 'text-rose-500'}">...</span>
@@ -314,7 +332,7 @@ Adresse: ${street || '-'}, ${zip_city || '-'}`;
                                             <span class="mt-0.5">⚠️</span>
                                             <div>
                                                 <span class="font-bold block mb-0.5">Hinweis zu diesem Tag:</span>
-                                                Folgende Zeiten sind bereits vergeben: <strong>{selTimes.join(' Uhr, ')} Uhr</strong>
+                                                Folgende Zeiten sind bereits vergeben: <strong class="line-through decoration-rose-500 opacity-80">{selTimes.join(' Uhr, ')} Uhr</strong>
                                             </div>
                                         </div>
                                     {/if}
@@ -328,19 +346,33 @@ Adresse: ${street || '-'}, ${zip_city || '-'}`;
                     <!-- Rechte Spalte: Formulardaten -->
                     <div class="lg:col-span-7 flex flex-col">
                         <div class="orga-card-white p-4 sm:p-6 md:p-8 border border-neutral-200 shadow-lg h-full flex flex-col bg-white">
-                            <h3 class="text-xl font-bold text-brand-950 mb-6 pb-4 border-b border-neutral-100">3. Ihre Kontaktdaten & Anliegen</h3>
+                            <h3 class="text-xl font-bold text-brand-950 mb-1.5">3. Ihre Kontaktdaten & Anliegen</h3>
+                            <p class="text-sm text-neutral-600 mb-6 pb-4 border-b border-neutral-100">Wie dürfen wir Sie am besten erreichen?</p>
                             
                             <div class="space-y-5 flex-1">
                                 <div><label for="req-name" class="block text-sm font-semibold text-neutral-700 mb-1.5">Ihr Vor- und Nachname *</label><input id="req-name" type="text" bind:value={sender_name} class="orga-input-clear bg-neutral-50" placeholder="Max Mustermann" required disabled={isLoading} /></div>
                                 
-                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    <div><label for="req-email" class="block text-sm font-semibold text-neutral-700 mb-1.5">E-Mail</label><input id="req-email" type="email" bind:value={email} class="orga-input-clear bg-neutral-50" placeholder="mail@beispiel.de" disabled={isLoading} /></div>
-                                    <div><label for="req-phone" class="block text-sm font-semibold text-neutral-700 mb-1.5">Telefon / Mobil</label><input id="req-phone" type="text" bind:value={phone} class="orga-input-clear bg-neutral-50" placeholder="0151..." disabled={isLoading} /></div>
+                                <div>
+                                    <!-- svelte-ignore a11y_label_has_associated_control -->
+                                    <label class="block text-sm font-semibold text-neutral-700 mb-1.5">Gewünschter Kontaktweg *</label>
+                                    <div class="flex gap-2 p-1 bg-neutral-100 rounded-lg">
+                                        <button type="button" onclick={() => preferredContact = 'phone'} class="flex-1 py-2 text-sm font-bold rounded-md transition-colors {preferredContact === 'phone' ? 'bg-white shadow-sm text-brand-600' : 'text-neutral-500 hover:text-neutral-700'}">📞 Telefon</button>
+                                        <button type="button" onclick={() => preferredContact = 'email'} class="flex-1 py-2 text-sm font-bold rounded-md transition-colors {preferredContact === 'email' ? 'bg-white shadow-sm text-brand-600' : 'text-neutral-500 hover:text-neutral-700'}">✉️ E-Mail</button>
+                                        <button type="button" onclick={() => preferredContact = 'mail'} class="flex-1 py-2 text-sm font-bold rounded-md transition-colors {preferredContact === 'mail' ? 'bg-white shadow-sm text-brand-600' : 'text-neutral-500 hover:text-neutral-700'}">📮 Brief</button>
+                                    </div>
                                 </div>
                                 
-                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    <div><label for="req-street" class="block text-sm font-semibold text-neutral-700 mb-1.5">Straße & Hausnr.</label><input id="req-street" type="text" bind:value={street} class="orga-input-clear bg-neutral-50" placeholder="Musterstraße 1" disabled={isLoading} /></div>
-                                    <div><label for="req-zip" class="block text-sm font-semibold text-neutral-700 mb-1.5">PLZ & Stadt</label><input id="req-zip" type="text" bind:value={zip_city} class="orga-input-clear bg-neutral-50" placeholder="06108 Halle" disabled={isLoading} /></div>
+                                <div class="p-4 bg-brand-50/50 border border-brand-100 rounded-xl animate-enter">
+                                    {#if preferredContact === 'email'}
+                                        <div><label for="req-email" class="block text-sm font-semibold text-brand-900 mb-1.5">Ihre E-Mail-Adresse *</label><input id="req-email" type="email" bind:value={email} class="orga-input-clear bg-white border-brand-200" placeholder="mail@beispiel.de" required disabled={isLoading} /></div>
+                                    {:else if preferredContact === 'phone'}
+                                        <div><label for="req-phone" class="block text-sm font-semibold text-brand-900 mb-1.5">Ihre Telefon- oder Mobilnummer *</label><input id="req-phone" type="text" bind:value={phone} class="orga-input-clear bg-white border-brand-200" placeholder="0151..." required disabled={isLoading} /></div>
+                                    {:else if preferredContact === 'mail'}
+                                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                            <div><label for="req-street" class="block text-sm font-semibold text-brand-900 mb-1.5">Straße & Hausnr. *</label><input id="req-street" type="text" bind:value={street} class="orga-input-clear bg-white border-brand-200" placeholder="Musterstraße 1" required disabled={isLoading} /></div>
+                                            <div><label for="req-zip" class="block text-sm font-semibold text-brand-900 mb-1.5">PLZ & Stadt *</label><input id="req-zip" type="text" bind:value={zip_city} class="orga-input-clear bg-white border-brand-200" placeholder="06108 Halle" required disabled={isLoading} /></div>
+                                        </div>
+                                    {/if}
                                 </div>
                                 
                                 <div class="flex-1 flex flex-col">
@@ -350,7 +382,7 @@ Adresse: ${street || '-'}, ${zip_city || '-'}`;
                             </div>
 
                             <div class="pt-6 mt-6 border-t border-neutral-100 shrink-0">
-                                <button type="submit" class="orga-button-primary w-full text-base py-3.5 shadow-brand-600/30 hover:shadow-brand-600/50" disabled={isLoading}>{isLoading ? "Anfrage wird sicher übertragen..." : "Termin verbindlich anfragen"}</button>
+                                <button type="submit" class="orga-button-primary w-full text-base py-3.5 shadow-brand-600/30 hover:shadow-brand-600/50" disabled={isLoading}>{isLoading ? "Anfrage wird sicher übertragen..." : "Termin unverbindlich anfragen"}</button>
                                 <p class="text-center text-xs text-neutral-400 mt-3 flex items-center justify-center gap-1.5"><span>🔒</span> Ihre Daten werden verschlüsselt übertragen und streng vertraulich behandelt.</p>
                             </div>
                         </div>

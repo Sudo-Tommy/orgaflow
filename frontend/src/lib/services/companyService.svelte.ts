@@ -20,7 +20,8 @@ export function useCompanyService() {
         bank_name: "",
         bank_iban: "",
         bank_bic: "",
-        vatcode: ""
+        vatcode: "",
+        calendar_color: "#4f46e5"
     });
 
     let logoFile = $state<File | null>(null);
@@ -46,7 +47,8 @@ export function useCompanyService() {
                 bank_name: companyRecord.bank_name || "",
                 bank_iban: companyRecord.bank_iban || "",
                 bank_bic: companyRecord.bank_bic || "",
-                vatcode: companyRecord.vatcode || ""
+                vatcode: companyRecord.vatcode || "",
+                calendar_color: companyRecord.calendar_color || "#4f46e5"
             };
             if (companyRecord.logo) {
                 existingLogoUrl = pb.files.getURL(companyRecord, companyRecord.logo);

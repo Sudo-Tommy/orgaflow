@@ -203,10 +203,11 @@
                     <label for="to" class="block text-sm font-bold text-neutral-700">Empfänger (Kommagetrennt für mehrere)</label>
                     <button type="button" onclick={() => showCcBcc = !showCcBcc} class="text-xs font-bold text-indigo-600 hover:text-indigo-800 transition-colors">{showCcBcc ? '− CC / BCC ausblenden' : '+ CC / BCC hinzufügen'}</button>
                 </div>
-                <div class="flex gap-2">
+            <div class="flex flex-col sm:flex-row gap-2">
                 <input type="text" id="to" bind:value={to} list="contact-list" class="orga-input-clear w-full flex-1 py-3 sm:py-2" placeholder="klient@beispiel.de, kollege@beispiel.de" disabled={isSending} />
+                <div class="flex gap-2">
                     <select 
-                        class="orga-input-clear w-auto bg-neutral-50 cursor-pointer max-w-50 text-sm font-medium py-3 sm:py-2"
+                        class="orga-input-clear flex-1 sm:flex-none sm:w-auto bg-neutral-50 cursor-pointer sm:max-w-48 text-sm font-medium py-3 sm:py-2"
                         onchange={(e) => {
                             const val = (e.target as HTMLSelectElement).value;
                             if(val) addRecipient(val);
@@ -220,10 +221,11 @@
                         {/each}
                     </select>
                 {#if isSuperAdmin}
-                    <button type="button" onclick={addAllToBcc} class="orga-button-ghost py-3 sm:py-2 px-3 text-xs bg-indigo-50 text-indigo-700 border-indigo-200 shadow-sm whitespace-nowrap hover:bg-indigo-100 transition-colors" disabled={isSending} title="Rundmail an alle (BCC)">
+                    <button type="button" onclick={addAllToBcc} class="orga-button-ghost flex-1 sm:flex-none py-3 sm:py-2 px-3 text-xs bg-indigo-50 text-indigo-700 border-indigo-200 shadow-sm whitespace-nowrap hover:bg-indigo-100 transition-colors" disabled={isSending} title="Rundmail an alle (BCC)">
                         📢 An Alle
                     </button>
                 {/if}
+                </div>
                 </div>
                 <datalist id="contact-list">
                     {#each systemContacts as contact}
@@ -268,11 +270,11 @@
             {/if}
         </div>
         
-        <div class="pt-2 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-            <div>
+        <div class="pt-2 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+            <div class="w-full md:w-auto">
                 <!-- Verstecktes Dateifeld, wird über den Button getriggert -->
                 <input type="file" id="file-upload" multiple class="hidden" onchange={handleFileSelect} disabled={isSending} />
-                <button type="button" onclick={() => document.getElementById('file-upload')?.click()} class="flex items-center gap-2 text-sm font-bold text-neutral-600 hover:text-indigo-600 transition-colors px-4 py-2.5 bg-neutral-50 hover:bg-indigo-50 border border-neutral-200 hover:border-indigo-200 rounded-xl" disabled={isSending}>
+                <button type="button" onclick={() => document.getElementById('file-upload')?.click()} class="w-full md:w-auto flex items-center justify-center gap-2 text-sm font-bold text-neutral-600 hover:text-indigo-600 transition-colors px-4 py-3 md:py-2.5 bg-neutral-50 hover:bg-indigo-50 border border-neutral-200 hover:border-indigo-200 rounded-xl shadow-sm" disabled={isSending}>
                     <span class="text-lg">📎</span> Datei anhängen
                 </button>
             </div>

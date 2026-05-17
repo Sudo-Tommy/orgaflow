@@ -172,22 +172,23 @@
 >
   <!-- Modal -->
   <div
-    class="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col"
+    class="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col relative"
     onclick={(e) => e.stopPropagation()}
     onkeydown={(e) => e.stopPropagation()}
     role="dialog"
     tabindex="-1"
   >
     <!-- Header -->
-    <div class="border-b border-gray-200 p-6 shrink-0">
-      <div class="flex items-center gap-3">
+    <div class="border-b border-neutral-100 p-5 sm:p-8 shrink-0 relative">
+      <button aria-label="Schließen" onclick={onClose} class="absolute top-4 sm:top-6 right-4 sm:right-6 w-10 h-10 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-colors z-10"><svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
+      <div class="flex items-center gap-3 pr-10">
         <span class="text-2xl">✉️</span>
-        <h2 class="text-xl font-bold text-gray-900">Neue E-Mail</h2>
+        <h2 class="text-xl sm:text-2xl font-bold text-neutral-900 truncate">Neue E-Mail</h2>
       </div>
     </div>
 
     <!-- Content -->
-    <div class="flex-1 overflow-y-auto p-6">
+    <div class="flex-1 overflow-y-auto custom-scrollbar p-5 sm:p-8">
       {#if error}
         <div class="mb-4 p-4 {error.includes('✅') ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'} border rounded-lg flex gap-3">
           <span class="text-xl shrink-0 mt-0.5">{error.includes('✅') ? '✅' : '⚠️'}</span>
@@ -199,38 +200,40 @@
         <!-- To field -->
         <div>
           <div class="flex items-center justify-between mb-1">
-            <label for="to" class="block text-sm font-medium text-gray-700">An *</label>
-            <button type="button" onclick={() => showCcBcc = !showCcBcc} class="text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors">{showCcBcc ? '− CC / BCC ausblenden' : '+ CC / BCC hinzufügen'}</button>
+            <label for="to" class="block text-sm font-bold text-neutral-700">An *</label>
+            <button type="button" onclick={() => showCcBcc = !showCcBcc} class="text-xs font-bold text-indigo-600 hover:text-indigo-800 transition-colors">{showCcBcc ? '− CC / BCC ausblenden' : '+ CC / BCC hinzufügen'}</button>
           </div>
-        <div class="flex gap-2">
+        <div class="flex flex-col sm:flex-row gap-2">
           <input
             id="to"
             type="text"
             bind:value={to}
             list="contact-list"
-            placeholder="empfaenger@example.com"
-            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+            placeholder="klient@beispiel.de"
+            class="orga-input-clear w-full flex-1 py-3 sm:py-2"
             disabled={isSending}
           />
-          <select 
-              class="px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-sm focus:ring-2 focus:ring-blue-600 cursor-pointer"
+          <div class="flex gap-2">
+            <select 
+              class="orga-input-clear flex-1 sm:flex-none sm:w-auto bg-neutral-50 cursor-pointer sm:max-w-48 text-sm font-medium py-3 sm:py-2"
               onchange={(e) => {
                   const val = (e.currentTarget as HTMLSelectElement).value;
                   if(val) addRecipient(val);
                   (e.currentTarget as HTMLSelectElement).value = "";
               }}
               disabled={isSending}
-          >
+            >
               <option value="">+ Adressbuch</option>
               {#each systemContacts as contact}
                   <option value={contact.email}>{contact.name} ({contact.email})</option>
               {/each}
-          </select>
+            </select>
           {#if isSuperAdmin}
-              <button type="button" onclick={addAllToBcc} class="px-3 py-2 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-sm font-bold shadow-sm whitespace-nowrap hover:bg-blue-100 transition-colors" disabled={isSending} title="Rundmail an alle (BCC)">
+              <button type="button" onclick={addAllToBcc} class="orga-button-ghost flex-1 sm:flex-none py-3 sm:py-2 px-3 text-xs bg-indigo-50 text-indigo-700 border-indigo-200 shadow-sm whitespace-nowrap hover:bg-indigo-100 transition-colors" disabled={isSending} title="Rundmail an alle (BCC)">
                   📢 An Alle
               </button>
           {/if}
+          </div>
         </div>
         <datalist id="contact-list">
             {#each systemContacts as contact}
@@ -243,26 +246,26 @@
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4 animate-enter">
             <!-- CC field -->
             <div>
-              <label for="cc" class="block text-sm font-medium text-gray-700 mb-1">CC</label>
+              <label for="cc" class="block text-sm font-bold text-neutral-700 mb-1.5">CC (Kopie)</label>
               <input
                 id="cc"
                 type="email"
                 bind:value={cc}
-                placeholder="cc@example.com"
-                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+                placeholder="kollege@beispiel.de"
+                class="orga-input-clear w-full py-3 sm:py-2"
                 disabled={isSending}
               />
             </div>
 
             <!-- BCC field -->
             <div>
-              <label for="bcc" class="block text-sm font-medium text-gray-700 mb-1">BCC</label>
+              <label for="bcc" class="block text-sm font-bold text-neutral-700 mb-1.5">BCC (Blindkopie)</label>
               <input
                 id="bcc"
                 type="email"
                 bind:value={bcc}
-                placeholder="bcc@example.com"
-                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+                placeholder="privat@beispiel.de"
+                class="orga-input-clear w-full py-3 sm:py-2"
                 disabled={isSending}
               />
             </div>
@@ -271,26 +274,26 @@
 
         <!-- Subject -->
         <div>
-          <label for="subject" class="block text-sm font-medium text-gray-700 mb-1">Betreff *</label>
+          <label for="subject" class="block text-sm font-bold text-neutral-700 mb-1.5">Betreff *</label>
           <input
             id="subject"
             type="text"
             bind:value={subject}
             placeholder="Betreff eingeben"
-            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+            class="orga-input-clear w-full py-3 sm:py-2"
             disabled={isSending}
           />
         </div>
 
         <!-- Body -->
         <div>
-          <label for="body" class="block text-sm font-medium text-gray-700 mb-1">Nachricht</label>
+          <label for="body" class="block text-sm font-bold text-neutral-700 mb-1.5">Nachricht</label>
           <textarea
             id="body"
             bind:value={body}
             placeholder="Schreibe hier deine Nachricht..."
-            rows="6"
-            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent resize-none"
+            rows="8"
+            class="orga-input-clear w-full py-3 sm:py-2 resize-none custom-scrollbar min-h-40"
             disabled={isSending}
           ></textarea>
         </div>
@@ -307,8 +310,8 @@
     {/if}
 
         {#if mailConfigService.config}
-          <div class="p-4 bg-blue-50 rounded-lg">
-            <p class="text-sm text-blue-900">
+          <div class="p-4 bg-indigo-50/50 rounded-xl border border-indigo-100">
+            <p class="text-xs text-indigo-900">
               <span class="font-medium">Von:</span> {mailConfigService.config.email_address}
             </p>
           </div>
@@ -317,18 +320,18 @@
     </div>
 
     <!-- Footer -->
-  <div class="border-t border-gray-200 p-6 bg-gray-50 flex justify-between items-center shrink-0">
-    <div>
+  <div class="border-t border-neutral-100 p-5 sm:p-8 bg-neutral-50/50 flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4 shrink-0">
+    <div class="w-full md:w-auto">
       <input type="file" id="file-upload" multiple class="hidden" onchange={handleFileSelect} disabled={isSending} />
-      <button type="button" onclick={() => document.getElementById('file-upload')?.click()} class="flex items-center gap-2 text-sm font-medium text-neutral-600 hover:text-blue-600 transition-colors px-4 py-2 bg-white hover:bg-blue-50 border border-neutral-200 rounded-lg" disabled={isSending}>
-        📎 Datei anhängen
+      <button type="button" onclick={() => document.getElementById('file-upload')?.click()} class="w-full md:w-auto flex items-center justify-center gap-2 text-sm font-bold text-neutral-600 hover:text-indigo-600 transition-colors px-4 py-3 md:py-2.5 bg-white hover:bg-indigo-50 border border-neutral-200 hover:border-indigo-200 rounded-xl shadow-sm" disabled={isSending}>
+        <span class="text-lg">📎</span> Datei anhängen
       </button>
     </div>
-    <div class="flex gap-3">
-      <button onclick={onClose} disabled={isSending} class="px-6 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-lg disabled:opacity-50">
+    <div class="flex flex-col-reverse md:flex-row gap-3 w-full md:w-auto">
+      <button onclick={onClose} disabled={isSending} class="orga-button-ghost w-full md:w-auto py-3 md:py-2.5 px-6">
         Abbrechen
       </button>
-      <button onclick={handleSend} disabled={isSending} class="px-6 py-2 bg-blue-600 text-white font-medium hover:bg-blue-700 rounded-lg disabled:opacity-50">
+      <button onclick={handleSend} disabled={isSending} class="orga-button-primary shadow-indigo-600/20 w-full md:w-auto py-3 md:py-2.5 px-6">
         {isSending ? 'Wird gesendet...' : 'Senden'}
       </button>
     </div>

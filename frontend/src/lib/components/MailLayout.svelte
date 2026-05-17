@@ -152,11 +152,11 @@
     <!-- svelte-ignore a11y_consider_explicit_label -->
     <button class="fixed inset-0 bg-neutral-900/20 backdrop-blur-sm z-40 md:hidden border-none w-full h-full cursor-default" onclick={() => (mobileMenuOpen = false)}></button>
   {/if}
-  <div class="absolute inset-y-0 left-0 z-50 w-72 md:w-64 md:relative border-r border-gray-300 bg-white transform transition-transform duration-300 {mobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}">
+  <div class="absolute inset-y-0 left-0 z-50 w-72 md:w-64 md:relative border-r border-neutral-100 bg-white transform transition-transform duration-300 {mobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}">
     {#if mailConfigService.isLoading}
-      <div class="p-4 text-center text-sm text-gray-500">Lädt...</div>
+      <div class="p-4 text-center text-sm text-neutral-500">Lädt...</div>
     {:else if mailConfigService.error}
-      <div class="p-4 text-center text-sm text-red-500">{mailConfigService.error}</div>
+      <div class="p-4 text-center text-sm text-rose-500">{mailConfigService.error}</div>
     {:else}
       <MailSidebar
         folders={mailboxService.folders}
@@ -174,15 +174,15 @@
   <!-- Main content -->
   <div class="flex-1 flex flex-col">
     {#if !mailConfigService.hasConfig}
-      <div class="flex-1 flex items-center justify-center bg-gray-50">
+      <div class="flex-1 flex items-center justify-center bg-neutral-50/50">
         <div class="text-center">
-          <h2 class="text-2xl font-bold text-gray-800 mb-4">E-Mail konfigurieren</h2>
-          <p class="text-gray-600 mb-6">
+          <h2 class="text-2xl font-bold text-neutral-900 mb-4">E-Mail konfigurieren</h2>
+          <p class="text-neutral-600 mb-6">
             Bitte konfigurieren Sie Ihre SMTP/IMAP-Einstellungen, um E-Mails zu versenden und zu empfangen.
           </p>
           <button
             onclick={() => (showConfigModal = true)}
-            class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            class="orga-button-primary shadow-indigo-600/20 px-8 py-3"
           >
             Einstellungen öffnen
           </button>
@@ -197,7 +197,7 @@
       <!-- Mail list and detail -->
       <div class="flex-1 flex overflow-hidden relative">
         <!-- List -->
-        <div class="flex-1 md:w-96 md:flex-none border-r border-gray-300 bg-white overflow-y-auto flex flex-col min-w-0">
+        <div class="flex-1 md:w-96 md:flex-none border-r border-neutral-100 bg-white overflow-y-auto flex flex-col min-w-0">
           <MailList
             emails={emailService.paginatedEmails}
             selectedEmailId={selectedEmailId}
@@ -208,11 +208,12 @@
             onEmailSelect={handleEmailSelect}
             onPageChange={(page: number) => (emailService.currentPage = page)}
             onToggleMenu={() => (mobileMenuOpen = true)}
+            onComposeClick={() => (showComposer = true)}
           />
         </div>
 
         <!-- Detail -->
-        <div class="absolute inset-0 z-30 md:relative md:z-auto bg-gray-50 flex-1 overflow-y-auto transition-transform duration-300 transform {mobileDetailOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}">
+        <div class="absolute inset-0 z-30 md:relative md:z-auto bg-neutral-50 flex-1 overflow-y-auto transition-transform duration-300 transform {mobileDetailOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}">
           {#if selectedEmailId}
             <MailDetail
               emailId={selectedEmailId}

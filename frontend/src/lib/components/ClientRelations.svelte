@@ -4,6 +4,9 @@
     import ClientLinkHomeModal from "./ClientLinkHomeModal.svelte";
     import AppointmentModal from "./AppointmentModal.svelte";
     import AppointmentDetailModal from "./AppointmentDetailModal.svelte";
+    import ContactModal from "./ContactModal.svelte";
+    import RetirementHomeModal from "./RetirementHomeModal.svelte";
+    import MultiAppointmentReminderModal from "./MultiAppointmentReminderModal.svelte";
     import { pb } from "$lib/services/pocketbase";
     import { toastStore } from "$lib/services/toastService.svelte";
     import { confirmStore } from "$lib/services/confirmService.svelte";
@@ -15,8 +18,14 @@
     
     let clientData = $derived(orgaStore.clients?.getById(clientId));
     let appointments = $derived((orgaStore.appointments?.data || []).filter((a: any) => Array.isArray(a.client) ? a.client.includes(clientId) : a.client === clientId));
-    let contacts = $derived(clientData?.expand?.contacts || []);
-    let retirementHomes = $derived(clientData?.expand?.retirement_homes || []);
+    let contacts = $derived.by(() => {
+        const ids = Array.isArray(clientData?.contacts) ? clientData.contacts : (clientData?.contacts ? [clientData.contacts] : []);
+        return (orgaStore.contacts?.data || []).filter((c: any) => ids.includes(c.id));
+    });
+    let retirementHomes = $derived.by(() => {
+        const ids = Array.isArray(clientData?.retirement_homes) ? clientData.retirement_homes : (clientData?.retirement_homes ? [clientData.retirement_homes] : []);
+        return (orgaStore.retirement_homes?.data || []).filter((h: any) => ids.includes(h.id));
+    });
     let documents = $derived((orgaStore.document_templates?.data || []).filter((d: any) => d.client === clientId));
 
     // svelte-ignore non_reactive_update
@@ -27,6 +36,12 @@
     let appointmentModal: ReturnType<typeof AppointmentModal>;
     // svelte-ignore non_reactive_update
     let detailModal: ReturnType<typeof AppointmentDetailModal>;
+    // svelte-ignore non_reactive_update
+    let contactModal: ReturnType<typeof ContactModal>;
+    // svelte-ignore non_reactive_update
+    let homeModal: ReturnType<typeof RetirementHomeModal>;
+    // svelte-ignore non_reactive_update
+    let multiReminderModal: ReturnType<typeof MultiAppointmentReminderModal>;
     
     let fileInput: HTMLInputElement;
     let isUploading = $state(false);
@@ -93,50 +108,50 @@
             <h3 class="text-base font-bold text-neutral-900 flex items-center gap-2">
                 <span class="w-8 h-8 flex items-center justify-center bg-indigo-100 text-indigo-600 rounded-lg shadow-inner text-sm">📅</span> Termine
             </h3>
-            <button onclick={() => appointmentModal?.open({ preselectedClient: clientId })} aria-label="Termin hinzufügen" title="Neuer Termin" class="w-8 h-8 flex items-center justify-center rounded-full bg-white border border-neutral-200 text-neutral-600 hover:text-indigo-600 hover:border-indigo-200 transition-colors shadow-sm">
-                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
-            </button>
+            <div class="flex items-center gap-2">
+                <button onclick={() => multiReminderModal?.open(appointments, clientData)} aria-label="Termine bestätigen" title="Terminübersicht versenden" class="w-8 h-8 flex items-center justify-center rounded-full bg-white border border-neutral-200 text-neutral-600 hover:text-indigo-600 hover:border-indigo-200 transition-colors shadow-sm">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+                </button>
+                <button onclick={() => appointmentModal?.open({ preselectedClient: clientId })} aria-label="Termin hinzufügen" title="Neuer Termin" class="w-8 h-8 flex items-center justify-center rounded-full bg-white border border-neutral-200 text-neutral-600 hover:text-indigo-600 hover:border-indigo-200 transition-colors shadow-sm">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
+                </button>
+            </div>
         </div>
-        <div class="p-6 flex-1 max-h-80 overflow-y-auto custom-scrollbar">
+        <div class="flex-1 max-h-80 overflow-y-auto custom-scrollbar">
             {#if appointments.length === 0}
-                <div class="text-center py-6">
+                <div class="text-center py-8 px-6">
                     <p class="text-neutral-400 text-sm mb-3">Keine anstehenden Termine.</p>
-                    <button class="text-indigo-600 hover:text-indigo-800 text-sm font-bold transition-colors">Jetzt planen &rarr;</button>
+                    <button onclick={() => appointmentModal?.open({ preselectedClient: clientId })} class="text-indigo-600 hover:text-indigo-800 text-sm font-bold transition-colors">Jetzt planen &rarr;</button>
                 </div>
             {:else}
-                <ul class="space-y-4">
+                <div class="divide-y divide-neutral-100">
                     {#each appointments as app}
-                        <button type="button" onclick={() => detailModal?.open(app.id)} class="w-full text-left group flex flex-col gap-2 p-4 rounded-xl hover:bg-indigo-50/50 transition-colors border border-neutral-100 hover:border-indigo-200 cursor-pointer shadow-sm hover:shadow-md">
-                            <div class="flex items-start justify-between gap-3">
-                                <div class="flex items-start gap-2.5">
-                                    <div class="w-2.5 h-2.5 mt-1.5 rounded-full {isAppointmentBilled(app.id) ? 'bg-emerald-400' : 'bg-amber-400'} group-hover:scale-125 transition-transform shadow-sm shrink-0"></div>
-                                    <p class="text-sm font-bold text-neutral-900 leading-snug line-clamp-2">{app.description || 'Termin ohne Beschreibung'}</p>
-                                </div>
-                                {#if isAppointmentBilled(app.id)}
-                                    <span class="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-200 shrink-0">✓ Abgerechnet</span>
-                                {/if}
-                            </div>
-                            
-                            <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-neutral-600 mt-1 pl-5">
-                                <div class="flex items-center gap-1.5 font-medium">
-                                    <span class="text-sm">🕒</span>
-                                    {#if app.appointment}
-                                        {new Date(app.appointment).toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })}, {new Date(app.appointment).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr
-                                    {:else}
-                                        Kein Datum
-                                    {/if}
-                                </div>
-                                
-                                {#if app.is_private}
-                                    <div class="flex items-center gap-1 text-rose-600 font-bold">
-                                        <span>🔒</span> Privat
+                        <button type="button" onclick={() => detailModal?.open(app.id)} class="w-full text-left group flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 sm:p-5 hover:bg-indigo-50/50 transition-colors cursor-pointer">
+                            <div class="flex items-start gap-3 min-w-0 flex-1">
+                                <div class="w-2.5 h-2.5 mt-1.5 rounded-full {isAppointmentBilled(app.id) ? 'bg-emerald-400' : 'bg-amber-400'} group-hover:scale-125 transition-transform shadow-sm shrink-0"></div>
+                                <div class="min-w-0 flex-1">
+                                    <p class="text-sm font-bold text-neutral-900 leading-snug truncate">{app.description || 'Termin ohne Beschreibung'}</p>
+                                    
+                                    <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-neutral-500 mt-1">
+                                        <div class="flex items-center gap-1.5 font-medium">
+                                            <span class="text-sm leading-none">🕒</span>
+                                            {#if app.appointment}
+                                                {new Date(app.appointment).toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })}, {new Date(app.appointment).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr
+                                            {:else}
+                                                Kein Datum
+                                            {/if}
+                                        </div>
+                                        
+                                        {#if app.is_private}
+                                            <div class="flex items-center gap-1 text-rose-600 font-bold">
+                                                <span class="leading-none">🔒</span> Privat
+                                            </div>
+                                        {/if}
                                     </div>
-                                {/if}
-                            </div>
 
-                            <!-- Backtracking: Visuelle Indikatoren für verbundene Daten (expand) -->
+                                    <!-- Backtracking: Visuelle Indikatoren für verbundene Daten (expand) -->
                             {#if app.expand?.time_record || app.expand?.drive_record || app.expand?.tasks || app.expand?.expenditures}
-                                <div class="flex gap-1.5 mt-1.5 pl-5 flex-wrap">
+                                        <div class="flex gap-1.5 mt-2 flex-wrap">
                                         {#if app.expand?.time_record}
                                             <span class="text-[10px] font-bold bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-md flex items-center gap-1 shadow-sm">⏱️ Zeit</span>
                                         {/if}
@@ -151,9 +166,17 @@
                                         {/if}
                                     </div>
                                 {/if}
+                                </div>
+                            </div>
+                            
+                            {#if isAppointmentBilled(app.id)}
+                                <div class="shrink-0 self-start sm:self-center pl-5 sm:pl-0">
+                                    <span class="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-200">✓ Abgerechnet</span>
+                                </div>
+                            {/if}
                         </button>
                     {/each}
-                </ul>
+                </div>
             {/if}
         </div>
     </div>
@@ -177,7 +200,7 @@
             {:else}
                 <ul class="space-y-4">
                     {#each contacts as contact}
-                        <li class="flex items-center gap-3 p-3 rounded-xl hover:bg-neutral-50 transition-colors border border-neutral-100 cursor-pointer">
+                        <button type="button" onclick={() => contactModal?.open(contact)} class="w-full text-left flex items-center gap-3 p-3 rounded-xl hover:bg-indigo-50/50 transition-colors border border-neutral-100 hover:border-indigo-200 cursor-pointer group shadow-sm hover:shadow-md">
                             <div class="w-10 h-10 rounded-full bg-neutral-200 flex items-center justify-center text-neutral-600 font-bold text-sm shrink-0 shadow-inner">
                                 {(contact.name_first?.charAt(0) || contact.company_name?.charAt(0) || '?').toUpperCase()}
                             </div>
@@ -189,7 +212,8 @@
                                     <p class="text-xs text-neutral-500 mt-0.5 truncate">{contact.company_name}</p>
                                 {/if}
                             </div>
-                        </li>
+                            <div class="opacity-0 group-hover:opacity-100 transition-opacity text-indigo-600 px-2 text-xs font-bold uppercase tracking-wider">Details</div>
+                        </button>
                     {/each}
                 </ul>
             {/if}
@@ -215,13 +239,14 @@
             {:else}
                 <ul class="space-y-4">
                     {#each retirementHomes as home}
-                        <li class="flex items-center gap-3 p-3 rounded-xl hover:bg-neutral-50 transition-colors border border-neutral-100">
+                        <button type="button" onclick={() => homeModal?.open(home)} class="w-full text-left flex items-center gap-3 p-3 rounded-xl hover:bg-teal-50/50 transition-colors border border-neutral-100 hover:border-teal-200 cursor-pointer group shadow-sm hover:shadow-md">
                             <div class="w-10 h-10 rounded-xl bg-teal-50 flex items-center justify-center text-teal-600 font-bold text-lg shrink-0 shadow-inner">🏥</div>
                             <div class="flex-1 min-w-0">
                                 <p class="text-sm font-bold text-neutral-900 truncate">{home.name}</p>
                                 <p class="text-xs text-neutral-500 mt-0.5 truncate">{home.city}</p>
                             </div>
-                        </li>
+                            <div class="opacity-0 group-hover:opacity-100 transition-opacity text-teal-600 px-2 text-xs font-bold uppercase tracking-wider">Details</div>
+                        </button>
                     {/each}
                 </ul>
             {/if}
@@ -287,3 +312,6 @@
 <ClientLinkHomeModal bind:this={linkHomeModal} client={clientData} />
 <AppointmentModal bind:this={appointmentModal} />
 <AppointmentDetailModal bind:this={detailModal} />
+<ContactModal bind:this={contactModal} />
+<RetirementHomeModal bind:this={homeModal} />
+<MultiAppointmentReminderModal bind:this={multiReminderModal} />

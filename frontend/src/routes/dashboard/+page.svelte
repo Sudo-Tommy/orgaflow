@@ -21,7 +21,8 @@
 		return (orgaStore.appointments?.data || []).filter((app: any) => {
 			if (!app.appointment) return false;
 			const d = new Date(app.appointment);
-			return d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
+			const isToday = d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
+			return isToday && app.user === pb.authStore.model?.id;
 		}).sort((a: any, b: any) => new Date(a.appointment).getTime() - new Date(b.appointment).getTime());
 	});
 
@@ -67,7 +68,7 @@
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
             <!-- Termine -->
             <div class="orga-card-white p-6 animate-enter delay-100 flex flex-col lg:col-span-1 h-full">
-                <h2 class="text-lg font-bold text-neutral-800 mb-4 flex items-center gap-2"><span>📅</span> Heutige Termine</h2>
+                <h2 class="text-lg font-bold text-neutral-800 mb-4 flex items-center gap-2"><span>📅</span> Meine heutigen Termine</h2>
                 {#if todaysAppointments.length === 0}
                     <p class="text-neutral-500 text-sm mt-2">Heute stehen keine Termine an. Lehnen Sie sich zurück!</p>
                 {:else}
@@ -82,14 +83,16 @@
                                 </button>
                             {:else}
                                 <button type="button" onclick={() => detailModal?.open(app.id)} class="w-full text-left block p-3 rounded-xl border border-neutral-100 hover:border-indigo-300 bg-neutral-50 hover:bg-white transition-all group shadow-sm hover:shadow-md">
-                                    <div class="flex justify-between items-start mb-1">
-                                        <span class="text-xs font-bold {app.is_private ? 'text-rose-600' : 'text-indigo-600'}">{new Date(app.appointment as string).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr</span>
-                                        {#if app.expand?.client?.[0]}
-                                            <span class="text-[10px] font-bold text-neutral-600 bg-neutral-200 px-1.5 py-0.5 rounded truncate max-w-25">{app.expand.client[0].name_first} {app.expand.client[0].name_last}</span>
-                                        {/if}
-                                        {#if isSuperAdmin && app.expand?.user}
-                                            <span class="text-[10px] font-bold text-neutral-500 bg-neutral-200 border border-neutral-300 px-1.5 py-0.5 rounded truncate max-w-25 shadow-sm" title="{app.expand.user.name_first} {app.expand.user.name_last}">👤 {app.expand.user.name_first}</span>
-                                        {/if}
+                                    <div class="flex justify-between items-start mb-1 gap-2">
+                                        <span class="text-xs font-bold shrink-0 {app.is_private ? 'text-rose-600' : 'text-indigo-600'}">{new Date(app.appointment as string).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr</span>
+                                        <div class="flex items-center gap-1.5 min-w-0 justify-end text-right">
+                                            {#if isSuperAdmin && app.expand?.user}
+                                                <span class="hidden sm:inline-block text-[10px] font-bold text-neutral-500 bg-neutral-200 border border-neutral-300 px-1.5 py-0.5 rounded truncate max-w-25 shadow-sm" title="{app.expand.user.name_first} {app.expand.user.name_last}">👤 {app.expand.user.name_first}</span>
+                                            {/if}
+                                            {#if app.expand?.client?.[0]}
+                                                <span class="inline-block text-[10px] font-bold text-neutral-600 bg-neutral-200 px-1.5 py-0.5 rounded truncate max-w-32.5 sm:max-w-32" title="{app.expand.client[0].name_first} {app.expand.client[0].name_last}">{app.expand.client[0].name_first} {app.expand.client[0].name_last}</span>
+                                            {/if}
+                                        </div>
                                     </div>
                                     <p class="text-sm font-semibold text-neutral-900 truncate">{app.description || 'Termin ohne Beschreibung'}</p>
                                 </button>

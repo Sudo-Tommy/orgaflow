@@ -80,7 +80,7 @@
             // Realtime Update im Store erzwingen, um Relationen in der Ansicht live zu aktualisieren
             setTimeout(async () => {
                 const updatedApp = await pb.collection('appointments').getOne(appointment.id, { 
-                    expand: 'user,client,drive_record,time_record,tasks,expenditures', requestKey: null
+                    expand: 'user,client,drive_record,time_record,tasks,expenditures,appointment_at', requestKey: null
                 }) as any;
                 const index = orgaStore.appointments?.data.findIndex(a => a.id === appointment.id) ?? -1;
                 if (index !== -1 && orgaStore.appointments) {
@@ -109,10 +109,10 @@
         </button>
         <h2 class="text-2xl font-bold text-neutral-900 mb-6">{editId ? 'Zeit bearbeiten' : 'Zeit erfassen'}</h2>
         {#if errorMsg}<div class="bg-red-50 text-red-600 p-4 rounded-xl mb-6 text-sm font-medium border border-red-100">{errorMsg}</div>{/if}
-        <form onsubmit={onSubmit} class="space-4">
-            <div class="grid grid-cols-2 gap-4 p-2 m-2">
-                <div><label for="time-start" class="block text-sm font-semibold text-neutral-700 m-1.5 pr-1.5">Startzeit</label><input id="time-start" type="time" bind:value={startTime} class="orga-input-clear" required disabled={isLoading} /></div>
-                <div><label for="time-end" class="block text-sm font-semibold text-neutral-700 m-1.5 pr-1.5">Endzeit</label><input id="time-end" type="time" bind:value={endTime} class="orga-input-clear" disabled={isLoading} /></div>
+        <form onsubmit={onSubmit} class="space-y-4">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div><label for="time-start" class="block text-sm font-semibold text-neutral-700 mb-1.5">Startzeit</label><input id="time-start" type="time" bind:value={startTime} class="orga-input-clear py-3 sm:py-2.5" required disabled={isLoading} /></div>
+                <div><label for="time-end" class="block text-sm font-semibold text-neutral-700 mb-1.5">Endzeit</label><input id="time-end" type="time" bind:value={endTime} class="orga-input-clear py-3 sm:py-2.5" disabled={isLoading} /></div>
             </div>
             <div class="pt-4 flex flex-col-reverse sm:flex-row justify-end gap-3 border-t border-neutral-100 mt-6">
                 <button type="button" onclick={close} class="orga-button-ghost w-full sm:w-auto py-3 sm:py-2.5" disabled={isLoading}>Abbrechen</button>

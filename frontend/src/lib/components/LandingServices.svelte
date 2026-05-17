@@ -3,7 +3,7 @@
     const services = getServices();
 </script>
 
-<div id="leistungen" class="w-full max-w-6xl px-4 py-20">
+<div id="leistungen" class="w-full max-w-6xl mx-auto px-4 py-20">
     <div class="text-center mb-16">
         <h2 class="text-3xl md:text-4xl font-bold text-neutral-900 mb-4">Ihre persönliche Task-Force für den Alltag</h2>
         <p class="text-lg text-neutral-500 max-w-2xl mx-auto">Egal ob Papierkrieg, Großeinkauf oder einfach nur jemand, der zuhört (und den besten Kuchen der Stadt mitbringt). Wir passen uns voll und ganz Ihren Wünschen an.</p>

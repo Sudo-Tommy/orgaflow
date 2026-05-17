@@ -104,16 +104,21 @@ async function getUserEmailCredentials(authHeader) {
     }
 }
 
-// Reiner Auth-Check für Funktionen, die keine E-Mail benötigen (z.B. KI)
-async function authenticateUser(authHeader) {
-    if (!authHeader) throw new Error("Nicht autorisiert.");
+// Middleware zur strengen Authentifizierung via PocketBase
+async function requireAuth(req, res, next) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ error: 'Zugriff verweigert: Kein Token oder nicht eingeloggt' });
+    }
     const token = authHeader.replace('Bearer ', '');
-    const pb = new PocketBase(PB_URL);
-    pb.authStore.save(token, null);
+    const pbAuth = new PocketBase(PB_URL);
+    pbAuth.authStore.save(token, null);
     try {
-        return await pb.collection('users').authRefresh();
-    } catch (e) {
-        return await pb.collection('_superusers').authRefresh();
+        try { await pbAuth.collection('users').authRefresh(); } 
+        catch (e) { await pbAuth.collection('_superusers').authRefresh(); }
+        next();
+    } catch (err) {
+        return res.status(403).json({ error: 'Zugriff verweigert: Ungültiges oder abgelaufenes Token' });
     }
 }
 
@@ -121,7 +126,7 @@ async function authenticateUser(authHeader) {
 // --- ROUTEN ---
 
 // 1. E-Mail senden
-app.post('/api/emails/send', async (req, res) => {
+app.post('/api/emails/send', requireAuth, async (req, res) => {
     const { to, cc, bcc, subject, text, html, attachments } = req.body;
 
     try {
@@ -157,7 +162,7 @@ app.post('/api/emails/send', async (req, res) => {
 });
 
 // 2. E-Mails abrufen (Posteingang)
-app.get('/api/emails/inbox', async (req, res) => {
+app.get('/api/emails/inbox', requireAuth, async (req, res) => {
     let imapClient;
     try {
         const credentials = await getUserEmailCredentials(req.headers.authorization);
@@ -222,7 +227,7 @@ app.get('/api/emails/inbox', async (req, res) => {
 });
 
 // 3. E-Mails löschen (Massenlöschung)
-app.post('/api/emails/delete', async (req, res) => {
+app.post('/api/emails/delete', requireAuth, async (req, res) => {
     let imapClient;
     try {
         const credentials = await getUserEmailCredentials(req.headers.authorization);
@@ -262,7 +267,7 @@ app.post('/api/emails/delete', async (req, res) => {
 });
 
 // 4. E-Mail als gelesen markieren
-app.post('/api/emails/mark-read', async (req, res) => {
+app.post('/api/emails/mark-read', requireAuth, async (req, res) => {
     let imapClient;
     try {
         const credentials = await getUserEmailCredentials(req.headers.authorization);
@@ -353,14 +358,40 @@ app.post('/api/emails/portal/request-otp', async (req, res) => {
 
         console.log(`[PORTAL] Sende Code via SMTP (${smtpHost}:${smtpPort}) als ${smtpUser}...`);
         const transporter = nodemailer.createTransport({ host: smtpHost, port: smtpPort, secure: smtpPort === 465, auth: { user: smtpUser, pass: smtpPass } });
-        await transporter.sendMail({
+        
+        const subject = 'Ihr Zugangs-Code für das Portal';
+        const htmlBody = `<div style="font-family: Arial; padding: 20px;"><h2>Guten Tag ${client.name_first || ''},</h2><p>Ihr Einmal-Code für das Portal lautet: <strong><span style="font-size: 24px; color: #4f46e5; letter-spacing: 2px;">${otp}</span></strong></p><p>Dieser Code ist 15 Minuten gültig.</p></div>`;
+        const textBody = `Guten Tag ${client.name_first || ''},\n\nIhr Einmal-Code für das Portal lautet: ${otp}\n\nDieser Code ist 15 Minuten gültig.`;
+
+        const info = await transporter.sendMail({
             from: `"Klienten-Portal" <${smtpUser}>`,
             to: email,
-            subject: 'Ihr Zugangs-Code für das Portal',
-            html: `<div style="font-family: Arial; padding: 20px;"><h2>Guten Tag ${client.name_first || ''},</h2><p>Ihr Einmal-Code für das Portal lautet: <strong><span style="font-size: 24px; color: #4f46e5; letter-spacing: 2px;">${otp}</span></strong></p><p>Dieser Code ist 15 Minuten gültig.</p></div>`
+            subject: subject,
+            html: htmlBody,
+            text: textBody
         });
 
         console.log(`[PORTAL] E-Mail erfolgreich versendet!`);
+
+        // Gesendete E-Mail in der Datenbank für die Nachverfolgung speichern
+        try {
+            await pbAdmin.collection('mailbox_messages').create({
+                folder: "Sent",
+                message_id: info.messageId || `sent-otp-${Date.now()}`,
+                subject: subject,
+                from_address: smtpUser,
+                to_address: email,
+                date: new Date().toISOString(),
+                body_text: textBody,
+                body_html: htmlBody,
+                is_read: true,
+                client: client.id // Direkt mit dem Klienten verknüpfen
+            });
+            console.log(`[PORTAL] Gesendete OTP-E-Mail in der Datenbank archiviert.`);
+        } catch (dbError) {
+            console.error("[PORTAL] Fehler beim Archivieren der OTP-E-Mail:", dbError);
+        }
+
         res.json({ success: true });
     } catch (err) {
         console.error("[PORTAL] Schwerer Fehler beim Versenden:", err);
@@ -380,21 +411,52 @@ app.post('/api/emails/portal/verify-otp', (req, res) => {
     res.json({ success: true, token });
 });
 
-app.get('/api/emails/portal/invoices', async (req, res) => {
-    const token = req.headers.authorization?.replace('Bearer ', '');
-    const session = sessionStore.get(token);
+// Helper: Portal-Auth validieren (Erlaubt OTP-Session ODER PocketBase Admin-Token)
+async function resolvePortalAuth(authHeader) {
+    if (!authHeader) return null;
+    const token = authHeader.replace('Bearer ', '');
     
-    if (!session || session.expires < Date.now()) return res.status(401).json({ error: "Session abgelaufen. Bitte neu anmelden." });
+    // 1. Ist es eine Klienten-Session?
+    const session = sessionStore.get(token);
+    if (session && session.expires >= Date.now()) {
+        return { type: 'client', clientId: session.clientId };
+    }
+
+    // 2. Ist es ein PocketBase-Token (Admin-Modus)?
+    const pbAuth = new PocketBase(PB_URL);
+    pbAuth.authStore.save(token, null);
     
     try {
-        const pbAdmin = await getAdminPb();
+        await pbAuth.collection('_superusers').authRefresh();
+        return { type: 'admin', pb: pbAuth };
+    } catch(e) {
+        try {
+            const authData = await pbAuth.collection('users').authRefresh();
+            const role = authData.record?.role;
+            if (role === 'superadmin' || role === 'admin') return { type: 'admin', pb: pbAuth };
+        } catch(err) {}
+    }
+    return null;
+}
+
+app.get('/api/emails/portal/invoices', async (req, res) => {
+    const auth = await resolvePortalAuth(req.headers.authorization);
+    if (!auth) return res.status(401).json({ error: "Session abgelaufen oder ungültig. Bitte neu anmelden." });
+    
+    try {
+        const pbAdmin = auth.pb || await getAdminPb();
+        
+        let filterStr = `(status = "Eingereicht" || status = "Abgeschlossen" || status = "In Bearbeitung")`;
+        if (auth.type === 'client') filterStr = `(client = "${auth.clientId}" || client ?= "${auth.clientId}") && ${filterStr}`;
+        
         const invoices = await pbAdmin.collection('invoices').getFullList({
-            filter: `(client = "${session.clientId}" || client ?= "${session.clientId}") && (status = "Eingereicht" || status = "Abgeschlossen" || status = "In Bearbeitung")`,
+            filter: filterStr,
             sort: '-issue_date', requestKey: null
         });
 
         // PocketBase File-Token erzeugen, damit der Klient die PDF ohne PB-Account herunterladen darf!
-        const fileToken = await pbAdmin.files.getToken();
+        let fileToken = '';
+        try { fileToken = await pbAdmin.files.getToken(); } catch(e) {}
         
         const mappedInvoices = invoices.map(inv => {
             const pdfs = Array.isArray(inv.pdf) ? inv.pdf : (inv.pdf ? [inv.pdf] : []);
@@ -407,36 +469,59 @@ app.get('/api/emails/portal/invoices', async (req, res) => {
 
         res.json({ success: true, invoices: mappedInvoices });
     } catch (err) {
-        res.status(500).json({ error: "Rechnungen konnten nicht geladen werden." });
+        console.error("[PORTAL INVOICES]", err);
+        res.status(500).json({ error: "Rechnungen konnten nicht geladen werden: " + err.message });
     }
 });
 
-    // --- NEU: Termine für das Klienten-Portal abrufen ---
-    app.get(['/api/emails/portal/appointments', '/portal/appointments', '/appointments'], async (req, res) => {
-        const token = req.headers.authorization?.replace('Bearer ', '');
-        const session = sessionStore.get(token);
+// --- Termine für das Klienten-Portal abrufen ---
+app.get(['/api/emails/portal/appointments', '/portal/appointments', '/appointments'], async (req, res) => {
+    const auth = await resolvePortalAuth(req.headers.authorization);
+    if (!auth) return res.status(401).json({ error: "Session abgelaufen oder ungültig. Bitte neu anmelden." });
+    
+    try {
+        const pbAdmin = auth.pb || await getAdminPb();
         
-        if (!session || session.expires < Date.now()) return res.status(401).json({ error: "Session abgelaufen. Bitte neu anmelden." });
+        // Termine ab gestern laden (damit auch frische, vergangene Termine angezeigt werden)
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
         
-        try {
-            const pbAdmin = await getAdminPb();
-            
-            // Termine ab gestern laden (damit auch frische, vergangene Termine angezeigt werden)
-            const yesterday = new Date();
-            yesterday.setDate(yesterday.getDate() - 1);
-            
-            const appointments = await pbAdmin.collection('appointments').getFullList({
-                filter: `(client = "${session.clientId}" || client ?= "${session.clientId}") && appointment >= "${yesterday.toISOString()}"`,
-                sort: 'appointment',
-                requestKey: null
-            });
-            
-            res.json({ success: true, appointments });
-        } catch (err) {
-            console.error("[PORTAL] Fehler beim Laden der Termine:", err);
-            res.status(500).json({ error: "Fehler beim Laden der Termine." });
+        let filterStr = `appointment >= "${yesterday.toISOString()}"`;
+        
+        if (auth.type === 'client') {
+            filterStr = `(client = "${auth.clientId}" || client ?= "${auth.clientId}") && ${filterStr}`;
+        } else if (auth.type === 'admin' && req.query.client_id) {
+            // Superadmin-Filter: Zeige nur Termine des ausgewählten Klienten
+            filterStr = `(client = "${req.query.client_id}" || client ?= "${req.query.client_id}") && ${filterStr}`;
         }
-    });
+        
+        const appointments = await pbAdmin.collection('appointments').getFullList({
+            filter: filterStr,
+            sort: 'appointment',
+            expand: 'user,time_record,drive_record,tasks,expenditures',
+            requestKey: null
+        });
+        
+        res.json({ success: true, appointments });
+    } catch (err) {
+        console.error("[PORTAL APPOINTMENTS] Fehler beim Laden der Termine:", err);
+        res.status(500).json({ error: "Fehler beim Laden der Termine: " + err.message });
+    }
+});
+
+// --- Klienten-Liste für den Admin im Portal abrufen ---
+app.get(['/api/emails/portal/clients', '/portal/clients'], async (req, res) => {
+    const auth = await resolvePortalAuth(req.headers.authorization);
+    if (!auth || auth.type !== 'admin') return res.status(403).json({ error: "Nur für Administratoren zugänglich." });
+    
+    try {
+        const pbAdmin = auth.pb || await getAdminPb();
+        const clients = await pbAdmin.collection('clients').getFullList({ sort: 'name_first', requestKey: null });
+        res.json({ success: true, clients: clients.map(c => ({ id: c.id, name_first: c.name_first, name_last: c.name_last })) });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
 
 // Benachrichtigung an Admin bei neuer Terminanfrage
 app.post('/api/emails/portal/notify-request', async (req, res) => {
@@ -454,11 +539,8 @@ app.post('/api/emails/portal/notify-request', async (req, res) => {
 
         const transporter = nodemailer.createTransport({ host: smtpHost, port: smtpPort, secure: smtpPort === 465, auth: { user: smtpUser, pass: smtpPass } });
         
-        await transporter.sendMail({
-            from: `"OrgaFlow System" <${smtpUser}>`,
-            to: "info@ihre-seniorenassistenz.com",
-            subject: `Neue Terminanfrage von ${name || 'Unbekannt'}`,
-            html: `
+        const subject = `Neue Terminanfrage von ${name || 'Unbekannt'}`;
+        const htmlBody = `
                 <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
                     <h2 style="color: #c66a4d;">Neue Terminanfrage eingegangen</h2>
                     <div style="background-color: #f9f9f9; padding: 15px; border-radius: 8px; margin-top: 20px; border: 1px solid #eee;">
@@ -475,10 +557,38 @@ app.post('/api/emails/portal/notify-request', async (req, res) => {
                         Diese E-Mail wurde automatisch vom OrgaFlow System generiert. Sie finden die Anfrage in Ihrem Dashboard.
                     </p>
                 </div>
-            `
+            `;
+        const textBody = `Neue Terminanfrage eingegangen\n-----------------------------\nName: ${name}\nE-Mail: ${email || '-'}\nTelefon: ${phone || '-'}\nStandort: ${companyName || '-'}\nWunschdatum: ${date || '-'}\nUhrzeit: ${time || '-'}\n\nAnliegen:\n${requestText || ''}\n\n-----------------------------\nDiese E-Mail wurde automatisch vom OrgaFlow System generiert.`;
+
+        const info = await transporter.sendMail({
+            from: `"OrgaFlow System" <${smtpUser}>`,
+            to: "info@ihre-seniorenassistenz.com",
+            subject: subject,
+            html: htmlBody,
+            text: textBody
         });
 
         console.log(`[PORTAL] E-Mail-Benachrichtigung für neue Terminanfrage gesendet.`);
+
+        // Gesendete E-Mail in der Datenbank für die Nachverfolgung speichern
+        try {
+            const pbAdmin = await getAdminPb();
+            await pbAdmin.collection('mailbox_messages').create({
+                folder: "Sent",
+                message_id: info.messageId || `sent-notify-${Date.now()}`,
+                subject: subject,
+                from_address: smtpUser,
+                to_address: "info@ihre-seniorenassistenz.com",
+                date: new Date().toISOString(),
+                body_text: textBody,
+                body_html: htmlBody,
+                is_read: true
+            });
+            console.log(`[PORTAL] Gesendete Benachrichtigungs-E-Mail in der Datenbank archiviert.`);
+        } catch (dbError) {
+            console.error("[PORTAL] Fehler beim Archivieren der gesendeten E-Mail:", dbError);
+        }
+
         res.json({ success: true });
         
         // --- PUSH BENACHRICHTIGUNG AN ALLE ADMINS ---
@@ -513,35 +623,86 @@ app.post('/api/emails/portal/notify-request', async (req, res) => {
 });
 
 // KI Sprachnotiz-Transkription (Gemini 1.5 Flash)
-app.post('/api/emails/ai/transcribe', async (req, res) => {
+app.post('/api/emails/ai/transcribe', requireAuth, async (req, res) => { // Behält den Namen für Kompatibilität
     try {
-        await authenticateUser(req.headers.authorization); // Absichern!
-
-        const { audioBase64, mimeType } = req.body;
-        if (!audioBase64) return res.status(400).json({ error: "Kein Audio gesendet." });
+        const { audioBase64, mimeType, prompt: customPrompt, inputText } = req.body;
+        if (!audioBase64 && !inputText) return res.status(400).json({ error: "Kein Audio oder Text gesendet." });
         if (!process.env.GEMINI_API_KEY) return res.status(500).json({ error: "Gemini API Key fehlt im Server." });
 
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
         
-        // Wir erzwingen die stabile 'v1' API, da 'v1beta' oft den 404 Fehler wirft
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" }, { apiVersion: "v1" });
+        // HINWEIS: 'gemini-1.5-flash-latest' ist das korrekte, aktuelle Modell. 'gemini-3-flash-preview' existiert nicht.
+        const model = genAI.getGenerativeModel({ model: "gemini-3.1-flash-lite" });
 
-        const prompt = "Du bist ein professioneller Assistent in der Seniorenbetreuung. Höre dir das folgende Diktat an und erstelle daraus einen sachlichen, gut lesbaren Pflege- bzw. Besuchsbericht. Entferne Füllwörter (wie 'Ähm'), korrigiere Grammatikfehler und strukturiere den Text sinnvoll (z.B. mit Absätzen oder kurzen Stichpunkten). Bleibe beim 'Sie', wenn über den Klienten gesprochen wird. Schreibe KEINE Einleitung wie 'Hier ist der Bericht', sondern gib mir direkt nur den fertigen Text.";
+        const defaultPrompt = "Du bist ein professioneller Assistent in der Seniorenbetreuung. Erstelle aus den folgenden Notizen/dem Diktat einen sachlichen, gut lesbaren Pflege- bzw. Besuchsbericht. Entferne Füllwörter, korrigiere Grammatikfehler und strukturiere den Text sinnvoll (z.B. mit Absätzen oder kurzen Stichpunkten). Bleibe beim 'Sie', wenn über den Klienten gesprochen wird. Schreibe KEINE Einleitung wie 'Hier ist der Bericht', sondern gib mir direkt nur den fertigen Text.";
+        
+        const promptToUse = customPrompt || defaultPrompt;
 
-        const result = await model.generateContent([
-            prompt,
-            {
+        const contentParts = [promptToUse];
+
+        if (inputText) {
+            contentParts.push(inputText);
+        } else if (audioBase64) {
+            contentParts.push({
                 inlineData: {
                     mimeType: mimeType || "audio/webm",
                     data: audioBase64
                 }
-            }
-        ]);
+            });
+        }
+
+        const result = await model.generateContent(contentParts);
 
         res.json({ success: true, text: result.response.text() });
     } catch (error) {
         console.error("[KI] Fehler:", error);
         res.status(500).json({ error: "Fehler bei der KI-Generierung: " + error.message });
+    }
+});
+
+// KI Kassenbon/Rechnung-Scanner (Gemini Vision)
+app.post('/api/emails/ai/receipt', requireAuth, async (req, res) => {
+    try {
+        const { imageBase64, mimeType } = req.body;
+        
+        if (!imageBase64) return res.status(400).json({ error: "Kein Bild übergeben." });
+        if (!process.env.GEMINI_API_KEY) return res.status(500).json({ error: "Gemini API Key fehlt im Server." });
+
+        const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+        // HINWEIS: gemini-3.1-flash-lite ist das aktuelle, leistungsfähige Modell für Vision-Aufgaben. 'gemini-3-flash-preview' existiert nicht.
+        const model = genAI.getGenerativeModel({ model: "gemini-3.1-flash-lite" });
+
+        const prompt = `Analysiere diesen Kassenbon/Rechnung und extrahiere die wichtigsten Daten.
+Antworte AUSSCHLIESSLICH mit einem gültigen JSON-Objekt. Verwende KEINE Markdown-Blöcke (kein \`\`\`json).
+Nutze exakt dieses Format:
+{
+  "title": "Kurzer Zweck der Ausgabe (z.B. Büromaterial, Tanken)",
+  "supplier": "Name des Geschäfts oder Ausstellers (z.B. Aral, MediaMarkt, Adobe)",
+  "amount": "Der Brutto-Endbetrag als reine Zahl (z.B. 14.50)",
+  "netto": "Der Netto-Betrag als reine Zahl (z.B. 12.18, falls ausgewiesen)",
+  "tax_sum": "Die enthaltene Steuer als reine Zahl (z.B. 2.32, falls ausgewiesen)",
+  "tax_rate": "Der angewandte Steuersatz als reine Zahl (z.B. 19 oder 7)",
+  "invoice_nr": "Rechnungsnummer oder Belegnummer (falls vorhanden, sonst leer)",
+  "date": "Das Datum auf dem Beleg im Format YYYY-MM-DD",
+  "category": "Ordne es zwingend EINER dieser Kategorien zu: 'Miete / Büro', 'Software / IT', 'Marketing', 'Fahrzeuge', 'Personal', oder 'Sonstiges'",
+  "is_installment": true/false,
+  "installment_current": "Die wievielte Rate es ist (z.B. 3, falls '3/12' oder '3. Rate' draufsteht)",
+  "installment_total_count": "Die Gesamtanzahl der Raten (z.B. 12, falls '3/12' draufsteht)",
+  "installment_total_amount": "Die Gesamtsumme der Anschaffung, falls es eine Ratenzahlung ist und diese auf dem Beleg ersichtlich ist (z.B. 1200.00)"
+}`;
+
+        const imagePart = { inlineData: { data: imageBase64, mimeType: mimeType || 'image/jpeg' } };
+
+        const result = await model.generateContent([prompt, imagePart]);
+        const responseText = result.response.text();
+        
+        // JSON extrem sicher parsen (falls die KI Text VOR dem JSON sendet)
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        const cleanJson = jsonMatch ? jsonMatch[0] : responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+        res.json(JSON.parse(cleanJson));
+    } catch (error) {
+        console.error("[KI Receipt] Fehler:", error);
+        res.status(500).json({ error: "KI Fehler: " + (error.message || "Unbekannter Fehler") });
     }
 });
 
@@ -553,9 +714,8 @@ app.post([
     '/api/push/send', 
     '/api/emails/push/send', 
     '/push/send'
-], async (req, res) => {
+], requireAuth, async (req, res) => {
     try {
-        await authenticateUser(req.headers.authorization); // Nur eingeloggte Nutzer
         const { userId, title, body, url } = req.body;
         
         if (!userId || !title) return res.status(400).json({ error: "Fehlende Parameter." });

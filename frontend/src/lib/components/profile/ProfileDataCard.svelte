@@ -13,8 +13,51 @@
     function handleFileChange(e: Event) {
         const target = e.target as HTMLInputElement;
         if (target.files && target.files.length > 0) {
-            avatarFile = target.files[0];
-            deleteAvatar = false;
+            const file = target.files[0];
+            
+            // Bild automatisch verkleinern, da Handy-Fotos meist zu groß für Server-Limits sind
+            if (file.type.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        const MAX_SIZE = 1600; // Auflösung für maximale Schärfe (Retina/4K) verdoppelt
+                        let width = img.width;
+                        let height = img.height;
+
+                        if (width > height && width > MAX_SIZE) {
+                            height *= MAX_SIZE / width;
+                            width = MAX_SIZE;
+                        } else if (height > MAX_SIZE) {
+                            width *= MAX_SIZE / height;
+                            height = MAX_SIZE;
+                        }
+
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        if (ctx) {
+                            ctx.imageSmoothingEnabled = true;
+                            ctx.imageSmoothingQuality = 'high';
+                            ctx.drawImage(img, 0, 0, width, height);
+                        }
+                        
+                        canvas.toBlob((blob) => {
+                            if (blob) {
+                                const newFileName = file.name.replace(/\.[^/.]+$/, "") + ".jpg";
+                                avatarFile = new File([blob], newFileName, { type: 'image/jpeg' });
+                                deleteAvatar = false;
+                            }
+                        }, 'image/jpeg', 0.95); // Nahezu verlustfreie Qualität
+                    };
+                    img.src = event.target?.result as string;
+                };
+                reader.readAsDataURL(file);
+            } else {
+                avatarFile = file;
+                deleteAvatar = false;
+            }
         } else {
             avatarFile = null;
         }

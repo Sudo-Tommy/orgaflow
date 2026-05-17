@@ -20,7 +20,7 @@
 </svelte:head>
 
 <!-- Die Toolbar und das Layout brechen hier bewusst aus dem normalen orga-layout aus, um Fullscreen zu sein -->
-<div class="fixed inset-0 z-50 bg-[#F8F9FA] flex flex-col font-sans">
+<div class="fixed inset-0 z-50 bg-[#F8F9FA] flex flex-row font-sans">
     <EditorTopBar 
         bind:title={editor.title} 
         bind:type={editor.type}
@@ -29,7 +29,7 @@
         onSave={editor.save} 
         onAdd={editor.addField}
     />
-    <div class="flex-1 flex overflow-hidden">
+    <div class="flex-1 flex overflow-hidden relative">
         <EditorCanvas 
             fields={editor.fields} 
             bind:selectedFieldId={editor.selectedFieldId}

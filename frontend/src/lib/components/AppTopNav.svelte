@@ -18,6 +18,7 @@
 
 	let currentPath = $derived($page.url.pathname);
 	let isMobileMenuOpen = $state(false);
+	let isDarkMode = $state(false);
 
 	function toggleMenu() {
 		isMobileMenuOpen = !isMobileMenuOpen;
@@ -51,6 +52,16 @@
 			}
 		}
 	}
+
+	// Beobachtet den Dark-Mode-Status
+	$effect(() => {
+		isDarkMode = document.documentElement.classList.contains('theme-negative');
+		const observer = new MutationObserver(() => {
+			isDarkMode = document.documentElement.classList.contains('theme-negative');
+		});
+		observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+		return () => observer.disconnect();
+	});
 
 	onMount(() => {
 		// Initialer Ladevorgang für Badge-Counts im Hintergrund
@@ -88,14 +99,38 @@
 		window.removeEventListener('online', handleResume);
 	});
 
+	function toggleTheme() {
+		const newTheme = isDarkMode ? 'light' : 'dark';
+		localStorage.setItem('theme_preference', newTheme);
+		window.dispatchEvent(new Event('theme-changed'));
+	}
+
 	let unreadMails = $derived(mailboxService.totalUnread || 0);
 	let pendingRequests = $derived(reqAdmin.requests.filter(r => r.status === 'requested').length);
 	let totalNotifications = $derived(unreadMails + pendingRequests + (updateStore.hasUnread ? 1 : 0));
 
 	let prevUnread = $state(-1);
 	let prevPending = $state(-1);
-	let prevTotal = $state(-1);
-	let isBlinking = $state(true); // Aktiviert das Pulsieren bei neuen Benachrichtigungen
+	let hasNewNotifications = $state(false);
+
+	// Persistenter Speicher für bereits "gesehene" (quittierte) Benachrichtigungen
+	let ackData = $state({ mails: 0, reqs: 0, updates: false });
+	if (typeof localStorage !== 'undefined') {
+		try {
+			const stored = localStorage.getItem('orga_ack_data');
+			if (stored) ackData = JSON.parse(stored);
+		} catch(e) {}
+	}
+
+	function toggleNotifications() {
+		isNotificationsOpen = !isNotificationsOpen;
+		if (isNotificationsOpen) {
+			// Wenn geöffnet wird, quittieren wir den aktuellen Stand als "gesehen"
+			ackData = { mails: unreadMails, reqs: pendingRequests, updates: updateStore.hasUnread };
+			if (typeof localStorage !== 'undefined') localStorage.setItem('orga_ack_data', JSON.stringify(ackData));
+			hasNewNotifications = false;
+		}
+	}
 
 	$effect(() => {
 		if (prevUnread !== -1 && unreadMails > prevUnread) {
@@ -124,13 +159,18 @@
 		}
 		prevPending = pendingRequests;
 
-		// Prüft, ob die GESAMT-Zahl der Benachrichtigungen gestiegen ist
-		if (prevTotal !== -1 && totalNotifications > prevTotal) {
-			isBlinking = true;
-		}
-		if (totalNotifications === 0) isBlinking = false;
-		
-		prevTotal = totalNotifications;
+		// Basislinie nach unten korrigieren (z.B. wenn eine Mail gelesen/gelöscht wurde)
+		if (unreadMails < ackData.mails) ackData.mails = unreadMails;
+		if (pendingRequests < ackData.reqs) ackData.reqs = pendingRequests;
+		if (!updateStore.hasUnread) ackData.updates = false;
+
+		// Gibt es ECHTE neue Benachrichtigungen, die unsere Basislinie übersteigen?
+		hasNewNotifications = 
+			unreadMails > ackData.mails || 
+			pendingRequests > ackData.reqs || 
+			(updateStore.hasUnread && !ackData.updates);
+			
+		if (typeof localStorage !== 'undefined') localStorage.setItem('orga_ack_data', JSON.stringify(ackData));
 	});
 </script>
 
@@ -161,21 +201,29 @@
 		</div>
 		
 		<div class="flex items-center gap-2 sm:gap-4">
+			<!-- Theme Toggle -->
+			<button 
+				class="hidden md:flex p-2 text-neutral-500 hover:text-indigo-600 transition-colors relative rounded-full hover:bg-neutral-100 outline-none items-center justify-center"
+				onclick={toggleTheme}
+				aria-label="Tag/Nacht Modus"
+				title="Tag/Nacht Modus umschalten"
+			>
+				<span class="text-xl leading-none">{isDarkMode ? '☀️' : '🌙'}</span>
+			</button>
+
 			<!-- Benachrichtigungs-Glocke -->
 			<div class="relative flex items-center">
 				<button 
 					class="p-2 text-neutral-500 hover:text-indigo-600 transition-colors relative rounded-full hover:bg-neutral-100 outline-none"
-					onclick={() => { isNotificationsOpen = !isNotificationsOpen; if (isNotificationsOpen) isBlinking = false; }}
+					onclick={toggleNotifications}
 					aria-label="Benachrichtigungen"
 				>
 					<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
 					</svg>
-					{#if totalNotifications > 0}
+					{#if hasNewNotifications}
 						<span class="absolute top-1.5 right-1.5 flex h-2.5 w-2.5">
-							{#if isBlinking}
-								<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-							{/if}
+							<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
 							<span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500"></span>
 						</span>
 					{/if}
@@ -262,6 +310,15 @@
 						<span class="truncate w-full mt-1">{item.label}</span>
 					</a>
 				{/each}
+
+			<!-- Mobile Theme Toggle -->
+			<button
+				class="flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl transition-all font-semibold text-[10px] sm:text-xs text-center text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900 border border-transparent"
+				onclick={() => { toggleTheme(); isMobileMenuOpen = false; }}
+			>
+				<span class="w-6 h-6 shrink-0 opacity-70 flex items-center justify-center text-lg leading-none">{isDarkMode ? '☀️' : '🌙'}</span>
+				<span class="truncate w-full mt-1">{isDarkMode ? 'Tag-Modus' : 'Nacht-Modus'}</span>
+			</button>
 			</div>
 		</nav>
 	{/if}

@@ -37,7 +37,13 @@
             {#if isSuperAdmin && !isEditing}
                 <button onclick={() => {
                     editId = null;
-                    editNumber = "";
+                    
+                    let nextNum = "1.0.0";
+                    if (updateStore.updates.length > 0 && updateStore.updates[0].number) {
+                        nextNum = updateStore.updates[0].number.toString().replace(/(\d+)(?!.*\d)/, (match: string) => (parseInt(match, 10) + 1).toString());
+                    }
+                    editNumber = nextNum;
+                    
                     editDate = new Date().toISOString().split('T')[0];
                     editText = "";
                     isEditing = true;

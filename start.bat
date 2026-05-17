@@ -1,5 +1,9 @@
 @echo off
 setlocal EnableDelayedExpansion
+
+:: Interne Sub-Prozesse abfangen (Wird fuer den Traffic-Monitor genutzt)
+if "%~1"=="TRAFFIC_MONITOR_PROC" goto traffic_monitor_loop
+
 title OrgaFlow - Server Management Tool
 
 :: --- CONFIGURATION ---
@@ -12,9 +16,8 @@ set "NGINX_DIR=S:\nginx-1.30.0"
 cd /d "%PROJECT_ROOT%"
 
 :: --- INIT VERSION ---
-if not exist "%VERSION_FILE%" echo 0 > "%VERSION_FILE%"
-set /p BUILD_VER=<"%VERSION_FILE%"
-set "APP_VERSION=1.0.!BUILD_VER!"
+if not exist "%VERSION_FILE%" > "%VERSION_FILE%" echo 1.0.0
+set /p APP_VERSION=<"%VERSION_FILE%"
 
 :menu
 cls
@@ -25,6 +28,8 @@ echo.
 echo  [ DEV MODUS ]
 echo   1) DEV-Modus STARTEN (Backend + Svelte + Mailer)
 echo   2) DEV-Modus BEENDEN
+echo   D1) Nur Svelte Dev-Server zuschalten (Live-Test)
+echo   D2) Svelte Dev-Server beenden
 echo.
 echo  [ LIVE MODUS ]
 echo   3) LIVE-Modus STARTEN (pb_public + Mailer + Nginx)
@@ -42,6 +47,8 @@ echo.
 echo  [ SYSTEM ]
 echo   B) 1:1 Projekt-Backup erstellen (Mirror)
 echo   V) Version manuell erhoehen
+echo   R) Windows Ressourcenmonitor (Live-Graphen) oeffnen
+echo   T) Traffic ^& Connection Monitor oeffnen
 echo   X) ALLE Server beenden (Not-Aus)
 echo.
 echo  [ NGINX STEUERUNG ]
@@ -54,6 +61,8 @@ set /p choice="Waehle eine Option: "
 
 if "%choice%"=="1" goto start_dev
 if "%choice%"=="2" goto stop_dev
+if /i "%choice%"=="D1" goto start_svelte_dev
+if /i "%choice%"=="D2" goto stop_svelte_dev
 if "%choice%"=="3" goto start_live
 if "%choice%"=="4" goto stop_live
 if "%choice%"=="5" goto build
@@ -62,6 +71,8 @@ if "%choice%"=="7" goto update_pb
 if "%choice%"=="8" goto update_front
 if "%choice%"=="9" goto update_micro
 if /i "%choice%"=="B" goto backup
+if /i "%choice%"=="R" goto resmon
+if /i "%choice%"=="T" goto traffic_monitor
 if /i "%choice%"=="V" goto bump_version
 if /i "%choice%"=="X" goto kill_all
 if /i "%choice%"=="N1" goto nginx_start
@@ -87,6 +98,18 @@ taskkill /F /FI "WINDOWTITLE eq PocketBase Backend*" /T >nul 2>&1
 taskkill /F /FI "WINDOWTITLE eq Email Microservice*" /T >nul 2>&1
 taskkill /F /FI "WINDOWTITLE eq SvelteKit Frontend*" /T >nul 2>&1
 echo DEV-Server erfolgreich beendet!
+pause
+goto menu
+
+:start_svelte_dev
+echo Starte SvelteKit Frontend im Dev-Modus...
+start "SvelteKit Frontend" cmd /k "cd frontend && npm run dev -- --host --open"
+goto menu
+
+:stop_svelte_dev
+echo Beende SvelteKit Frontend (Dev)...
+taskkill /F /FI "WINDOWTITLE eq SvelteKit Frontend*" /T >nul 2>&1
+echo Frontend Dev-Server beendet!
 pause
 goto menu
 
@@ -183,7 +206,7 @@ cd /d "%PROJECT_ROOT%frontend" && call npm update
 echo [3/3] Microservice Update...
 cd /d "%PROJECT_ROOT%microservice" && call npm update
 cd /d "%PROJECT_ROOT%"
-call :increment_version
+call :set_version
 echo ==========================================
 echo Alle Updates abgeschlossen!
 pause
@@ -223,18 +246,34 @@ echo Backup erfolgreich gespeichert!
 pause
 goto menu
 
+:resmon
+echo Oeffne Windows Ressourcenmonitor...
+start resmon.exe
+goto menu
+
+:traffic_monitor
+echo Oeffne Traffic Monitor in neuem Fenster...
+start "OrgaFlow Traffic Monitor" "%~f0" TRAFFIC_MONITOR_PROC
+goto menu
+
 :bump_version
-call :increment_version
+call :set_version
 pause
 goto menu
 
-:increment_version
-set /a BUILD_VER+=1
-echo !BUILD_VER! > "%VERSION_FILE%"
-:: Kopiere die version.txt direkt in den statischen Frontend-Ordner, damit Svelte sie ueber /version.txt laden kann
-copy /Y "%VERSION_FILE%" "%PROJECT_ROOT%frontend\static\version.txt" >nul
-set "APP_VERSION=1.0.!BUILD_VER!"
-echo Version wurde auf !APP_VERSION! erhoeht!
+:set_version
+echo.
+echo Aktuelle Version: !APP_VERSION!
+set /p NEW_VERSION="Gib die neue Versionsnummer ein (z.B. 1.0.2 oder 2.0 Beta, leer lassen fuer keine Aenderung): "
+if not "!NEW_VERSION!"=="" (
+    set "APP_VERSION=!NEW_VERSION!"
+    > "%VERSION_FILE%" echo !APP_VERSION!
+    :: Kopiere die version.txt direkt in den statischen Frontend-Ordner, damit Svelte sie ueber /version.txt laden kann
+    copy /Y "%VERSION_FILE%" "%PROJECT_ROOT%frontend\static\version.txt" >nul
+    echo Version wurde auf !APP_VERSION! geaendert!
+) else (
+    echo Version wurde nicht geaendert.
+)
 exit /b
 
 :nginx_start
@@ -242,6 +281,36 @@ echo Starte Nginx...
 cd /d "%NGINX_DIR%" && start nginx.exe
 cd /d "%PROJECT_ROOT%"
 goto menu
+
+:: --- Sub-Prozess fuer den Traffic Monitor ---
+:traffic_monitor_loop
+title OrgaFlow Traffic Monitor
+color 0A
+mode con: cols=85 lines=35
+:loop
+cls
+echo =================================================================================
+echo                      ORGAFLOW TRAFFIC ^& SYSTEM MONITOR (Live)
+echo =================================================================================
+echo.
+echo   [ NETZWERK TRAFFIC (Gesamt in Bytes: Empfangen / Gesendet) ]
+echo   -----------------------------------------------------------------------------
+netstat -e | findstr /i "bytes"
+echo.
+echo   [ AKTIVE SERVER-VERBINDUNGEN (Port 80, 443, 8090, 3000) ]
+echo   -----------------------------------------------------------------------------
+netstat -ano | findstr /R ":80\> :443\> :8090\> :3000\>"
+echo.
+echo   [ RESSOURCEN-VERBRAUCH (Arbeitsspeicher ^& Prozess-IDs) ]
+echo   -----------------------------------------------------------------------------
+tasklist /FI "IMAGENAME eq nginx.exe" /NH 2>nul
+tasklist /FI "IMAGENAME eq pocketbase.exe" /NH 2>nul
+tasklist /FI "IMAGENAME eq node.exe" /NH 2>nul
+echo.
+echo =================================================================================
+echo Aktualisiert alle 3 Sekunden... (Fenster schliessen zum Beenden)
+timeout /t 3 >nul
+goto loop
 
 :nginx_reload
 echo Lade Nginx Konfiguration neu...

@@ -1,6 +1,7 @@
 <script lang="ts">
     import { goto } from "$app/navigation";
     import { onMount } from "svelte";
+    import { pb } from "$lib/services/pocketbase";
 
     let step = $state<"email" | "otp">("email");
     let email = $state("");
@@ -8,6 +9,8 @@
     let isLoading = $state(false);
     let errorMsg = $state("");
     let successMsg = $state("");
+
+    let isSuperAdmin = $derived(pb.authStore.isSuperuser || pb.authStore.model?.role === 'superadmin' || pb.authStore.model?.role === 'admin');
 
     // Dynamischer API-Wächter: Lokal rufen wir direkt die originale /portal Route am Microservice ab. 
     // Auf dem Live-Server nutzen wir den /api/emails/ Prefix, damit Nginx die Anfrage sicher durchlässt.
@@ -74,6 +77,12 @@
             isLoading = false;
         }
     }
+
+    function enterAsAdmin() {
+        localStorage.setItem('portal_token', pb.authStore.token);
+        localStorage.setItem('portal_admin_mode', 'true');
+        goto('/portal/invoices');
+    }
 </script>
 
 <svelte:head><title>Login - Klienten-Portal</title></svelte:head>
@@ -124,7 +133,13 @@
         {/if}
     </div>
     
-    <div class="mt-8 text-center">
+    <div class="mt-8 text-center flex flex-col gap-4">
         <p class="text-xs text-neutral-400 font-medium">Aus Datenschutzgründen nutzen wir ein sicheres, passwortloses Login-Verfahren. Sie erhalten bei jeder Anmeldung einen einmaligen Code per E-Mail.</p>
+        
+        {#if isSuperAdmin}
+            <button type="button" onclick={enterAsAdmin} class="mx-auto w-fit px-4 py-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-lg text-xs font-bold transition-colors border border-indigo-200 shadow-sm flex items-center gap-2">
+                <span>🛡️</span> Als Admin testweise betreten
+            </button>
+        {/if}
     </div>
 </div>

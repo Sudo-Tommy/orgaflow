@@ -1,29 +1,32 @@
 <script lang="ts">
-	import LandingHeader from "$lib/components/LandingHeader.svelte";
-	import LandingHero from "$lib/components/LandingHero.svelte";
-	import LandingServices from "$lib/components/LandingServices.svelte";
-	import LandingProcess from "$lib/components/LandingProcess.svelte";
-	import LandingQuality from "$lib/components/LandingQuality.svelte";
-	import LandingCooperation from "$lib/components/LandingCooperation.svelte";
-	import LandingTeam from "$lib/components/LandingTeam.svelte";
-	import LandingFaq from "$lib/components/LandingFaq.svelte";
-	import LandingAppointmentForm from "$lib/components/LandingAppointmentForm.svelte";
-	import LandingFooter from "$lib/components/LandingFooter.svelte";
+    import LandingHeader from '$lib/components/LandingHeader.svelte';
+    import LandingHero from '$lib/components/LandingHero.svelte';
+    import LandingServices from '$lib/components/LandingServices.svelte';
+    import LandingProcess from '$lib/components/LandingProcess.svelte';
+    import LandingTeam from '$lib/components/LandingTeam.svelte';
+    import LandingCooperation from '$lib/components/LandingCooperation.svelte';
+    import LandingQuality from '$lib/components/LandingQuality.svelte';
+    import LandingFaq from '$lib/components/LandingFaq.svelte';
+    import LandingAppointmentForm from '$lib/components/LandingAppointmentForm.svelte';
+    import LandingFooter from '$lib/components/LandingFooter.svelte';
 </script>
 
-<div class="orga-layout-wrapper text-neutral-900">
-	<LandingHeader />
-	
-	<main class="flex-1 flex flex-col items-center w-full">
-		<LandingHero />
-		<LandingServices />
-		<LandingProcess />
-		<LandingQuality />
-		<LandingCooperation />
-		<LandingTeam />
-		<LandingFaq />
-		<LandingAppointmentForm />
-	</main>
+<svelte:head>
+    <title>Ihre Seniorenassistenz - Alltagshilfe, Betreuung & Organisation</title>
+    <meta name="description" content="Professionelle und liebevolle Seniorenassistenz in Halle (Saale) und Wittenberg. Wir unterstützen Sie im Alltag, bei Behördengängen und bieten eine verlässliche Betreuung." />
+</svelte:head>
 
-	<LandingFooter />
+<div class="flex flex-col min-h-screen bg-white">
+    <LandingHeader />
+    <main class="flex-1">
+        <LandingHero />
+        <LandingServices />
+        <LandingProcess />
+        <LandingTeam />
+        <LandingCooperation />
+        <LandingQuality />
+        <LandingFaq />
+        <LandingAppointmentForm />
+    </main>
+    <LandingFooter />
 </div>

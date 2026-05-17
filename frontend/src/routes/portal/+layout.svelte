@@ -2,6 +2,7 @@
     import "../../app.css";
     import LandingAppointmentModal from "$lib/components/LandingAppointmentModal.svelte";
     import { page } from "$app/stores";
+    import { goto } from "$app/navigation";
 
     let { children } = $props();
     
@@ -10,6 +11,20 @@
     
     let currentPath = $derived($page.url.pathname as string);
     let isPortalLogin = $derived(currentPath === '/portal' || currentPath === '/portal/');
+
+    let isAdminMode = $state(false);
+    
+    $effect(() => {
+        if (typeof localStorage !== 'undefined') {
+            isAdminMode = localStorage.getItem('portal_admin_mode') === 'true';
+        }
+    });
+
+    function leaveAdminMode() {
+        localStorage.removeItem('portal_token');
+        localStorage.removeItem('portal_admin_mode');
+        goto('/dashboard');
+    }
 </script>
 
 <div class="min-h-screen bg-neutral-50 flex flex-col">
@@ -19,6 +34,9 @@
             <div class="flex items-center gap-2 font-black tracking-tight text-neutral-900 text-sm sm:text-base">
                 <img src="/favicon.png" alt="Logo" class="w-6 h-6 sm:w-8 sm:h-8 object-contain drop-shadow-sm" />
                 <span class="hidden sm:inline">Klienten-Portal</span>
+                {#if isAdminMode}
+                    <span class="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-[10px] font-bold rounded-full ml-2 hidden sm:inline-block">ADMIN</span>
+                {/if}
             </div>
             
             <!-- Desktop Navigation (wird auf der reinen Login-Seite ausgeblendet) -->
@@ -29,9 +47,16 @@
                 </nav>
             {/if}
         </div>
-        <button onclick={() => appointmentModal?.open()} class="flex items-center gap-2 bg-white text-brand-800 font-bold px-4 py-2 sm:px-5 sm:py-2.5 rounded-xl border border-brand-200 shadow-sm hover:shadow-md hover:border-brand-300 transition-all active:scale-95 text-xs sm:text-sm">
-            <span class="text-base sm:text-lg leading-none">📅</span> Termin anfragen
-        </button>
+        <div class="flex items-center gap-2 sm:gap-3">
+            {#if isAdminMode}
+                <button onclick={leaveAdminMode} class="hidden sm:flex items-center gap-1.5 text-xs font-bold text-indigo-600 hover:text-indigo-800 transition-colors bg-indigo-50 hover:bg-indigo-100 px-3 py-2 rounded-lg">
+                    Dashboard
+                </button>
+            {/if}
+            <button onclick={() => appointmentModal?.open()} class="flex items-center gap-2 bg-white text-brand-800 font-bold px-4 py-2 sm:px-5 sm:py-2.5 rounded-xl border border-brand-200 shadow-sm hover:shadow-md hover:border-brand-300 transition-all active:scale-95 text-xs sm:text-sm">
+                <span class="text-base sm:text-lg leading-none">📅</span> Termin anfragen
+            </button>
+        </div>
     </div>
 
     <!-- Mobile Navigation -->

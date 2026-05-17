@@ -19,6 +19,7 @@
     let appDate = $state("");
     let appTime = $state("");
     let appDesc = $state("");
+    let appLocation = $state("");
 
     export function open(app: any, cl: any) {
         appointment = app;
@@ -39,12 +40,24 @@
         appDate = dateStr;
         appTime = timeStr !== 'Unbekannt' ? `${timeStr} Uhr` : timeStr;
         appDesc = app?.description || 'Keine weitere Beschreibung';
+
+        let locationStr = "";
+        if (app.expand?.appointment_at?.[0]) {
+            const contact = app.expand.appointment_at[0];
+            const namePart = [contact.company_name, `${contact.name_first} ${contact.name_last}`.trim()].filter(Boolean).join(' - ');
+            const addressPart = `${contact.street || ''} ${contact.housenr || ''}`.trim();
+            const cityPart = `${contact.zip || ''} ${contact.city || ''}`.trim();
+            locationStr = [namePart, addressPart, cityPart].filter(Boolean).join(', ');
+        } else if (app.location_address) {
+            locationStr = app.location_address;
+        }
+        appLocation = locationStr;
         
         const salutation = cl?.salutation === 'Herr' ? `Sehr geehrter Herr ${cl.name_last},` : 
                           (cl?.salutation === 'Frau' ? `Sehr geehrte Frau ${cl.name_last},` : 
                           `Guten Tag ${cl?.name_first || ''} ${cl?.name_last || ''},`.trim());
 
-        message = `${salutation}\n\nhiermit möchten wir Sie an unseren gemeinsamen Termin am ${dateStr} um ${timeStr} Uhr erinnern.\n\nWir freuen uns auf Sie!\n\nMit freundlichen Grüßen\nIhre Seniorenassistenz`;
+        message = `${salutation}\n\nhiermit möchten wir Sie an unseren gemeinsamen Termin am ${dateStr} um ${timeStr} Uhr erinnern.\n\nIhre Termine können Sie auch jederzeit im Klienten-Portal einsehen:\n👉 https://www.ihre-seniorenassistenz.com/portal\n\nWir freuen uns auf Sie!`;
         
         dialog?.showModal();
     }
@@ -75,12 +88,20 @@
 
         try {
             if (method === 'email') {
-                const user = pb.authStore.model;
-                const userName = user ? `${user.name_first || ''} ${user.name_last || ''}`.trim() : 'Ihre Seniorenassistenz';
-                const userEmail = user?.email || 'info@ihre-seniorenassistenz.com';
-                const userPhone = user?.handy || user?.tel || '0151 57515432';
+                let rawUser = appointment?.expand?.user;
+                const assignedUser = Array.isArray(rawUser) ? rawUser[0] : rawUser;
+                const sendingUser = pb.authStore.model;
 
-                const textEmail = `${message.trim()}\n\n--\n${userName}\nIhre Seniorenassistenz\nDreyhauptstraße 2, 06108 Halle (Saale)\nTelefon: ${userPhone}\nE-Mail: ${userEmail}\nWeb: www.ihre-seniorenassistenz.com`;
+                let finalUserName = 'Ihre Seniorenassistenz';
+                if (assignedUser && (assignedUser.name_first || assignedUser.name_last)) {
+                    finalUserName = `${assignedUser.name_first || ''} ${assignedUser.name_last || ''}`.trim();
+                } else if (sendingUser && (sendingUser.name_first || sendingUser.name_last)) {
+                    finalUserName = `${sendingUser.name_first || ''} ${sendingUser.name_last || ''}`.trim();
+                }
+                const finalUserEmail = assignedUser?.email || sendingUser?.email || 'info@ihre-seniorenassistenz.com';
+                const finalUserPhone = assignedUser?.handy || assignedUser?.tel || sendingUser?.handy || sendingUser?.tel || '0151 57515432';
+
+                const textEmail = `${message.trim()}\n\n--\n${finalUserName}\nIhre Seniorenassistenz\nDreyhauptstraße 2, 06108 Halle (Saale)\nTelefon: ${finalUserPhone}\nE-Mail: ${finalUserEmail}\nWeb: www.ihre-seniorenassistenz.com`;
 
                 const htmlEmail = `
                     <div style="font-family: 'Segoe UI', Arial, sans-serif; color: #374151; max-width: 650px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
@@ -89,7 +110,7 @@
                             <p style="color: #c66a4d; margin: 4px 0 0 0; font-size: 14px; font-weight: 500;">Alltagshilfe • Betreuung • Organisation</p>
                         </div>
                         <div style="padding: 30px; font-size: 15px; line-height: 1.6; color: #1f2937; background-color: #ffffff;">
-                            ${message.trim().replace(/\n/g, '<br>')}
+                            ${message.trim().replace(/\n/g, '<br>').replace(/(?:<br>|\s)*(?:👉\s*)?(?:&lt;|<)?\s*https?:\/\/(?:www\.)?ihre-seniorenassistenz\.com\/portal\/?\s*(?:&gt;|>)?/gi, '<br><table role="presentation" border="0" cellpadding="0" cellspacing="0" style="margin: 15px 0;"><tr><td align="center" bgcolor="#c66a4d" style="border-radius: 8px;"><a href="https://www.ihre-seniorenassistenz.com/portal" style="display: inline-block; padding: 12px 24px; color: #ffffff; text-decoration: none; font-weight: bold; font-family: Arial, sans-serif; font-size: 15px;">Zum Klienten-Portal</a></td></tr></table><br>')}
                             
                             <div style="background-color: #f8fafc; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 25px 0;">
                                 <h3 style="margin-top: 0; color: #111827; font-size: 16px; margin-bottom: 12px;">Ihre Termindaten:</h3>
@@ -103,6 +124,10 @@
                                         <td style="padding: 4px 0;">${appTime}</td>
                                     </tr>
                                     <tr>
+                                        <td style="padding: 4px 0; vertical-align: top;"><strong>Ort:</strong></td>
+                                        <td style="padding: 4px 0;">${appLocation ? appLocation.replace(/, /g, '<br>') : 'Beim Klienten zu Hause'}</td>
+                                    </tr>
+                                    <tr>
                                         <td colspan="2" style="padding-top: 12px;"><strong>Anliegen / Beschreibung:</strong><br><div style="margin-top: 4px; padding: 10px; background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 6px;">${appDesc.replace(/\n/g, '<br>')}</div></td>
                                     </tr>
                                 </table>
@@ -112,7 +137,7 @@
                             <table width="100%" cellpadding="0" cellspacing="0" style="font-size: 13px; color: #4b5563;">
                                 <tr>
                                     <td style="padding-bottom: 15px;">
-                                        <strong style="color: #111827; font-size: 16px;">${userName}</strong><br>
+                                        <strong style="color: #111827; font-size: 16px;">${finalUserName}</strong><br>
                                         <span style="color: #c66a4d;">Ihre Ansprechperson</span>
                                     </td>
                                 </tr>
@@ -121,8 +146,8 @@
                                         <strong>Ihre Seniorenassistenz</strong><br>
                                         Dreyhauptstraße 2<br>
                                         06108 Halle (Saale)<br><br>
-                                        📞 <a href="tel:${userPhone}" style="color: #c66a4d; text-decoration: none;">${userPhone}</a><br>
-                                        ✉️ <a href="mailto:${userEmail}" style="color: #c66a4d; text-decoration: none;">${userEmail}</a><br>
+                                        📞 <a href="tel:${finalUserPhone}" style="color: #c66a4d; text-decoration: none;">${finalUserPhone}</a><br>
+                                        ✉️ <a href="mailto:${finalUserEmail}" style="color: #c66a4d; text-decoration: none;">${finalUserEmail}</a><br>
                                         🌐 <a href="https://www.ihre-seniorenassistenz.com" style="color: #c66a4d; text-decoration: none;">www.ihre-seniorenassistenz.com</a>
                                     </td>
                                 </tr>
@@ -219,6 +244,10 @@
                             <label for="rem-app-time" class="block text-xs font-semibold text-indigo-800 mb-1.5">Uhrzeit</label>
                             <input id="rem-app-time" type="text" bind:value={appTime} class="orga-input-clear py-3 sm:py-2.5 text-sm bg-white border-indigo-200" disabled={isSending} />
                         </div>
+                    </div>
+                    <div class="mb-4">
+                        <label for="rem-app-location" class="block text-xs font-semibold text-indigo-800 mb-1.5">Ort</label>
+                        <textarea id="rem-app-location" bind:value={appLocation} rows="2" class="orga-input-clear py-3 sm:py-2.5 text-sm resize-none custom-scrollbar bg-white border-indigo-200" disabled={isSending}></textarea>
                     </div>
                     <div>
                         <label for="rem-app-desc" class="block text-xs font-semibold text-indigo-800 mb-1.5">Anliegen / Beschreibung</label>

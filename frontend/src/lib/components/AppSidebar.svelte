@@ -2,7 +2,6 @@
 	import { page } from '$app/stores';
 	import type { Snippet } from 'svelte';
 	import ChatWidget from "$lib/components/ChatWidget.svelte";
-	import { onMount } from "svelte";
 	import { updateStore } from "$lib/services/updateService.svelte";
 
 	let { items } = $props<{
@@ -12,20 +11,9 @@
 	let currentPath = $derived($page.url.pathname);
 	// svelte-ignore non_reactive_update
 	let supportModal: HTMLDialogElement;
-	let appVersion = $state("v1.0.0 Alpha");
-
-	onMount(async () => {
-		try {
-			// Versucht die aktuelle Version aus der generierten version.txt zu laden
-			const res = await fetch('/version.txt');
-			if (res.ok) {
-				const ver = await res.text();
-				appVersion = `v1.0.${ver.trim()} Alpha`;
-			}
-		} catch (e) {
-			// Fallback (bleibt bei 1.0.0, falls Datei nicht gefunden wird)
-		}
-	});
+	
+	// Zieht sich die Versionsnummer nun live und fehlerfrei direkt aus dem Update-Log!
+	let appVersion = $derived(updateStore.updates?.length > 0 ? `v${updateStore.updates[0].number}` : "v1.0.0");
 </script>
 
 <aside class="w-64 bg-neutral-950 text-neutral-400 flex-col border-r border-neutral-900 hidden md:flex h-full shadow-2xl relative overflow-hidden">

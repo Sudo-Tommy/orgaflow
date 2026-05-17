@@ -58,5 +58,6 @@
                 <input id="comp-web" type="text" bind:value={formData.website} class="orga-input-clear pl-16" disabled={isLoading} />
             </div>
         </div>
+        <div><label for="comp-color" class="block text-sm font-semibold text-neutral-700 mb-1.5">Kalender-Farbe (Für Superadmins)</label><div class="flex items-center gap-3"><input id="comp-color" type="color" bind:value={formData.calendar_color} class="h-10 w-14 rounded cursor-pointer border border-neutral-200" disabled={isLoading} /><span class="text-xs text-neutral-500 font-mono">{formData.calendar_color}</span></div></div>
     </div>
 </div>
