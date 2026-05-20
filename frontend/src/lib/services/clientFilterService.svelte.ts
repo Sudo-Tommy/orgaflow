@@ -1,6 +1,7 @@
 export function useClientFilter(clientsProvider: () => any[]) {
     let searchQuery = $state("");
     let statusFilter = $state("all");
+    let companyFilter = $state("all");
 
     let filtered = $derived.by(() => {
         const list = clientsProvider();
@@ -14,7 +15,12 @@ export function useClientFilter(clientsProvider: () => any[]) {
             // Case-Insensitive Abgleich für den Status, um Fehler zwischen 'Aktiv' und 'aktiv' zu vermeiden
             const matchStatus = statusFilter === 'all' || (client?.status || '').toLowerCase() === statusFilter.toLowerCase();
             
-            return matchQuery && matchStatus;
+            let matchCompany = true;
+            if (companyFilter !== 'all') {
+                matchCompany = client?.company === companyFilter || (Array.isArray(client?.company) && client.company.includes(companyFilter));
+            }
+            
+            return matchQuery && matchStatus && matchCompany;
         });
     });
 
@@ -23,6 +29,8 @@ export function useClientFilter(clientsProvider: () => any[]) {
         set searchQuery(v) { searchQuery = v; },
         get statusFilter() { return statusFilter; },
         set statusFilter(v) { statusFilter = v; },
+        get companyFilter() { return companyFilter; },
+        set companyFilter(v) { companyFilter = v; },
         get filtered() { return filtered; }
     };
 }

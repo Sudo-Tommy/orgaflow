@@ -69,7 +69,7 @@
         const selectedApps = availableAppointments.filter(a => selectedAppointmentIds.includes(a.id));
         
         selectedApps.forEach(app => {
-            const dateStr = new Date(app.appointment).toLocaleDateString('de-DE');
+            const dateStr = new Date(app.appointment).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
             const timeStr = new Date(app.appointment).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
             msg += `• ${dateStr} um ${timeStr} Uhr: ${app.description || 'Termin'}\n`;
         });
@@ -112,7 +112,7 @@
                 const selectedApps = availableAppointments.filter(a => selectedAppointmentIds.includes(a.id));
                 let appsHtml = '';
                 selectedApps.forEach(app => {
-                    const dateStr = new Date(app.appointment).toLocaleDateString('de-DE');
+                    const dateStr = new Date(app.appointment).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
                     const timeStr = new Date(app.appointment).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
                     appsHtml += `
                         <tr>
@@ -174,6 +174,26 @@
                     text: textEmail,
                     html: htmlEmail
                 });
+
+            try {
+                if (pb.authStore.model) {
+                    let fullTo = recipient;
+                    if (cc) fullTo += `, CC: ${cc}`;
+                    if (bcc) fullTo += `, BCC: ${bcc}`;
+                    
+                    await pb.collection('mailbox_messages').create({
+                        user: pb.authStore.model.id,
+                        folder: 'Sent',
+                        from_address: `${finalUserName} <${finalUserEmail}>`,
+                        to_address: fullTo,
+                        subject: subject,
+                        body_text: textEmail,
+                        body_html: htmlEmail,
+                        date: new Date().toISOString(),
+                        is_read: true
+                    });
+                }
+            } catch (e) { console.warn("E-Mail konnte nicht im Postfach gespeichert werden", e); }
 
                 toastStore.success("Terminübersicht per E-Mail versendet!");
                 close();
@@ -253,7 +273,7 @@
                             <label class="flex items-center gap-3 p-2 bg-white rounded-lg border border-indigo-100 cursor-pointer hover:border-indigo-300 transition-colors">
                                 <input type="checkbox" checked={selectedAppointmentIds.includes(app.id)} onchange={() => handleToggle(app.id)} class="text-indigo-600 rounded focus:ring-indigo-500 w-4 h-4" />
                                 <div class="flex-1 min-w-0">
-                                    <p class="text-sm font-bold text-neutral-900">{new Date(app.appointment).toLocaleDateString('de-DE')} um {new Date(app.appointment).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr</p>
+                                    <p class="text-sm font-bold text-neutral-900">{new Date(app.appointment).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })} um {new Date(app.appointment).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr</p>
                                     <p class="text-xs text-neutral-500 truncate">{app.description || 'Termin'}</p>
                                 </div>
                             </label>

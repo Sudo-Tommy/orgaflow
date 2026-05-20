@@ -170,3 +170,15 @@
 <ToastLayer />
 <ConfirmLayer />
 <UpdateLogModal />
+
+<style>
+	/* Verhindert das Invertieren von Bildern und Canvas im Dark Mode */
+	:global(.theme-negative img:not(.mix-blend-multiply)),
+	:global(.theme-negative canvas) {
+		filter: invert(1) hue-rotate(180deg);
+	}
+	/* Unterschriften auf weißem Grund werden im Dark Mode nahtlos als weißer Schriftzug eingefügt */
+	:global(.theme-negative img.mix-blend-multiply) {
+		mix-blend-mode: screen;
+	}
+</style>

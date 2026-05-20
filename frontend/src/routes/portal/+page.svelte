@@ -35,7 +35,6 @@
         isLoading = true; errorMsg = "";
         try {
             const res = await fetch(`${apiBaseUrl}/request-otp`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
-            if (!res.ok && res.status === 404) throw new Error("Kein Klient mit dieser Email hinterlegt");
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || data.message || "Serverfehler aufgetreten.");
             if (data.error) throw new Error(data.error);
@@ -110,6 +109,10 @@
                 <div>
                     <label for="email" class="block text-sm font-semibold text-neutral-700 mb-1.5">Ihre E-Mail-Adresse</label>
                     <input id="email" type="email" bind:value={email} required class="orga-input-clear py-3" placeholder="Ihre hinterlegte E-Mail..." disabled={isLoading} style="-webkit-user-select: text !important; user-select: text !important;" />
+                    <p class="text-xs text-amber-700 font-bold mt-2 flex items-start gap-1.5 bg-amber-50 p-2.5 rounded-lg border border-amber-100">
+                        <span class="text-sm leading-none mt-0.5">⚠️</span>
+                        Wichtig: Bitte achten Sie bei der Eingabe exakt auf die Groß- und Kleinschreibung (z.B. beim ersten Buchstaben).
+                    </p>
                 </div>
                 <button type="submit" disabled={isLoading || !email} class="orga-button-primary w-full py-3 shadow-brand-600/20 text-base">{isLoading ? 'Code wird gesendet...' : 'Zugangs-Code anfordern'}</button>
             </form>

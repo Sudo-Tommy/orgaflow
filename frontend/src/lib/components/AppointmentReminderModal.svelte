@@ -165,6 +165,26 @@
                     html: htmlEmail
                 });
 
+            try {
+                if (pb.authStore.model) {
+                    let fullTo = recipient;
+                    if (cc) fullTo += `, CC: ${cc}`;
+                    if (bcc) fullTo += `, BCC: ${bcc}`;
+                    
+                    await pb.collection('mailbox_messages').create({
+                        user: pb.authStore.model.id,
+                        folder: 'Sent',
+                        from_address: `${finalUserName} <${finalUserEmail}>`,
+                        to_address: fullTo,
+                        subject: subject,
+                        body_text: textEmail,
+                        body_html: htmlEmail,
+                        date: new Date().toISOString(),
+                        is_read: true
+                    });
+                }
+            } catch (e) { console.warn("E-Mail konnte nicht im Postfach gespeichert werden", e); }
+
                 toastStore.success("Erinnerung per E-Mail versendet!");
                 close();
             } else if (method === 'whatsapp') {

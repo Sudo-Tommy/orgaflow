@@ -198,7 +198,7 @@
             await pb.collection('clients').update(client.id, pbFormData);
             
             setTimeout(async () => {
-                const updatedClient = await pb.collection('clients').getOne(client.id, { expand: 'insurance,retirement_homes,contacts', requestKey: null }) as any;
+                const updatedClient = await pb.collection('clients').getOne(client.id, { expand: 'insurance,retirement_homes,contacts,caregiver', requestKey: null }) as any;
                 const index = orgaStore.clients?.data.findIndex((c: any) => c.id === client.id) ?? -1;
                 if (index !== -1 && orgaStore.clients) orgaStore.clients.data[index] = updatedClient;
             }, 400);
@@ -258,10 +258,19 @@
             <!-- Pflege & Versicherung -->
             <div class="pt-6 border-t border-neutral-100">
                 <h3 class="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-3">Pflege & Status</h3>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div><label for="edit-status" class="block text-sm font-semibold text-neutral-700 mb-1.5">Status</label><select id="edit-status" bind:value={formData.status} class="orga-input-clear" disabled={isLoading}><option value="Aktiv">Aktiv</option><option value="Inaktiv">Inaktiv</option><option value="Verstorben">Verstorben</option></select></div>
                     <div><label for="edit-carelevel" class="block text-sm font-semibold text-neutral-700 mb-1.5">Pflegegrad</label><select id="edit-carelevel" bind:value={formData.level_of_care} class="orga-input-clear" disabled={isLoading}><option value="">Keiner</option><option value="0">Grad 0</option><option value="1">Grad 1</option><option value="2">Grad 2</option><option value="3">Grad 3</option><option value="4">Grad 4</option><option value="5">Grad 5</option></select></div>
                     <div><label for="edit-ins-nr" class="block text-sm font-semibold text-neutral-700 mb-1.5">Versicherungsnummer</label><input id="edit-ins-nr" type="text" bind:value={formData.insurance_nr} class="orga-input-clear" disabled={isLoading} /></div>
+                    <div>
+                        <label for="edit-caregiver" class="block text-sm font-semibold text-neutral-700 mb-1.5">Gesetzliche Betreuung</label>
+                        <select id="edit-caregiver" bind:value={formData.caregiver} class="orga-input-clear cursor-pointer" disabled={isLoading}>
+                            <option value="">Keine / Selbstbestimmt</option>
+                            {#each orgaStore.contacts?.data || [] as contact}
+                                <option value={contact.id}>{#if contact.company_name}{contact.company_name} - {/if}{contact.name_first} {contact.name_last}</option>
+                            {/each}
+                        </select>
+                    </div>
                 </div>
             </div>
             
@@ -280,17 +289,16 @@
             <div class="pt-6 border-t border-neutral-100">
                 <h3 class="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-3">Unterschrift</h3>
                 <div class="border border-neutral-200 rounded-2xl p-4 md:p-6 bg-neutral-50/50">
-                <div class="flex items-center justify-between mb-4">
-                    <span class="block text-sm font-semibold text-neutral-900">Unterschrift (Optional)</span>
-                    {#if !existingSignatureUrl || deleteExistingSignature}
-                        <div class="flex bg-neutral-200/60 p-1 rounded-lg">
-                            <button type="button" onclick={() => signatureMode = 'draw'} class="px-3 py-1 text-xs font-bold rounded-md transition-colors {signatureMode === 'draw' ? 'bg-white shadow-sm text-indigo-600' : 'text-neutral-500 hover:text-neutral-700'}">Zeichnen</button>
-                            <button type="button" onclick={() => signatureMode = 'upload'} class="px-3 py-1 text-xs font-bold rounded-md transition-colors {signatureMode === 'upload' ? 'bg-white shadow-sm text-indigo-600' : 'text-neutral-500 hover:text-neutral-700'}">Hochladen</button>
-                        </div>
-                    {/if}
-                </div>
-                </div>
-
+                    <div class="flex items-center justify-between mb-4">
+                        <span class="block text-sm font-semibold text-neutral-900">Unterschrift (Optional)</span>
+                        {#if !existingSignatureUrl || deleteExistingSignature}
+                            <div class="flex bg-neutral-200/60 p-1 rounded-lg">
+                                <button type="button" onclick={() => signatureMode = 'draw'} class="px-3 py-1 text-xs font-bold rounded-md transition-colors {signatureMode === 'draw' ? 'bg-white shadow-sm text-indigo-600' : 'text-neutral-500 hover:text-neutral-700'}">Zeichnen</button>
+                                <button type="button" onclick={() => signatureMode = 'upload'} class="px-3 py-1 text-xs font-bold rounded-md transition-colors {signatureMode === 'upload' ? 'bg-white shadow-sm text-indigo-600' : 'text-neutral-500 hover:text-neutral-700'}">Hochladen</button>
+                            </div>
+                        {/if}
+                    </div>
+                    
                 {#if existingSignatureUrl && !deleteExistingSignature}
                     <div class="bg-white border border-neutral-200 rounded-xl p-6 text-center shadow-sm">
                         <img src={existingSignatureUrl} alt="Hinterlegte Unterschrift" class="max-h-24 object-contain mx-auto mix-blend-multiply mb-4" />
@@ -318,6 +326,7 @@
                         <input type="file" accept="image/png, image/jpeg" class="w-full text-sm text-neutral-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 transition-colors" onchange={handleFileChange} />
                     </div>
                 {/if}
+                </div>
             </div>
 
             <div class="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-4 border-t border-neutral-100 mt-6">

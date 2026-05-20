@@ -58,7 +58,7 @@
                             <div class="w-10 h-10 rounded-xl bg-white border border-neutral-200 flex items-center justify-center text-lg shadow-sm shrink-0">📑</div>
                             <div>
                                 <h3 class="font-bold text-neutral-900 text-base">{inv.invoice_nr || 'Dokument'}</h3>
-                                <p class="text-sm text-neutral-500 mt-0.5">Ausgestellt am {inv.issue_date ? new Date(inv.issue_date).toLocaleDateString('de-DE') : '-'}</p>
+                                <p class="text-sm text-neutral-500 mt-0.5">Ausgestellt am {inv.issue_date ? new Date(inv.issue_date).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-'}</p>
                                 <span class="inline-block mt-2 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-md {inv.status === 'Abgeschlossen' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}">{inv.status === 'Abgeschlossen' ? 'Bezahlt' : 'Offen / Eingereicht'}</span>
                             </div>
                         </div>

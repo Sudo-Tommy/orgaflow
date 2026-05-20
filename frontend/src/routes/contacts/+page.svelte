@@ -89,52 +89,101 @@
                 <p>Passen Sie die Suche an oder legen Sie einen neuen Kontakt an.</p>
             </div>
         {:else}
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-6">
-                {#each filteredContacts as contact (contact.id)}
-                    <!-- svelte-ignore a11y_click_events_have_key_events -->
-                    <!-- svelte-ignore a11y_no_static_element_interactions -->
-                    <div onclick={() => contactModal?.open(contact)} class="w-full text-left orga-card-white p-4 sm:p-6 flex flex-col hover:border-indigo-200 transition-all group cursor-pointer" role="button" tabindex="0">
-                        <div class="flex items-center sm:items-start justify-between gap-3 sm:gap-4 sm:mb-4">
-                            <div class="flex items-center gap-3 w-full sm:w-auto min-w-0">
-                                <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-neutral-100 text-neutral-600 font-bold flex items-center justify-center text-base sm:text-xl shrink-0 shadow-inner">
-                                    {(contact.name_first?.charAt(0) || contact.company_name?.charAt(0) || '?').toUpperCase()}
-                                </div>
-                                <div class="flex-1 min-w-0 sm:hidden">
-                                    <h2 class="text-[15px] font-bold text-neutral-900 truncate group-hover:text-indigo-600 transition-colors">
-                                        {#if contact.name_first || contact.name_last}{contact.name_first} {contact.name_last}{:else if contact.company_name}{contact.company_name}{:else}Unbekannt{/if}
-                                    </h2>
-                                    {#if contact.company_name && (contact.name_first || contact.name_last)}
-                                        <p class="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider mt-0.5 truncate">{contact.company_name}</p>
-                                    {:else}
-                                        <p class="text-[10px] text-neutral-500 truncate mt-0.5">{contact.email || contact.phone || 'Keine Kontaktdaten'}</p>
-                                    {/if}
+            <div class="orga-card-white overflow-hidden">
+                <!-- Desktop Table View -->
+                <div class="hidden md:block overflow-x-auto custom-scrollbar">
+                    <table class="w-full text-left border-collapse min-w-150">
+                        <thead class="bg-neutral-50/50 border-b border-neutral-100">
+                            <tr>
+                                <th class="p-4 font-bold text-neutral-500 text-xs uppercase tracking-wider">Name</th>
+                                <th class="p-4 font-bold text-neutral-500 text-xs uppercase tracking-wider">Firma</th>
+                                <th class="p-4 font-bold text-neutral-500 text-xs uppercase tracking-wider">Kontakt</th>
+                                <th class="p-4 font-bold text-neutral-500 text-xs uppercase tracking-wider">Adresse</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-neutral-50">
+                            {#each filteredContacts as contact (contact.id)}
+                                <tr onclick={() => contactModal?.open(contact)} class="hover:bg-indigo-50 transition-colors group cursor-pointer">
+                                    <td class="p-4">
+                                        <div class="flex items-center gap-3">
+                                            <div class="w-9 h-9 rounded-full bg-neutral-100 text-neutral-600 font-bold flex items-center justify-center text-sm shrink-0 shadow-inner">
+                                                {(contact.name_first?.charAt(0) || contact.company_name?.charAt(0) || '?').toUpperCase()}
+                                            </div>
+                                            <div>
+                                                <p class="font-bold text-neutral-900 group-hover:text-indigo-600 transition-colors">
+                                                    {#if contact.name_first || contact.name_last}{contact.name_first} {contact.name_last}{:else if contact.company_name}{contact.company_name}{:else}Unbekannt{/if}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td class="p-4 text-sm text-neutral-600">
+                                        {#if contact.company_name && (contact.name_first || contact.name_last)}
+                                            {contact.company_name}
+                                        {:else}
+                                            -
+                                        {/if}
+                                    </td>
+                                    <td class="p-4 text-sm text-neutral-600">
+                                        {#if contact.phone}
+                                            <div class="flex items-center gap-1.5 truncate"><span class="text-indigo-400">📞</span> {contact.phone}</div>
+                                        {/if}
+                                        {#if contact.email}
+                                            <div class="flex items-center gap-1.5 truncate mt-1"><span class="text-emerald-400">✉️</span> {contact.email}</div>
+                                        {/if}
+                                        {#if !contact.phone && !contact.email}
+                                            -
+                                        {/if}
+                                    </td>
+                                    <td class="p-4 text-sm text-neutral-600">
+                                        {#if contact.street || contact.city}
+                                            <p>{contact.street} {contact.housenr}</p>
+                                            <p>{contact.zip} {contact.city}</p>
+                                        {:else}
+                                            -
+                                        {/if}
+                                    </td>
+                                </tr>
+                            {/each}
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Mobile List View -->
+                <div class="block md:hidden divide-y divide-neutral-100">
+                    {#each filteredContacts as contact (contact.id)}
+                        <button type="button" onclick={() => contactModal?.open(contact)} class="w-full text-left p-4 flex flex-col gap-3 hover:bg-neutral-50/50 transition-colors">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-3 min-w-0">
+                                    <div class="w-10 h-10 rounded-full bg-neutral-100 text-neutral-600 font-bold flex items-center justify-center text-base shrink-0 shadow-inner">
+                                        {(contact.name_first?.charAt(0) || contact.company_name?.charAt(0) || '?').toUpperCase()}
+                                    </div>
+                                    <div class="flex-1 min-w-0">
+                                        <h2 class="text-[15px] font-bold text-neutral-900 truncate hover:text-indigo-600 transition-colors">
+                                            {#if contact.name_first || contact.name_last}{contact.name_first} {contact.name_last}{:else if contact.company_name}{contact.company_name}{:else}Unbekannt{/if}
+                                        </h2>
+                                        {#if contact.company_name && (contact.name_first || contact.name_last)}
+                                            <p class="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider mt-0.5 truncate">{contact.company_name}</p>
+                                        {:else}
+                                            <p class="text-[10px] text-neutral-500 truncate mt-0.5">{contact.email || contact.phone || 'Keine Kontaktdaten'}</p>
+                                        {/if}
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                        
-                        <div class="hidden sm:block">
-                            <h2 class="text-lg font-bold text-neutral-900 truncate group-hover:text-indigo-600 transition-colors">
-                                {#if contact.name_first || contact.name_last}{contact.name_first} {contact.name_last}{:else if contact.company_name}{contact.company_name}{:else}Unbekannt{/if}
-                            </h2>
-                            {#if contact.company_name && (contact.name_first || contact.name_last)}
-                                <p class="text-xs font-semibold text-neutral-500 uppercase tracking-wider mt-0.5 truncate">{contact.company_name}</p>
-                            {/if}
-                        </div>
-                        
-                        <div class="flex flex-row sm:flex-col gap-4 sm:gap-2 text-xs sm:text-sm mt-3 sm:mt-auto pt-3 sm:pt-4 border-t border-neutral-100 sm:border-transparent overflow-hidden">
-                            {#if contact.phone}
-                                <div class="flex items-center gap-1.5 text-neutral-600 truncate shrink-0">
-                                    <span class="text-indigo-400">📞</span> <a href="tel:{contact.phone}" onclick={(e) => e.stopPropagation()} class="hover:text-indigo-600 hover:underline truncate">{contact.phone}</a>
-                                </div>
-                            {/if}
-                            {#if contact.email}
-                                <div class="flex items-center gap-1.5 text-neutral-600 truncate">
-                                    <span class="text-emerald-400">✉️</span> <a href="mailto:{contact.email}" onclick={(e) => e.stopPropagation()} class="hover:text-emerald-600 hover:underline truncate">{contact.email}</a>
-                                </div>
-                            {/if}
-                        </div>
-                    </div>
-                {/each}
+                            <div class="flex flex-row gap-4 text-xs mt-1 pt-3 border-t border-neutral-100 overflow-hidden">
+                                {#if contact.phone}
+                                    <div class="flex items-center gap-1.5 text-neutral-600 truncate shrink-0">
+                                        <span class="text-indigo-400">📞</span> {contact.phone}
+                                    </div>
+                                {/if}
+                                {#if contact.email}
+                                    <div class="flex items-center gap-1.5 text-neutral-600 truncate">
+                                        <span class="text-emerald-400">✉️</span> {contact.email}
+                                    </div>
+                                {/if}
+                            </div>
+                        </button>
+                    {/each}
+                </div>
             </div>
         {/if}
 
@@ -148,52 +197,86 @@
                 <p>Passen Sie die Suche an oder legen Sie ein neues Pflegeheim an.</p>
             </div>
         {:else}
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-6">
-                {#each filteredHomes as home (home.id)}
-                    <!-- svelte-ignore a11y_click_events_have_key_events -->
-                    <!-- svelte-ignore a11y_no_static_element_interactions -->
-                    <div onclick={() => homeModal?.open(home)} class="w-full text-left orga-card-white p-4 sm:p-6 flex flex-col hover:border-indigo-200 transition-all group cursor-pointer" role="button" tabindex="0">
-                        <div class="flex items-center sm:items-start justify-between gap-3 sm:gap-4 sm:mb-4">
-                            <div class="flex items-center gap-3 w-full sm:w-auto min-w-0">
-                                <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-indigo-50 text-indigo-500 font-bold flex items-center justify-center text-lg sm:text-2xl shrink-0 shadow-sm">
-                                    🏥
-                                </div>
-                                <div class="flex-1 min-w-0 sm:hidden">
-                                    <h2 class="text-[15px] font-bold text-neutral-900 truncate group-hover:text-indigo-600 transition-colors">{home.name || 'Unbekannt'}</h2>
-                                    <p class="text-[10px] font-semibold text-neutral-500 mt-0.5 truncate">{home.street ? `${home.street}, ` : ''}{home.zip || ''} {home.city || ''}</p>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="hidden sm:block">
-                            <h2 class="text-lg font-bold text-neutral-900 truncate group-hover:text-indigo-600 transition-colors">{home.name || 'Unbekannt'}</h2>
-                            <p class="text-xs font-semibold text-neutral-500 mt-0.5 truncate">{home.street ? `${home.street}, ` : ''}{home.zip || ''} {home.city || ''}</p>
-                        </div>
-                        
-                        <!-- Anzeige von verknüpften Kontakten -->
-                        <div class="flex items-center gap-4 sm:gap-2 text-xs sm:text-sm mt-3 sm:mt-auto pt-3 sm:pt-4 border-t border-neutral-100 sm:border-t-neutral-100 overflow-hidden">
-                            {#if home.expand?.contacts && home.expand.contacts.length > 0}
-                                <div class="flex w-full items-center justify-between sm:flex-col sm:items-start sm:justify-start gap-1">
-                                    <p class="text-[10px] sm:text-xs text-neutral-500 font-semibold uppercase tracking-wider">Ansprechpartner</p>
-                                    <div class="flex -space-x-2 overflow-hidden">
-                                        {#each home.expand.contacts.slice(0, 3) as hc}
-                                            <div class="flex h-7 w-7 sm:h-8 sm:w-8 rounded-full ring-2 ring-white bg-neutral-200 items-center justify-center text-[9px] sm:text-[10px] font-bold text-neutral-700" title="{hc.name} ({hc.relation})">
-                                                {(hc.name?.charAt(0) || '?').toUpperCase()}
+            <div class="orga-card-white overflow-hidden">
+                <!-- Desktop Table View -->
+                <div class="hidden md:block overflow-x-auto custom-scrollbar">
+                    <table class="w-full text-left border-collapse min-w-150">
+                        <thead class="bg-neutral-50/50 border-b border-neutral-100">
+                            <tr>
+                                <th class="p-4 font-bold text-neutral-500 text-xs uppercase tracking-wider">Einrichtung</th>
+                                <th class="p-4 font-bold text-neutral-500 text-xs uppercase tracking-wider">Adresse</th>
+                                <th class="p-4 font-bold text-neutral-500 text-xs uppercase tracking-wider">Ansprechpartner</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-neutral-50">
+                            {#each filteredHomes as home (home.id)}
+                                <tr onclick={() => homeModal?.open(home)} class="hover:bg-indigo-50 transition-colors group cursor-pointer">
+                                    <td class="p-4">
+                                        <div class="flex items-center gap-3">
+                                            <div class="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-500 font-bold flex items-center justify-center text-lg shrink-0 shadow-sm">
+                                                🏥
                                             </div>
-                                        {/each}
-                                        {#if home.expand.contacts.length > 3}
-                                            <div class="flex h-7 w-7 sm:h-8 sm:w-8 rounded-full ring-2 ring-white bg-neutral-100 items-center justify-center text-[9px] sm:text-[10px] font-bold text-neutral-500">
-                                                +{home.expand.contacts.length - 3}
+                                            <div>
+                                                <p class="font-bold text-neutral-900 group-hover:text-indigo-600 transition-colors">{home.name || 'Unbekannt'}</p>
                                             </div>
+                                        </div>
+                                    </td>
+                                    <td class="p-4 text-sm text-neutral-600">
+                                        <p>{home.street || '-'}</p>
+                                        <p>{home.zip || ''} {home.city || ''}</p>
+                                    </td>
+                                    <td class="p-4">
+                                        {#if home.expand?.contacts && home.expand.contacts.length > 0}
+                                            <div class="flex -space-x-2 overflow-hidden">
+                                                {#each home.expand.contacts.slice(0, 3) as hc}
+                                                    <div class="flex h-8 w-8 rounded-full ring-2 ring-white bg-neutral-200 items-center justify-center text-[10px] font-bold text-neutral-700" title="{hc.name_first} {hc.name_last}">
+                                                        {(hc.name_first?.charAt(0) || hc.company_name?.charAt(0) || '?').toUpperCase()}
+                                                    </div>
+                                                {/each}
+                                                {#if home.expand.contacts.length > 3}
+                                                    <div class="flex h-8 w-8 rounded-full ring-2 ring-white bg-neutral-100 items-center justify-center text-[10px] font-bold text-neutral-500">
+                                                        +{home.expand.contacts.length - 3}
+                                                    </div>
+                                                {/if}
+                                            </div>
+                                        {:else}
+                                            <p class="text-xs text-neutral-400 italic">Keine</p>
                                         {/if}
+                                    </td>
+                                </tr>
+                            {/each}
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Mobile List View -->
+                <div class="block md:hidden divide-y divide-neutral-100">
+                    {#each filteredHomes as home (home.id)}
+                        <button type="button" onclick={() => homeModal?.open(home)} class="w-full text-left p-4 flex flex-col gap-3 hover:bg-neutral-50/50 transition-colors">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-3 min-w-0">
+                                    <div class="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-500 font-bold flex items-center justify-center text-lg shrink-0 shadow-sm">
+                                        🏥
+                                    </div>
+                                    <div class="flex-1 min-w-0">
+                                        <h2 class="text-[15px] font-bold text-neutral-900 truncate hover:text-indigo-600 transition-colors">{home.name || 'Unbekannt'}</h2>
+                                        <p class="text-[10px] font-semibold text-neutral-500 mt-0.5 truncate">{home.street ? `${home.street}, ` : ''}{home.zip || ''} {home.city || ''}</p>
                                     </div>
                                 </div>
-                            {:else}
-                                <p class="text-[10px] sm:text-xs text-neutral-400 italic">Keine Ansprechpartner</p>
-                            {/if}
-                        </div>
-                    </div>
-                {/each}
+                            </div>
+                            <div class="flex items-center justify-between gap-4 pl-13 pt-1 border-t border-neutral-100 mt-1">
+                                {#if home.expand?.contacts && home.expand.contacts.length > 0}
+                                    <div class="flex items-center gap-2">
+                                        <p class="text-[10px] text-neutral-500 font-semibold uppercase tracking-wider">Ansprechpartner:</p>
+                                        <span class="text-xs font-bold text-neutral-700">{home.expand.contacts.length}</span>
+                                    </div>
+                                {:else}
+                                    <p class="text-[10px] text-neutral-400 italic">Keine Ansprechpartner</p>
+                                {/if}
+                            </div>
+                        </button>
+                    {/each}
+                </div>
             </div>
         {/if}
     {/if}

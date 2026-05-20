@@ -21,6 +21,9 @@
         service.selectedTemplateId = preselectedTemplateId || "";
         service.selectedClientId = "";
         service.selectedAppointmentIds = [];
+        if (typeof localStorage !== 'undefined') {
+            service.selectedCompanyId = localStorage.getItem('global_company_id') || 'all';
+        }
         generatedPdfBlob = null;
         generatedTsBlob = null;
         dialog?.showModal();
@@ -39,7 +42,8 @@
                 const exists = service.availableTemplates.find((t: any) => t.id === service.client?.default_template);
                 if (exists) {
                     service.selectedTemplateId = exists.id;
-                    service.step = (exists.type?.toLowerCase() === 'rechnung' || exists.type?.toLowerCase() === 'arbeitszeitnachweis') ? 3 : 4;
+                    service.recipientType = 'client';
+                    if (exists.type?.toLowerCase() === 'rechnung' || exists.type?.toLowerCase() === 'arbeitszeitnachweis') { service.step = 3; return; }
                     return;
                 }
             }
@@ -209,15 +213,6 @@
             {#if service.step === 1}
                 <h3 class="text-lg font-bold text-neutral-800 mb-4">1. Klient & Empfänger</h3>
                 <label for="generator-client" class="block text-sm font-semibold text-neutral-700 mb-1.5">Basis-Klient</label><select id="generator-client" bind:value={service.selectedClientId} class="orga-input-clear mb-6"><option value="">Klienten wählen...</option>{#each orgaStore.clients?.data || [] as c}<option value={c.id}>{c.name_first} {c.name_last}</option>{/each}</select>
-                {#if service.client}
-                    <span class="block text-sm font-semibold text-neutral-700 mb-1.5">Adressat / Empfänger auf dem Dokument</span>
-                    <div class="space-y-2">
-                        <label class="flex items-center gap-2 p-3 border border-neutral-200 rounded-lg cursor-pointer hover:bg-neutral-50"><input type="radio" bind:group={service.recipientType} value="client" class="text-indigo-600" /> <span class="text-sm font-medium">Klient selbst ({service.client.name_first} {service.client.name_last})</span></label>
-                        {#if service.client.expand?.insurance}<label class="flex items-center gap-2 p-3 border border-neutral-200 rounded-lg cursor-pointer hover:bg-neutral-50"><input type="radio" bind:group={service.recipientType} value="insurance" class="text-indigo-600" /> <span class="text-sm font-medium">Krankenkasse ({service.client.expand.insurance.name})</span></label>{/if}
-                        {#each service.client.expand?.contacts || [] as contact}<label class="flex items-center gap-2 p-3 border border-neutral-200 rounded-lg cursor-pointer hover:bg-neutral-50"><input type="radio" bind:group={service.recipientType} value="contact" onchange={() => service.recipientId = contact.id} class="text-indigo-600" /> <span class="text-sm font-medium">Kontakt: {contact.name_first} {contact.name_last} ({contact.company_name || contact.salutation})</span></label>{/each}
-                        {#each service.client.expand?.retirement_homes || [] as home}<label class="flex items-center gap-2 p-3 border border-neutral-200 rounded-lg cursor-pointer hover:bg-neutral-50"><input type="radio" bind:group={service.recipientType} value="home" onchange={() => service.recipientId = home.id} class="text-indigo-600" /> <span class="text-sm font-medium">Pflegeheim: {home.name}</span></label>{/each}
-                    </div>
-                {/if}
             {:else if service.step === 2}
                 <h3 class="text-lg font-bold text-neutral-800 mb-4">2. Vorlage wählen</h3>
                 <div class="grid grid-cols-1 gap-3">
@@ -225,6 +220,17 @@
                         <label class="flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition-colors {service.selectedTemplateId === t.id ? 'border-indigo-500 bg-indigo-50/50' : 'border-neutral-200 hover:border-indigo-300'}"><input type="radio" bind:group={service.selectedTemplateId} value={t.id} class="w-4 h-4 text-indigo-600" /><div><p class="font-bold text-neutral-900">{t.title || 'Unbenannt'}</p><p class="text-xs text-neutral-500 uppercase mt-0.5 tracking-wider font-semibold">{t.type}</p></div></label>
                     {/each}
                 </div>
+                {#if service.template && (service.template.type?.toLowerCase() === 'brief' || service.template.type?.toLowerCase() === 'antrag' || service.template.type?.toLowerCase() === 'allgemein')}
+                    <div class="mt-6 pt-6 border-t border-neutral-100 animate-enter">
+                        <span class="block text-sm font-semibold text-neutral-700 mb-2">Adressat / Empfänger auf dem Dokument</span>
+                        <div class="space-y-2">
+                            <label class="flex items-center gap-2 p-3 border border-neutral-200 rounded-lg cursor-pointer hover:bg-neutral-50"><input type="radio" bind:group={service.recipientType} value="client" class="text-indigo-600" /> <span class="text-sm font-medium">Klient selbst ({service.client?.name_first} {service.client?.name_last})</span></label>
+                            {#if service.client?.expand?.insurance}<label class="flex items-center gap-2 p-3 border border-neutral-200 rounded-lg cursor-pointer hover:bg-neutral-50"><input type="radio" bind:group={service.recipientType} value="insurance" class="text-indigo-600" /> <span class="text-sm font-medium">Krankenkasse ({service.client.expand.insurance.name})</span></label>{/if}
+                            {#each service.client?.expand?.contacts || [] as contact}<label class="flex items-center gap-2 p-3 border border-neutral-200 rounded-lg cursor-pointer hover:bg-neutral-50"><input type="radio" bind:group={service.recipientType} value="contact" onchange={() => service.recipientId = contact.id} class="text-indigo-600" /> <span class="text-sm font-medium">Kontakt: {contact.name_first} {contact.name_last} ({contact.company_name || contact.salutation})</span></label>{/each}
+                            {#each service.client?.expand?.retirement_homes || [] as home}<label class="flex items-center gap-2 p-3 border border-neutral-200 rounded-lg cursor-pointer hover:bg-neutral-50"><input type="radio" bind:group={service.recipientType} value="home" onchange={() => service.recipientId = home.id} class="text-indigo-600" /> <span class="text-sm font-medium">Pflegeheim: {home.name}</span></label>{/each}
+                        </div>
+                    </div>
+                {/if}
             {:else if service.step === 3 && service.requiresAppointments}
                 <h3 class="text-lg font-bold text-neutral-800 mb-4">3. Termine & Abrechnungsdaten</h3>
                 {#if service.isInvoice}
@@ -242,7 +248,7 @@
                 <p class="text-sm font-semibold text-neutral-700 mb-2">Abzurechnende Termine wählen</p>
                 <div class="space-y-2">
                     {#each service.availableAppointments as app}
-                        <label class="flex items-start gap-3 p-3 rounded-xl border border-neutral-200 hover:border-indigo-300 cursor-pointer transition-colors {service.selectedAppointmentIds.includes(app.id) ? 'bg-indigo-50/30' : ''}"><input type="checkbox" bind:group={service.selectedAppointmentIds} value={app.id} class="w-4 h-4 mt-1 text-indigo-600 rounded focus:ring-indigo-500" /><div><p class="text-sm font-bold text-neutral-900">{app.appointment ? new Date(app.appointment as string).toLocaleDateString('de-DE') : ''} - {app.description || 'Termin'}</p><div class="flex gap-2 mt-1">{#if app.expand?.time_record}<span class="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded font-bold">Zeiten</span>{/if}{#if app.expand?.drive_record}<span class="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-bold">Fahrten</span>{/if}{#if app.expand?.expenditures}<span class="text-[10px] bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded font-bold">Ausgaben</span>{/if}</div></div></label>
+                        <label class="flex items-start gap-3 p-3 rounded-xl border border-neutral-200 hover:border-indigo-300 cursor-pointer transition-colors {service.selectedAppointmentIds.includes(app.id) ? 'bg-indigo-50/30' : ''}"><input type="checkbox" bind:group={service.selectedAppointmentIds} value={app.id} class="w-4 h-4 mt-1 text-indigo-600 rounded focus:ring-indigo-500" /><div><p class="text-sm font-bold text-neutral-900">{app.appointment ? new Date(app.appointment as string).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : ''} - {app.description || 'Termin'}</p><div class="flex gap-2 mt-1">{#if app.expand?.time_record}<span class="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded font-bold">Zeiten</span>{/if}{#if app.expand?.drive_record}<span class="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-bold">Fahrten</span>{/if}{#if app.expand?.expenditures}<span class="text-[10px] bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded font-bold">Ausgaben</span>{/if}</div></div></label>
                     {/each}
                     {#if service.availableAppointments.length === 0}<p class="text-sm italic text-neutral-500">Keine Termine vorhanden.</p>{/if}
                 </div>

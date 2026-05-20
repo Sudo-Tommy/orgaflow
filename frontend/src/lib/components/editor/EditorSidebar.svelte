@@ -82,6 +82,11 @@
                                     <option value={"{{insurance.phone}}"}>Telefon</option>
                                     <option value={"{{insurance.email}}"}>E-Mail</option>
                                 </optgroup>
+                                <optgroup label="Kontakt (Adressat)">
+                                    <option value={"{{contact.name_first}}"}>Vorname</option>
+                                    <option value={"{{contact.name_last}}"}>Nachname</option>
+                                    <option value={"{{contact.signature}}"}>Unterschrift (Kontakt)</option>
+                                </optgroup>
                                 <optgroup label="Benutzer (Mitarbeiter/Ersteller)">
                                     <option value={"{{user.name_first}}"}>Vorname</option>
                                     <option value={"{{user.name_last}}"}>Nachname</option>

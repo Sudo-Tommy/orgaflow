@@ -2,6 +2,7 @@
     import { pb } from "$lib/services/pocketbase";
     import { env } from '$env/dynamic/public';
     import { toastStore } from "$lib/services/toastService.svelte";
+    import { orgaStore } from "$lib/stores/orgaStore.svelte";
 
     // svelte-ignore non_reactive_update
     let dialog: HTMLDialogElement;
@@ -12,7 +13,7 @@
     let generatedText = $state("");
     let errorMsg = $state("");
     
-    let inputType = $state<'record' | 'text'>('record');
+    let inputType = $state<'record' | 'text' | 'standard'>('record');
     let manualText = $state("");
 
     let client = $state<any>(null);
@@ -20,9 +21,49 @@
 
     let recordings = $state<{ id: number, blob: Blob, mimeType: string, duration: number, url: string }[]>([]);
     
-    const promptFamilie = "Erstelle einen professionellen und detaillierten Besuchsbericht aus den vorliegenden Aufzeichnungen. Fasse die wichtigsten medizinischen, privaten und organisatorischen Punkte übersichtlich und strukturiert zusammen. Der Bericht sollte folgende Abschnitte enthalten: 1. Zusammenfassung 2. Medizinische Informationen 3. Private Informationen 4. Organisatorische Punkte. Bitte formuliere den Bericht so, dass er professionell und empathisch klingt, damit ich ihn direkt an die Familie weiterleiten kann.";
+    let availableRecipients = $state<{name: string, role: string}[]>([]);
+    let selectedRecipientName = $state("");
+
+    const promptFamilie = `Erstelle einen professionellen und gut lesbaren Besuchsbericht aus den vorliegenden Aufzeichnungen.
+Der Bericht soll sich direkt an den Betreuer/Kontakt richten.
+
+Nutze exakt folgende Struktur:
+
+"Guten Tag [Name des Adressaten, falls angegeben],
+hiermit erhalten Sie eine Zusammenfassung des Termins mit [Name des Klienten] vom [Datum] um [Uhrzeit] Uhr.
+
+Medizinische Beobachtungen:
+[Stichpunkte zu Gesundheitszustand, Auffälligkeiten, etc.]
+
+Durchgeführte Maßnahmen:
+[Stichpunkte zu Tätigkeiten, Begleitung, etc.]
+
+To-Dos:
+[Stichpunkte zu nächsten Schritten, Hinweisen, etc.]"
+
+Schreibe KEINE Floskeln davor oder danach (wie "Hier ist dein Bericht:"). Formuliere professionell im "Sie"-Format.`;
     const promptIntern = "Erstelle eine präzise interne Notiz für das Team aus den Aufzeichnungen. Bitte fasse alle wichtigen Fakten, medizinischen Auffälligkeiten und To-Dos sachlich und kurz in Stichpunkten zusammen. Keine langen Fließtexte, sondern reine Fakten für die interne Akte.";
-    let reportType = $state<'family' | 'internal'>('family');
+    
+    const promptStandard = `Erstelle einen kurzen, professionellen Besuchsbericht aus den vorliegenden Aufzeichnungen (falls vorhanden) und dem Kontext.
+Der Bericht soll sich direkt an den Betreuer/Kontakt richten und mitteilen, dass der Termin planmäßig und ohne besondere Vorkommnisse verlief.
+
+Nutze exakt folgende Struktur:
+
+"Guten Tag [Name des Adressaten, falls angegeben],
+hiermit erhalten Sie eine kurze Rückmeldung zum Termin mit [Name des Klienten] vom [Datum] um [Uhrzeit] Uhr.
+
+Status:
+Der Termin verlief planmäßig und ohne besondere Auffälligkeiten. Der allgemeine Zustand ist unverändert gut.
+
+Durchgeführte Maßnahmen / Ort:
+[Fasse hier den Ort und die Tätigkeiten/Leistungen aus dem Termin-Kontext zusammen]
+
+To-Dos:
+[Aktuell kein weiterer Handlungsbedarf, sofern nicht explizit anders im Kontext angegeben]"
+
+Schreibe KEINE Floskeln davor oder danach. Formuliere professionell im "Sie"-Format.`;
+
+    let reportType = $state<'family' | 'internal' | 'standard'>('family');
     let customPrompt = $state(promptFamilie);
     
     let mediaRecorder: MediaRecorder | null = $state(null);
@@ -36,15 +77,40 @@
     // Nutzt relativ zur aktuellen Domain (verhindert www. vs non-www Weiterleitungs-Fehler)
     const microserviceUrl = import.meta.env.DEV ? 'http://localhost:3000' : '';
 
-    export function open(defaultType: 'family' | 'internal' = 'family', app: any = null, cl: any = null) {
+    export function open(defaultType: 'family' | 'internal' | 'standard' = 'family', app: any = null, cl: any = null) {
         reportType = defaultType;
-        customPrompt = defaultType === 'internal' ? promptIntern : promptFamilie;
+        customPrompt = defaultType === 'internal' ? promptIntern : (defaultType === 'standard' ? promptStandard : promptFamilie);
         appointment = app;
         client = cl;
         errorMsg = "";
         generatedText = "";
         recordings = [];
         manualText = "";
+        availableRecipients = [];
+        selectedRecipientName = "";
+        
+        if (cl) {
+            if (cl.caregiver) {
+                const caregiver = orgaStore.contacts?.getById(cl.caregiver);
+                if (caregiver) {
+                    availableRecipients.push({
+                        name: `${caregiver.name_first} ${caregiver.name_last}`.trim(),
+                        role: 'Gesetzl. Betreuung'
+                    });
+                }
+            }
+            const contactsList = Array.isArray(cl.contacts) ? cl.contacts : (cl.contacts ? [cl.contacts] : []);
+            contactsList.forEach((cId: string) => {
+                const contact = orgaStore.contacts?.getById(cId);
+                if (contact) {
+                    availableRecipients.push({
+                        name: `${contact.name_first} ${contact.name_last}`.trim(),
+                        role: contact.company_name || 'Angehörige/r'
+                    });
+                }
+            });
+        }
+        
         dialog?.showModal();
     }
 
@@ -121,17 +187,27 @@
         if (!input.files || input.files.length === 0) return;
 
         const newRecordings = [];
+        let hasHugeFile = false;
         for (const file of input.files) {
+            if (file.size > 50 * 1024 * 1024) hasHugeFile = true;
+            
+            // Fallback MIME-Type für Apple Voice Memos (.m4a), falls iOS keinen mitgibt
+            const mimeType = file.type || (file.name.toLowerCase().endsWith('.m4a') ? 'audio/mp4' : 'audio/webm');
+            
             newRecordings.push({
                 id: Date.now() + Math.random(),
                 blob: file,
-                mimeType: file.type,
+                mimeType: mimeType,
                 duration: 0, // Dauer ist bei Uploads nicht direkt ersichtlich
                 url: URL.createObjectURL(file)
             });
         }
         recordings = [...recordings, ...newRecordings];
         input.value = ''; // File-Input zurücksetzen
+        
+        if (hasHugeFile) {
+            toastStore.warning("Achtung: Sehr große Audiodatei erkannt. Die KI-Verarbeitung kann einen Moment dauern.");
+        }
     }
 
     function blobToBase64(blob: Blob): Promise<string> {
@@ -158,11 +234,30 @@
 
             let contextText = "Kontext für den Bericht:\n";
             if (client) {
-                contextText += `- Klient: ${client.name_first} ${client.name_last}\n`;
+                const clientName = `${client.salutation !== 'Keine Angabe' && client.salutation ? client.salutation + ' ' : ''}${client.name_first} ${client.name_last}`.trim();
+                contextText += `- Klient: ${clientName}\n`;
             }
             if (appointment) {
-                const appDate = new Date(appointment.appointment).toLocaleString('de-DE', { dateStyle: 'full', timeStyle: 'short' });
-                contextText += `- Termin: ${appDate} (${appointment.description || 'Allgemeiner Termin'})\n`;
+                const appDate = new Date(appointment.appointment).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                const appTime = new Date(appointment.appointment).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+                contextText += `- Datum des Termins: ${appDate}\n`;
+                contextText += `- Uhrzeit des Termins: ${appTime} Uhr\n`;
+                contextText += `- Beschreibung: ${appointment.description || 'Allgemeiner Termin'}\n`;
+                
+                if (appointment.expand?.appointment_at) {
+                    const contacts = appointment.expand.appointment_at.map((c: any) => `${c.company_name ? c.company_name + ' ' : ''}${c.name_first} ${c.name_last}`).join(', ');
+                    contextText += `- Ort / Arzt: ${contacts}\n`;
+                } else if (appointment.location_address) {
+                    contextText += `- Ort: ${appointment.location_address}\n`;
+                }
+                
+                if (appointment.expand?.tasks) {
+                    const tasks = appointment.expand.tasks.map((t: any) => t.title).join(', ');
+                    contextText += `- Durchgeführte Leistungen: ${tasks}\n`;
+                }
+            }
+            if (selectedRecipientName) {
+                contextText += `- Adressat des Berichts (Betreuer/Angehöriger): ${selectedRecipientName}\n`;
             }
             contextText += "\n----\n\n";
 
@@ -175,7 +270,7 @@
             } else if (hasText) {
                 payload.inputText = manualText;
             } else if (isEmpty) {
-                payload.inputText = "Es gibt keine besonderen Vorkommnisse. Der Termin verlief gut und alles war in Ordnung. Bitte fasse dies als kurzen, positiven Satz für den Bericht zusammen.";
+                payload.inputText = "Es gibt keine besonderen Vorkommnisse. Der Termin verlief gut und alles war in Ordnung. Der Ort und die Tätigkeiten sind aus dem Kontext ersichtlich.";
             } else {
                 throw new Error("Keine Eingabe zum Verarbeiten gefunden.");
             }
@@ -202,7 +297,7 @@
         }
     }
     function handleSave() {
-        onSave(generatedText, reportType, recordings.map(r => r.blob));
+        onSave(generatedText, reportType === 'standard' ? 'family' : reportType, recordings.map(r => r.blob));
         close();
     }
 
@@ -238,10 +333,22 @@
                 </div>
                 
                 <div class="bg-neutral-50 p-4 rounded-xl border border-neutral-200">
+                    {#if (reportType === 'family' || reportType === 'standard') && availableRecipients.length > 0}
+                        <div class="mb-4 pb-4 border-b border-neutral-200">
+                            <label for="ai-recipient-regen" class="block text-sm font-semibold text-neutral-700 mb-1.5">Bericht adressieren an (Betreuer / Kontakt)</label>
+                            <select id="ai-recipient-regen" bind:value={selectedRecipientName} class="orga-input-clear py-2 text-sm bg-white border-neutral-200 cursor-pointer">
+                                <option value="">Keine direkte Anrede (Allgemein)</option>
+                                {#each availableRecipients as rec}
+                                    <option value={rec.name}>{rec.name} ({rec.role})</option>
+                                {/each}
+                            </select>
+                        </div>
+                    {/if}
                     <div class="flex items-center justify-between mb-1.5">
                         <label for="ai-prompt-edit" class="block text-sm font-semibold text-neutral-700">KI-Prompt anpassen</label>
                         <div class="flex gap-2">
                             <button type="button" onclick={() => { reportType = 'family'; customPrompt = promptFamilie; }} class="px-2 py-1 {reportType === 'family' ? 'bg-indigo-600 text-white shadow-sm border-indigo-700' : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border-indigo-200'} text-[10px] font-bold rounded-md border transition-colors">Für Familie</button>
+                            <button type="button" onclick={() => { reportType = 'standard'; customPrompt = promptStandard; }} class="px-2 py-1 {reportType === 'standard' ? 'bg-blue-600 text-white shadow-sm border-blue-700' : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200'} text-[10px] font-bold rounded-md border transition-colors">Standard (Planmäßig)</button>
                             <button type="button" onclick={() => { reportType = 'internal'; customPrompt = promptIntern; }} class="px-2 py-1 {reportType === 'internal' ? 'bg-emerald-600 text-white shadow-sm border-emerald-700' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border-emerald-200'} text-[10px] font-bold rounded-md border transition-colors">Intern (Team)</button>
                         </div>
                     </div>
@@ -261,9 +368,16 @@
                 <div class="flex gap-2 p-1 bg-neutral-100 rounded-lg">
                     <button type="button" onclick={() => inputType = 'record'} class="flex-1 py-2 text-sm font-bold rounded-md transition-colors {inputType === 'record' ? 'bg-white shadow-sm text-indigo-600' : 'text-neutral-500 hover:text-neutral-700'}">🎤 Aufnahme</button>
                     <button type="button" onclick={() => inputType = 'text'} class="flex-1 py-2 text-sm font-bold rounded-md transition-colors {inputType === 'text' ? 'bg-white shadow-sm text-indigo-600' : 'text-neutral-500 hover:text-neutral-700'}">✍️ Text eingeben</button>
+                    <button type="button" onclick={() => { inputType = 'standard'; reportType = 'standard'; customPrompt = promptStandard; }} class="flex-1 py-2 text-sm font-bold rounded-md transition-colors {inputType === 'standard' ? 'bg-white shadow-sm text-indigo-600' : 'text-neutral-500 hover:text-neutral-700'}">✅ Ohne Vorkommnisse</button>
                 </div>
 
-                {#if inputType === 'record'}
+                {#if inputType === 'standard'}
+                    <div class="animate-enter bg-blue-50 border border-blue-100 p-4 rounded-xl text-center shadow-inner">
+                        <span class="text-3xl mb-2 block">✅</span>
+                        <h3 class="font-bold text-blue-900 mb-1">Standard-Bericht generieren</h3>
+                        <p class="text-sm text-blue-800">Die KI formuliert einen professionellen Kurzbericht basierend auf den Termindaten (Ort, Leistungen etc.), der bestätigt, dass alles planmäßig und ohne besondere Auffälligkeiten verlief.</p>
+                    </div>
+                {:else if inputType === 'record'}
                     <div class="animate-enter space-y-4">
                         {#if recordings.length > 0}
                             <div class="bg-indigo-50/30 p-4 rounded-2xl border border-indigo-100">
@@ -301,7 +415,7 @@
                                 <span class="text-xs text-neutral-400 font-medium">oder</span>
                                 <div class="h-px flex-1 bg-neutral-200"></div>
                             </div>
-                            <input type="file" bind:this={audioInput} onchange={handleFileUpload} class="hidden" accept="audio/*" multiple />
+                            <input type="file" bind:this={audioInput} onchange={handleFileUpload} class="hidden" accept="audio/*,.m4a,audio/mp4,audio/x-m4a,video/mp4" multiple />
                             <button type="button" onclick={() => audioInput.click()} class="text-sm font-semibold text-indigo-600 hover:text-indigo-800 transition-colors hover:underline">Datei hochladen</button>
                         {/if}
                         </div>
@@ -313,12 +427,24 @@
                     </div>
                 {/if}
 
-                {#if (inputType === 'record' && recordings.length > 0 && !isRecording) || (inputType === 'text' && manualText.trim())}
+                {#if (inputType === 'record' && recordings.length > 0 && !isRecording) || (inputType === 'text' && manualText.trim()) || inputType === 'standard'}
                     <div class="bg-neutral-50 p-4 rounded-xl border border-neutral-200">
+                        {#if (reportType === 'family' || reportType === 'standard') && availableRecipients.length > 0}
+                            <div class="mb-4 pb-4 border-b border-neutral-200">
+                                <label for="ai-recipient" class="block text-sm font-semibold text-neutral-700 mb-1.5">Bericht adressieren an (Betreuer / Kontakt)</label>
+                                <select id="ai-recipient" bind:value={selectedRecipientName} class="orga-input-clear py-2 text-sm bg-white border-neutral-200 cursor-pointer">
+                                    <option value="">Keine direkte Anrede (Allgemein)</option>
+                                    {#each availableRecipients as rec}
+                                        <option value={rec.name}>{rec.name} ({rec.role})</option>
+                                    {/each}
+                                </select>
+                            </div>
+                        {/if}
                         <div class="flex items-center justify-between mb-1.5">
                             <label for="ai-prompt" class="block text-sm font-semibold text-neutral-700">KI-Anweisung (Prompt)</label>
                             <div class="flex gap-2">
                                 <button type="button" onclick={() => { reportType = 'family'; customPrompt = promptFamilie; }} class="px-2 py-1 {reportType === 'family' ? 'bg-indigo-600 text-white shadow-sm border-indigo-700' : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border-indigo-200'} text-[10px] font-bold rounded-md border transition-colors">Für Familie</button>
+                                <button type="button" onclick={() => { reportType = 'standard'; customPrompt = promptStandard; }} class="px-2 py-1 {reportType === 'standard' ? 'bg-blue-600 text-white shadow-sm border-blue-700' : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200'} text-[10px] font-bold rounded-md border transition-colors">Standard (Planmäßig)</button>
                                 <button type="button" onclick={() => { reportType = 'internal'; customPrompt = promptIntern; }} class="px-2 py-1 {reportType === 'internal' ? 'bg-emerald-600 text-white shadow-sm border-emerald-700' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border-emerald-200'} text-[10px] font-bold rounded-md border transition-colors">Intern (Team)</button>
                             </div>
                         </div>

@@ -2,6 +2,8 @@
     import { orgaStore } from "$lib/stores/orgaStore.svelte";
     import { useClientFilter } from "$lib/services/clientFilterService.svelte";
     import ClientDetailModal from "$lib/components/ClientDetailModal.svelte";
+    import { pb } from "$lib/services/pocketbase";
+    import { onMount } from "svelte";
 
     const clientsStore = orgaStore.clients;
     const filterService = useClientFilter(() => clientsStore?.data || []);
@@ -24,6 +26,16 @@
         if (deceased.length > 0) groups.push({ title: "Verstorbene Klienten", clients: deceased });
         if (other.length > 0) groups.push({ title: "Sonstige Klienten", clients: other });
         return groups;
+    });
+
+    onMount(() => {
+        if (typeof localStorage !== 'undefined') {
+            const stored = localStorage.getItem('global_company_id');
+            if (stored) filterService.companyFilter = stored;
+        }
+        const handleSync = (e: any) => { filterService.companyFilter = e.detail; };
+        window.addEventListener('global-company-changed', handleSync);
+        return () => window.removeEventListener('global-company-changed', handleSync);
     });
 </script>
 

@@ -189,7 +189,7 @@
     }
 
     async function handleAiSave(newText: string, type: 'family' | 'internal', blobs?: Blob[]) {
-        const dateHeader = `\n\n--- KI Notiz vom ${new Date().toLocaleString('de-DE')} ---\n`;
+        const dateHeader = `\n\n--- KI Notiz vom ${new Date().toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })} Uhr ---\n`;
         const formattedText = dateHeader + newText.trim();
         
         if (type === 'family') {
@@ -239,6 +239,12 @@
         if (!input.files || input.files.length === 0 || !appointment) return;
         isReportSaving = true;
         try {
+            let hasHugeFile = false;
+            for (const file of input.files) {
+                if (file.size > 50 * 1024 * 1024) hasHugeFile = true;
+            }
+            if (hasHugeFile) toastStore.info("Upload läuft. Große Dateien können je nach Internetverbindung einige Zeit in Anspruch nehmen.");
+
             const pbFormData = new FormData();
             const existing = appointment.voice_records || [];
             for (const vr of existing) {
@@ -423,56 +429,10 @@
                             <p class="text-sm text-neutral-700">{appointment.description || 'Keine Beschreibung vorhanden.'}</p>
                         </div>
 
-                        <!-- Besuchsbericht / Report -->
-                        <div class="orga-card-white p-5">
-                            <div class="flex items-center justify-between mb-4 border-b border-neutral-100 pb-2">
-                                <h3 class="text-sm font-bold text-neutral-900 flex items-center gap-2">
-                                <span class="text-indigo-600">📝</span> Bericht & Notizen
-                                </h3>
-                            <div class="flex items-center gap-2">
-                                <input type="file" accept="audio/*" multiple class="hidden" bind:this={audioInput} onchange={uploadAudio} />
-                                <button onclick={() => audioInput.click()} class="text-xs font-bold text-neutral-600 hover:text-indigo-600 bg-neutral-100 hover:bg-neutral-200 px-2 sm:px-3 py-1.5 rounded-lg transition-colors shadow-sm" title="Audio-Datei hochladen">
-                                    📎 Audio
-                                </button>
-                                <button onclick={() => aiModal?.open(activeNoteTab, appointment, fullClient)} class="text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2 sm:px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors shadow-sm">
-                                    <span>🤖</span> Gemini
-                                </button>
-                            </div>
-                            </div>
-                            <div class="flex flex-col gap-3">
-                            <div class="flex bg-neutral-100 p-1 rounded-lg border border-neutral-200 shadow-inner shrink-0">
-                                <button onclick={() => activeNoteTab = 'internal'} class="flex-1 px-3 py-2 text-xs font-bold rounded-md transition-colors {activeNoteTab === 'internal' ? 'bg-white shadow-sm text-indigo-600' : 'text-neutral-500 hover:text-neutral-700'}">🔒 Intern (Team)</button>
-                                <button onclick={() => activeNoteTab = 'family'} class="flex-1 px-3 py-2 text-xs font-bold rounded-md transition-colors {activeNoteTab === 'family' ? 'bg-white shadow-sm text-indigo-600' : 'text-neutral-500 hover:text-neutral-700'}">📝 Familie (Bericht)</button>
-                            </div>
-                            
-                            {#if activeNoteTab === 'internal'}
-                                <textarea bind:value={notes} class="orga-input-clear resize-y min-h-30 text-sm" placeholder="Interne Notizen, Todo's, Auffälligkeiten für das Team..." disabled={isReportSaving}></textarea>
-                            {:else}
-                                <textarea bind:value={report} class="orga-input-clear resize-y min-h-30 text-sm" placeholder="Ausführlicher Bericht für Angehörige / Pflegekasse..." disabled={isReportSaving}></textarea>
-                            {/if}
-                            
-                            {#if appointment?.voice_records && appointment.voice_records.length > 0}
-                                <div class="bg-indigo-50/50 rounded-xl p-3 border border-indigo-100 mt-1">
-                                    <h4 class="text-[10px] font-bold text-indigo-800 uppercase tracking-wider mb-2 flex items-center gap-1"><span>🎙️</span> Gespeicherte Sprachnotizen</h4>
-                                    <div class="flex flex-col gap-2">
-                                        {#each appointment.voice_records as vr}
-                                            <div class="flex items-center justify-between bg-white p-2 rounded-lg border border-indigo-100 shadow-sm">
-                                                <audio controls src={pb.files.getURL(appointment, vr)} class="h-8 max-w-50 sm:max-w-62.5"></audio>
-                                                <button onclick={() => deleteVoiceRecord(vr)} class="w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-rose-500 hover:bg-rose-50 rounded-full transition-colors" title="Sprachnotiz löschen">✕</button>
-                                            </div>
-                                        {/each}
-                                    </div>
-                                </div>
-                            {/if}
-
-                                <div class="flex justify-end mt-1">
-                                <button onclick={saveReport} disabled={isReportSaving || (report === (appointment.report || '') && notes === (appointment.notes || appointment.internal_notes || ''))} class="orga-button-primary py-2 px-5 text-xs w-full sm:w-auto">
-                                        {isReportSaving ? 'Speichert...' : 'Speichern'}
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
+                        
                     </div>
+
+                    
 
                     <div class="lg:col-span-2 space-y-6">
                         <div class="orga-card-white p-5">
@@ -528,6 +488,55 @@
                                 <div class="bg-rose-50 rounded-lg p-3 flex justify-between items-center"><p class="text-xs font-bold text-rose-900">Gesamtsumme</p><p class="text-sm font-bold text-rose-700">{totalExpenditure.toFixed(2).replace('.', ',')} €</p></div>
                             {/if}
                         </div>
+
+                        <!-- Besuchsbericht / Report -->
+                        <div class="orga-card-white p-5">
+                            <div class="flex items-center justify-between mb-4 border-b border-neutral-100 pb-2">
+                                <h3 class="text-sm font-bold text-neutral-900 flex items-center gap-2">
+                                <span class="text-indigo-600">📝</span> Bericht & Notizen
+                                </h3>
+                            <div class="flex items-center gap-2">
+                                <input type="file" accept="audio/*,.m4a,audio/mp4,audio/x-m4a,video/mp4" multiple class="hidden" bind:this={audioInput} onchange={uploadAudio} />
+                                <button onclick={() => audioInput.click()} class="text-xs font-bold text-neutral-600 hover:text-indigo-600 bg-neutral-100 hover:bg-neutral-200 px-2 sm:px-3 py-1.5 rounded-lg transition-colors shadow-sm" title="Audio-Datei hochladen">
+                                    📎 Audio
+                                </button>
+                                <button onclick={() => aiModal?.open(activeNoteTab, appointment, fullClient)} class="text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2 sm:px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors shadow-sm">
+                                    <span>🤖</span> Gemini
+                                </button>
+                            </div>
+                            </div>
+                            <div class="flex flex-col gap-3">
+                            <div class="flex bg-neutral-100 p-1 rounded-lg border border-neutral-200 shadow-inner shrink-0">
+                                <button onclick={() => activeNoteTab = 'internal'} class="flex-1 px-3 py-2 text-xs font-bold rounded-md transition-colors {activeNoteTab === 'internal' ? 'bg-white shadow-sm text-indigo-600' : 'text-neutral-500 hover:text-neutral-700'}">🔒 Intern (Team)</button>
+                                <button onclick={() => activeNoteTab = 'family'} class="flex-1 px-3 py-2 text-xs font-bold rounded-md transition-colors {activeNoteTab === 'family' ? 'bg-white shadow-sm text-indigo-600' : 'text-neutral-500 hover:text-neutral-700'}">📝 Bericht</button>
+                            </div>
+                            
+                            {#if activeNoteTab === 'internal'}
+                                <textarea bind:value={notes} class="orga-input-clear resize-y min-h-30 text-sm" placeholder="Interne Notizen, Todo's, Auffälligkeiten für das Team..." disabled={isReportSaving}></textarea>
+                            {:else}
+                                <textarea bind:value={report} class="orga-input-clear resize-y min-h-30 text-sm" placeholder="Ausführlicher Bericht für Angehörige / Pflegekasse..." disabled={isReportSaving}></textarea>
+                            {/if}
+                            
+                            {#if appointment?.voice_records && appointment.voice_records.length > 0}
+                                <div class="bg-indigo-50/50 rounded-xl p-3 border border-indigo-100 mt-1">
+                                    <h4 class="text-[10px] font-bold text-indigo-800 uppercase tracking-wider mb-2 flex items-center gap-1"><span>🎙️</span> Gespeicherte Sprachnotizen</h4>
+                                    <div class="flex flex-col gap-2">
+                                        {#each appointment.voice_records as vr}
+                                            <div class="flex items-center justify-between bg-white p-2 rounded-lg border border-indigo-100 shadow-sm">
+                                                <audio controls src={pb.files.getURL(appointment, vr)} class="h-8 max-w-50 sm:max-w-62.5"></audio>
+                                                <button onclick={() => deleteVoiceRecord(vr)} class="w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-rose-500 hover:bg-rose-50 rounded-full transition-colors" title="Sprachnotiz löschen">✕</button>
+                                            </div>
+                                        {/each}
+                                    </div>
+                                </div>
+                            {/if}
+                                <div class="flex justify-end mt-1">
+                                <button onclick={saveReport} disabled={isReportSaving || (report === (appointment?.report || '') && notes === (appointment?.notes || appointment?.internal_notes || ''))} class="orga-button-primary py-2 px-5 text-xs w-full sm:w-auto">
+                                        {isReportSaving ? 'Speichert...' : 'Speichern'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             {/if}
@@ -541,6 +550,8 @@
     <AppointmentReminderModal bind:this={reminderModal} />
     <AiReportModal bind:this={aiModal} onSave={handleAiSave} />
     <ClientDetailModal bind:this={clientDetailModal} />
+
+    
     
     <dialog bind:this={taskDialog} class="p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-full max-w-sm mx-auto my-auto rounded-3xl" onclick={(e) => { if (e.target === taskDialog) taskDialog?.close(); }}>
         <div class="bg-white rounded-3xl p-6 w-full relative">

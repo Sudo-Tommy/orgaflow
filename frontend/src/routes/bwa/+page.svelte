@@ -2,6 +2,7 @@
     import { useBwaService } from "$lib/services/bwaService.svelte";
     import { orgaStore } from "$lib/stores/orgaStore.svelte";
     import { pb } from "$lib/services/pocketbase";
+    import { onMount } from "svelte";
     import { confirmStore } from "$lib/services/confirmService.svelte";
     import { toastStore } from "$lib/services/toastService.svelte";
 
@@ -178,6 +179,16 @@
             toastStore.success("Ausgabe und Beleg erfolgreich erfasst!");
         } catch (err) { alert("Fehler beim Speichern der Ausgabe."); }
     }
+
+    onMount(() => {
+        if (typeof localStorage !== 'undefined') {
+            const stored = localStorage.getItem('global_company_id');
+            if (stored) bwa.selectedCompanyId = stored;
+        }
+        const handleSync = (e: any) => { bwa.selectedCompanyId = e.detail; };
+        window.addEventListener('global-company-changed', handleSync);
+        return () => window.removeEventListener('global-company-changed', handleSync);
+    });
 </script>
 
 <div class="orga-page-header animate-enter">
@@ -186,14 +197,6 @@
         <p class="orga-page-subtitle">Ihre betriebswirtschaftliche Auswertung, Umsätze und Leistungszahlen.</p>
     </div>
     <div class="flex flex-col sm:flex-row items-center gap-3 mt-4 sm:mt-0 w-full sm:w-auto">
-        {#if isGodMode}
-            <select bind:value={bwa.selectedCompanyId} class="orga-input-clear py-3 sm:py-2.5 w-full sm:w-auto cursor-pointer font-bold text-indigo-700 bg-indigo-50/50 border-indigo-200">
-                <option value="all">🏢 Alle Firmen</option>
-                {#each orgaStore.company?.data || [] as comp}
-                    <option value={comp.id}>{comp.city} {comp.name ? `(${comp.name})` : ''}</option>
-                {/each}
-            </select>
-        {/if}
         <div class="flex items-center gap-3 w-full sm:w-auto">
             <label for="year-select" class="text-sm font-semibold text-neutral-600 shrink-0">Geschäftsjahr:</label>
             <select id="year-select" bind:value={bwa.selectedYear} class="orga-input-clear py-3 sm:py-2.5 w-full sm:w-32 cursor-pointer font-bold text-neutral-900 bg-white">
@@ -363,7 +366,7 @@
                     <tbody class="divide-y divide-neutral-50">
                         {#each bwa.companyExpenses as exp}
                             <tr class="hover:bg-neutral-50/50 transition-colors group">
-                                <td class="p-4 text-neutral-600">{new Date(exp.date).toLocaleDateString('de-DE')}</td>
+                                <td class="p-4 text-neutral-600">{new Date(exp.date).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}</td>
                                 <td class="p-4"><span class="px-2.5 py-1 bg-neutral-100 text-neutral-700 text-xs font-bold rounded-lg">{exp.category}</span></td>
                                 <td class="p-4">
                                     <p class="font-bold text-neutral-900">{exp.supplier || 'Unbekannt'}</p>

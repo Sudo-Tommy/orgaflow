@@ -94,7 +94,7 @@
                             <span class="inline-block px-2 py-0.5 bg-neutral-100 rounded text-xs font-bold text-neutral-600 w-max uppercase tracking-wider">{doc.type || 'Dokument'}</span>
                         </td>
                         <td class="p-4 text-neutral-600 text-sm">
-                            {new Date(doc.updated || doc.created).toLocaleDateString('de-DE')}
+                            {new Date(doc.updated || doc.created).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                         </td>
                         <td class="p-4">
                             <div class="flex items-center justify-end gap-2 opacity-100 xl:opacity-0 xl:group-hover:opacity-100 transition-opacity">
@@ -121,7 +121,7 @@
                     </div>
                 </div>
                 <div class="flex items-center justify-between gap-2 mt-1 pt-3 border-t border-neutral-50">
-                    <span class="text-xs text-neutral-400 font-semibold">{new Date(doc.updated || doc.created).toLocaleDateString('de-DE')}</span>
+                    <span class="text-xs text-neutral-400 font-semibold">{new Date(doc.updated || doc.created).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
                     <div class="flex items-center gap-1.5">
                         <button onclick={() => duplicateDoc(doc)} class="p-2 text-neutral-400 hover:text-brand-600 rounded-lg hover:bg-brand-50 transition-colors" title="Duplizieren"><svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg></button>
                         <button onclick={() => deleteDoc(doc.id)} class="p-2 text-neutral-400 hover:text-rose-500 rounded-lg hover:bg-rose-50 transition-colors" title="Löschen"><svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>

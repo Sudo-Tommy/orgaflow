@@ -5,7 +5,7 @@ import nodemailer from 'nodemailer';
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import PocketBase from 'pocketbase';
-import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import webpush from 'web-push';
 
@@ -30,14 +30,6 @@ if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
     );
 }
 
-// In-Memory Speicher für Portal-Logins
-const otpStore = new Map();
-const sessionStore = new Map();
-setInterval(() => {
-    const now = Date.now();
-    for (const [key, value] of otpStore.entries()) { if (value.expires < now) otpStore.delete(key); }
-    for (const [key, value] of sessionStore.entries()) { if (value.expires < now) sessionStore.delete(key); }
-}, 10 * 60000); // Aufräumen abgelaufener Codes alle 10 Minuten
 
 // Helper: Auth-Token validieren und Postfach-Zugangsdaten aus PB holen
 async function getUserEmailCredentials(authHeader) {
@@ -315,35 +307,52 @@ async function getAdminPb() {
     return pbAdmin;
 }
 
-app.post('/api/emails/portal/request-otp', async (req, res) => {
+app.post(['/api/emails/portal/request-otp', '/portal/request-otp'], async (req, res) => {
     const { email } = req.body;
     if (!email) return res.status(400).json({ error: 'E-Mail fehlt.' });
 
     try {
         console.log(`[PORTAL] Fordere OTP an für: ${email}`);
         const pbAdmin = await getAdminPb();
-        const clients = await pbAdmin.collection('clients').getFullList({ filter: `email = "${email}"`, requestKey: null });
-        
-        if (clients.length === 0) {
-            console.log(`[PORTAL] Abbruch: E-Mail '${email}' ist nicht als Klient registriert.`);
-            // Vorher "Fake-Erfolg" aus Sicherheitsgründen. Zum Testen werfen wir jetzt einen echten Fehler!
-            return res.status(404).json({ error: 'Diese E-Mail ist nicht als Klient registriert.' });
-        }
-        
-        const client = clients[0];
-        const otp = Math.floor(100000 + Math.random() * 900000).toString();
-        otpStore.set(email, { otp, clientId: client.id, expires: Date.now() + 15 * 60000 });
-        
-        console.log(`[PORTAL] Klient gefunden: ${client.name_first} ${client.name_last}. Lade SMTP-Config...`);
+        let user = null;
+        let userType = '';
 
-        const companies = await pbAdmin.collection('company').getFullList({ filter: `clients ~ "${client.id}"`, requestKey: null });
+        try {
+            const client = await pbAdmin.collection('clients').getFirstListItem(`email = "${email.toLowerCase()}"`);
+            if (client) { user = client; userType = 'client'; }
+        } catch (e) {}
+
+        if (!user) {
+            try {
+                const contact = await pbAdmin.collection('contacts').getFirstListItem(`email = "${email.toLowerCase()}"`);
+                if (contact) {
+                    const linkedClients = await pbAdmin.collection('clients').getFullList({ filter: `contacts ~ "${contact.id}"`, fields: 'id' });
+                    if (linkedClients.length > 0) { user = contact; userType = 'contact'; }
+                }
+            } catch (e) {}
+        }
+
+        if (!user) {
+            console.log(`[PORTAL] Abbruch: E-Mail '${email}' ist nicht als Klient oder Kontakt registriert.`);
+            return res.status(404).json({ error: "Diese E-Mail-Adresse ist im System nicht als Klient oder Bezugsperson hinterlegt." });
+        }
+
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const expires = new Date(Date.now() + 10 * 60 * 1000);
+        await pbAdmin.collection('otp_codes').create({
+            email: user.email.toLowerCase(), code: otp, expires: expires.toISOString(), user_id: user.id, user_type: userType
+        });
+
+        console.log(`[PORTAL] User gefunden: ${user.name_first} ${user.name_last} (Typ: ${userType}). Lade SMTP-Config...`);
+        const companies = await pbAdmin.collection('company').getFullList({ requestKey: null });
         let smtpUser = process.env.SMTP_USER;
         let smtpPass = process.env.SMTP_PASSWORD;
         let smtpHost = process.env.SMTP_HOST || 'smtp.ionos.de';
         let smtpPort = 465;
 
-        if (companies.length > 0) {
-            const configs = await pbAdmin.collection('userMailConfigs').getFullList({ filter: `company = "${companies[0].id}"`, requestKey: null });
+        const companyConfig = companies[0];
+        if (companyConfig) {
+            const configs = await pbAdmin.collection('userMailConfigs').getFullList({ filter: `company = "${companyConfig.id}"`, requestKey: null });
             if (configs.length > 0 && configs[0].smtp_user) {
                 console.log(`[PORTAL] Nutze Firmen-E-Mail-Config aus der Datenbank.`);
                 smtpUser = configs[0].smtp_user; smtpPass = configs[0].smtp_password;
@@ -360,8 +369,8 @@ app.post('/api/emails/portal/request-otp', async (req, res) => {
         const transporter = nodemailer.createTransport({ host: smtpHost, port: smtpPort, secure: smtpPort === 465, auth: { user: smtpUser, pass: smtpPass } });
         
         const subject = 'Ihr Zugangs-Code für das Portal';
-        const htmlBody = `<div style="font-family: Arial; padding: 20px;"><h2>Guten Tag ${client.name_first || ''},</h2><p>Ihr Einmal-Code für das Portal lautet: <strong><span style="font-size: 24px; color: #4f46e5; letter-spacing: 2px;">${otp}</span></strong></p><p>Dieser Code ist 15 Minuten gültig.</p></div>`;
-        const textBody = `Guten Tag ${client.name_first || ''},\n\nIhr Einmal-Code für das Portal lautet: ${otp}\n\nDieser Code ist 15 Minuten gültig.`;
+        const htmlBody = `<div style="font-family: Arial; padding: 20px;"><h2>Guten Tag ${user.name_first || ''},</h2><p>Ihr Einmal-Code für das Portal lautet: <strong><span style="font-size: 24px; color: #4f46e5; letter-spacing: 2px;">${otp}</span></strong></p><p>Dieser Code ist 10 Minuten gültig.</p></div>`;
+        const textBody = `Guten Tag ${user.name_first || ''},\n\nIhr Einmal-Code für das Portal lautet: ${otp}\n\nDieser Code ist 10 Minuten gültig.`;
 
         const info = await transporter.sendMail({
             from: `"Klienten-Portal" <${smtpUser}>`,
@@ -385,7 +394,7 @@ app.post('/api/emails/portal/request-otp', async (req, res) => {
                 body_text: textBody,
                 body_html: htmlBody,
                 is_read: true,
-                client: client.id // Direkt mit dem Klienten verknüpfen
+                client: userType === 'client' ? user.id : null
             });
             console.log(`[PORTAL] Gesendete OTP-E-Mail in der Datenbank archiviert.`);
         } catch (dbError) {
@@ -395,47 +404,70 @@ app.post('/api/emails/portal/request-otp', async (req, res) => {
         res.json({ success: true });
     } catch (err) {
         console.error("[PORTAL] Schwerer Fehler beim Versenden:", err);
-        res.status(500).json({ error: "Fehler beim E-Mail-Versand. Stimmen die SMTP-Zugangsdaten?" });
+        let clientMsg = "Fehler beim E-Mail-Versand. Stimmen die SMTP-Zugangsdaten?";
+        if (err.status === 400 || (err.message && err.message.includes("authenticate"))) {
+            clientMsg = "Datenbank-Verbindung fehlgeschlagen: Das PB_ADMIN_PASSWORD in der .env Datei des Microservices ist falsch.";
+        } else if (err.status === 404 && err.message && err.message.includes("collection")) {
+            // Dieser Fehler tritt auf, wenn die 'otp_codes' Tabelle in der DB fehlt.
+            clientMsg = "Datenbank-Fehler: Die Collection 'otp_codes' wurde nicht gefunden. Bitte im PocketBase Admin-UI anlegen.";
+        }
+        res.status(500).json({ error: clientMsg });
     }
 });
 
-app.post('/api/emails/portal/verify-otp', (req, res) => {
+app.post(['/api/emails/portal/verify-otp', '/portal/verify-otp'], async (req, res) => {
     const { email, otp } = req.body;
-    const record = otpStore.get(email);
-    
-    if (!record || record.expires < Date.now() || record.otp !== otp) return res.status(401).json({ error: "Code ungültig oder abgelaufen." });
-    
-    otpStore.delete(email); // Code verbraucht
-    const token = crypto.randomBytes(32).toString('hex');
-    sessionStore.set(token, { clientId: record.clientId, email, expires: Date.now() + 2 * 3600000 }); // Session hält 2 Stunden
-    res.json({ success: true, token });
+    if (!email || !otp) return res.status(400).json({ error: "E-Mail oder Code fehlt." });
+
+    try {
+        const pbAdmin = await getAdminPb();
+        // WICHTIG: Das "T" im Datum durch ein Leerzeichen ersetzen, damit SQLite nicht durcheinanderkommt!
+        const now = new Date().toISOString().replace('T', ' ');
+        const otpRecord = await pbAdmin.collection('otp_codes').getFirstListItem(
+            `email = "${email.toLowerCase()}" && code = "${otp}" && expires > "${now}"`
+        );
+
+        const payload = {
+            id: otpRecord.user_id,
+            type: otpRecord.user_type, // 'client' oder 'contact'
+            email: otpRecord.email
+        };
+
+        if (!process.env.JWT_SECRET) throw new Error("JWT_SECRET ist nicht in der .env Datei konfiguriert!");
+
+        const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
+        await pbAdmin.collection('otp_codes').delete(otpRecord.id);
+        res.json({ success: true, token });
+    } catch (err) {
+        res.status(401).json({ error: "Code ist ungültig oder abgelaufen." });
+    }
 });
 
 // Helper: Portal-Auth validieren (Erlaubt OTP-Session ODER PocketBase Admin-Token)
 async function resolvePortalAuth(authHeader) {
     if (!authHeader) return null;
-    const token = authHeader.replace('Bearer ', '');
-    
-    // 1. Ist es eine Klienten-Session?
-    const session = sessionStore.get(token);
-    if (session && session.expires >= Date.now()) {
-        return { type: 'client', clientId: session.clientId };
-    }
+    const token = authHeader.split(' ')[1];
+    if (!token) return null;
 
-    // 2. Ist es ein PocketBase-Token (Admin-Modus)?
-    const pbAuth = new PocketBase(PB_URL);
-    pbAuth.authStore.save(token, null);
+    try {
+        const pb = new PocketBase(PB_URL);
+        pb.authStore.save(token, null);
+        if (pb.authStore.isValid) {
+            await pb.collection('users').authRefresh();
+            const role = pb.authStore.model.role;
+            if (role === 'superadmin' || role === 'admin') return { type: 'admin', pb: pb };
+        }
+    } catch(e) {
+        // Fallthrough
+    }
     
     try {
-        await pbAuth.collection('_superusers').authRefresh();
-        return { type: 'admin', pb: pbAuth };
-    } catch(e) {
-        try {
-            const authData = await pbAuth.collection('users').authRefresh();
-            const role = authData.record?.role;
-            if (role === 'superadmin' || role === 'admin') return { type: 'admin', pb: pbAuth };
-        } catch(err) {}
-    }
+        if (!process.env.JWT_SECRET) return null;
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        if (decoded.type === 'client' && decoded.id) return { type: 'client', clientId: decoded.id };
+        if (decoded.type === 'contact' && decoded.id) return { type: 'contact', contactId: decoded.id };
+    } catch (err) { /* Ungültiger Token */ }
+    
     return null;
 }
 
@@ -460,11 +492,12 @@ app.get('/api/emails/portal/invoices', async (req, res) => {
         
         const mappedInvoices = invoices.map(inv => {
             const pdfs = Array.isArray(inv.pdf) ? inv.pdf : (inv.pdf ? [inv.pdf] : []);
-            const files = pdfs.map(filename => ({
+            const files = pdfs.map((filename, index) => ({
                 name: filename,
-                url: `/api/files/invoices/${inv.id}/${filename}?token=${fileToken}`
+                url: pbAdmin.files.getUrl(inv, filename, { 'token': fileToken }),
+                isTimesheet: index > 0
             }));
-            return { id: inv.id, invoice_nr: inv.invoice_nr, issue_date: inv.issue_date, status: inv.status, brutto: inv.brutto, files };
+            return { ...inv, files };
         });
 
         res.json({ success: true, invoices: mappedInvoices });
@@ -478,30 +511,37 @@ app.get('/api/emails/portal/invoices', async (req, res) => {
 app.get(['/api/emails/portal/appointments', '/portal/appointments', '/appointments'], async (req, res) => {
     const auth = await resolvePortalAuth(req.headers.authorization);
     if (!auth) return res.status(401).json({ error: "Session abgelaufen oder ungültig. Bitte neu anmelden." });
-    
+
     try {
         const pbAdmin = auth.pb || await getAdminPb();
-        
+
         // Termine ab gestern laden (damit auch frische, vergangene Termine angezeigt werden)
         const yesterday = new Date();
         yesterday.setDate(yesterday.getDate() - 1);
-        
-        let filterStr = `appointment >= "${yesterday.toISOString()}"`;
-        
+
+        // WICHTIG: Das "T" im Datum durch ein Leerzeichen ersetzen, damit SQLite nicht durcheinanderkommt!
+        let filterStr = `appointment >= "${yesterday.toISOString().replace('T', ' ')}"`;
+
         if (auth.type === 'client') {
-            filterStr = `(client = "${auth.clientId}" || client ?= "${auth.clientId}") && ${filterStr}`;
+            filterStr = `(client = "${auth.clientId}" || client ~ "${auth.clientId}") && ${filterStr}`;
+        } else if (auth.type === 'contact') {
+            const linkedClients = await pbAdmin.collection('clients').getFullList({ filter: `contacts ~ "${auth.contactId}" || caregiver = "${auth.contactId}"`, fields: 'id' });
+            if (linkedClients.length === 0) return res.json({ success: true, appointments: [] });
+            const clientIds = linkedClients.map(c => c.id);
+            const clientFilter = clientIds.map(id => `(client = "${id}" || client ~ "${id}")`).join(' || ');
+            filterStr = `(${clientFilter}) && ${filterStr}`;
         } else if (auth.type === 'admin' && req.query.client_id) {
             // Superadmin-Filter: Zeige nur Termine des ausgewählten Klienten
-            filterStr = `(client = "${req.query.client_id}" || client ?= "${req.query.client_id}") && ${filterStr}`;
+            filterStr = `(client = "${req.query.client_id}" || client ~ "${req.query.client_id}") && ${filterStr}`;
         }
-        
+
         const appointments = await pbAdmin.collection('appointments').getFullList({
             filter: filterStr,
             sort: 'appointment',
-            expand: 'user,time_record,drive_record,tasks,expenditures',
+            expand: 'user,time_record,drive_record,tasks,expenditures,appointment_at,client',
             requestKey: null
         });
-        
+
         res.json({ success: true, appointments });
     } catch (err) {
         console.error("[PORTAL APPOINTMENTS] Fehler beim Laden der Termine:", err);
@@ -513,7 +553,7 @@ app.get(['/api/emails/portal/appointments', '/portal/appointments', '/appointmen
 app.get(['/api/emails/portal/clients', '/portal/clients'], async (req, res) => {
     const auth = await resolvePortalAuth(req.headers.authorization);
     if (!auth || auth.type !== 'admin') return res.status(403).json({ error: "Nur für Administratoren zugänglich." });
-    
+
     try {
         const pbAdmin = auth.pb || await getAdminPb();
         const clients = await pbAdmin.collection('clients').getFullList({ sort: 'name_first', requestKey: null });
@@ -631,7 +671,6 @@ app.post('/api/emails/ai/transcribe', requireAuth, async (req, res) => { // Beh�
 
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
         
-        // HINWEIS: 'gemini-1.5-flash-latest' ist das korrekte, aktuelle Modell. 'gemini-3-flash-preview' existiert nicht.
         const model = genAI.getGenerativeModel({ model: "gemini-3.1-flash-lite" });
 
         const defaultPrompt = "Du bist ein professioneller Assistent in der Seniorenbetreuung. Erstelle aus den folgenden Notizen/dem Diktat einen sachlichen, gut lesbaren Pflege- bzw. Besuchsbericht. Entferne Füllwörter, korrigiere Grammatikfehler und strukturiere den Text sinnvoll (z.B. mit Absätzen oder kurzen Stichpunkten). Bleibe beim 'Sie', wenn über den Klienten gesprochen wird. Schreibe KEINE Einleitung wie 'Hier ist der Bericht', sondern gib mir direkt nur den fertigen Text.";
@@ -669,7 +708,6 @@ app.post('/api/emails/ai/receipt', requireAuth, async (req, res) => {
         if (!process.env.GEMINI_API_KEY) return res.status(500).json({ error: "Gemini API Key fehlt im Server." });
 
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-        // HINWEIS: gemini-3.1-flash-lite ist das aktuelle, leistungsfähige Modell für Vision-Aufgaben. 'gemini-3-flash-preview' existiert nicht.
         const model = genAI.getGenerativeModel({ model: "gemini-3.1-flash-lite" });
 
         const prompt = `Analysiere diesen Kassenbon/Rechnung und extrahiere die wichtigsten Daten.

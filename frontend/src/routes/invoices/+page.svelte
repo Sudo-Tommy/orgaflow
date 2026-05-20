@@ -102,6 +102,16 @@
         const invoiceTemplate = orgaStore.document_templates?.data.find((t: any) => (t.type || '').toLowerCase() === 'rechnung');
         generatorModal?.open(invoiceTemplate?.id, 1);
     }
+
+    onMount(() => {
+        if (typeof localStorage !== 'undefined') {
+            const stored = localStorage.getItem('global_company_id');
+            if (stored) filterService.companyFilter = stored;
+        }
+        const handleSync = (e: any) => { filterService.companyFilter = e.detail; };
+        window.addEventListener('global-company-changed', handleSync);
+        return () => window.removeEventListener('global-company-changed', handleSync);
+    });
 </script>
 
 <div class="orga-page-header animate-enter">
@@ -168,7 +178,7 @@
                                 <td class="p-4">
                                     <div class="flex flex-col">
                                         <span class="font-bold text-neutral-900">{inv.invoice_nr || 'RE-Unbekannt'}</span>
-                                        <span class="text-xs text-neutral-500 mt-0.5">{inv.issue_date ? new Date(inv.issue_date).toLocaleDateString('de-DE') : '-'}</span>
+                                        <span class="text-xs text-neutral-500 mt-0.5">{inv.issue_date ? new Date(inv.issue_date).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-'}</span>
                                     </div>
                                 </td>
                                 <td class="p-4">
@@ -239,7 +249,7 @@
                         <div class="flex justify-between items-start">
                             <div>
                                 <span class="font-bold text-neutral-900">{inv.invoice_nr || 'RE-Unbekannt'}</span>
-                                <span class="text-xs text-neutral-500 block mt-0.5">{inv.issue_date ? new Date(inv.issue_date).toLocaleDateString('de-DE') : '-'}</span>
+                                <span class="text-xs text-neutral-500 block mt-0.5">{inv.issue_date ? new Date(inv.issue_date).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-'}</span>
                             </div>
                             {#if inv.brutto > 0}
                                 <span class="font-black text-indigo-700 text-lg">{inv.brutto.toFixed(2).replace('.', ',')} €</span>

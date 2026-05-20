@@ -61,7 +61,7 @@
     }
 
     function handleAiSave(newText: string, type: 'family' | 'internal', blobs?: Blob[]) {
-        const dateHeader = `\n\n--- ${type === 'internal' ? 'Interne Notiz' : 'Bericht'} vom ${new Date().toLocaleDateString('de-DE')} ---\n`;
+        const dateHeader = `\n\n--- ${type === 'internal' ? 'Interne Notiz' : 'Bericht'} vom ${new Date().toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })} ---\n`;
         const formattedText = dateHeader + newText.trim();
         
         notes = (notes ? notes.trim() : '') + formattedText;

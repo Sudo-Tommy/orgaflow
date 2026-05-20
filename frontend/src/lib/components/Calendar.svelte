@@ -54,6 +54,13 @@
 
         const timeInterval = setInterval(() => now = new Date(), 60000); // Jede Minute aktualisieren
 
+        if (typeof localStorage !== 'undefined') {
+            const stored = localStorage.getItem('global_company_id');
+            if (stored) selectedCompanyId = stored;
+        }
+        const handleSync = (e: any) => { selectedCompanyId = e.detail; };
+        window.addEventListener('global-company-changed', handleSync);
+
         if (isSuperAdmin) {
             pb.collection('users').getFullList({ requestKey: null }).then(res => {
                 if (isGodMode) {
@@ -73,6 +80,7 @@
 
         return () => {
             clearInterval(timeInterval);
+            window.removeEventListener('global-company-changed', handleSync);
             unsub();
         };
     });
@@ -109,7 +117,7 @@
             });
         }
         if (selectedUserId !== "all") {
-            list = list.filter((app: any) => app.user === selectedUserId);
+            list = list.filter((app: any) => app.user === selectedUserId || (app.description && app.description.includes('[BLOCK]')));
         }
         return list;
     });
@@ -407,14 +415,6 @@
                 <button onclick={() => viewMode = 'month'} class="px-3 py-1 text-xs font-bold rounded-md transition-colors {viewMode === 'month' ? 'bg-white shadow-sm text-indigo-600' : 'text-neutral-500 hover:text-neutral-700'}">Monat</button>
                 <button onclick={() => viewMode = 'week'} class="px-3 py-1 text-xs font-bold rounded-md transition-colors {viewMode === 'week' ? 'bg-white shadow-sm text-indigo-600' : 'text-neutral-500 hover:text-neutral-700'}">Woche</button>
             </div>
-            {#if isGodMode}
-                <select bind:value={selectedCompanyId} class="bg-indigo-50 border border-indigo-200 text-sm font-bold text-indigo-700 rounded-lg px-3 py-1.5 shadow-sm focus:ring-2 focus:ring-indigo-500/20 outline-none w-full sm:w-auto cursor-pointer">
-                    <option value="all">🏢 Alle Firmen</option>
-                    {#each orgaStore.company?.data || [] as comp}
-                        <option value={comp.id}>{comp.city} {comp.name ? `(${comp.name})` : ''}</option>
-                    {/each}
-                </select>
-            {/if}
             <!-- Klienten-Filter -->
             <select bind:value={selectedClientId} class="bg-white border border-neutral-200 text-sm font-semibold text-neutral-700 rounded-lg px-3 py-1.5 shadow-sm focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 outline-none w-full sm:w-auto cursor-pointer">
                 <option value="all">Alle Klienten</option>

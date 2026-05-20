@@ -1,6 +1,7 @@
 export function useInvoiceFilter(invoicesProvider: () => any[]) {
     let searchQuery = $state("");
     let statusFilter = $state("all");
+    let companyFilter = $state("all");
 
     let filtered = $derived.by(() => {
         const list = invoicesProvider();
@@ -21,8 +22,9 @@ export function useInvoiceFilter(invoicesProvider: () => any[]) {
             
             // Filter nach Status
             const matchStatus = statusFilter === 'all' || (inv.status || '') === statusFilter;
+            const matchCompany = companyFilter === 'all' || inv.company === companyFilter;
             
-            return matchQuery && matchStatus;
+            return matchQuery && matchStatus && matchCompany;
         });
     });
 
@@ -31,6 +33,8 @@ export function useInvoiceFilter(invoicesProvider: () => any[]) {
         set searchQuery(v) { searchQuery = v; },
         get statusFilter() { return statusFilter; },
         set statusFilter(v) { statusFilter = v; },
+        get companyFilter() { return companyFilter; },
+        set companyFilter(v) { companyFilter = v; },
         get filtered() { return filtered; }
     };
 }

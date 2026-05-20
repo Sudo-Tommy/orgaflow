@@ -115,7 +115,7 @@
                                 <p class="text-xs font-semibold text-brand-600 bg-brand-100 inline-block px-2 py-0.5 rounded mt-1 border border-brand-200">{formatContact(req.contact_method)}</p>
                             </div>
                             <div class="text-right">
-                                <p class="text-xs text-neutral-500 font-medium">{new Date(req.created).toLocaleDateString('de-DE')} {new Date(req.created).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</p>
+                                <p class="text-xs text-neutral-500 font-medium">{new Date(req.created).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })} {new Date(req.created).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</p>
                                 {#if req.status === 'accepted'}<span class="text-xs font-bold text-emerald-600 mt-1 block">✅ Angenommen</span>{/if}
                                 {#if req.status === 'denied'}<span class="text-xs font-bold text-rose-600 mt-1 block">❌ Abgelehnt</span>{/if}
                             </div>
@@ -129,7 +129,7 @@
                             <div class="text-xs text-neutral-500 w-full sm:w-auto">
                                 {#if req.date || req.time}
                                     <span class="font-bold">Wunsch:</span> 
-                                    {req.date ? new Date(req.date).toLocaleDateString('de-DE') : 'Kein Datum'} 
+                                    {req.date ? new Date(req.date).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : 'Kein Datum'} 
                                     {req.time ? `um ${new Date(req.time).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr` : ''}
                                 {:else}
                                     <span class="italic">Kein Terminwunsch</span>

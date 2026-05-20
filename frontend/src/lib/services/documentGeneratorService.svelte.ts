@@ -12,19 +12,32 @@ export function useDocumentGenerator() {
     let recipientType = $state("client"); 
     let recipientId = $state("");
     let selectedAppointmentIds = $state<string[]>([]);
+    let selectedCompanyId = $state<string>("all");
 
     let hourlyWage = $state(40);
     let kmRate = $state(0.3);
     let taxRate = $state("0");
 
     let manualInvoiceNr = $state("");
-    let manualIssueDate = $state(new Date().toISOString().split('T')[0]); // YYYY-MM-DD
+    
+    function getLocalDate() {
+        const d = new Date();
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+    
+    let manualIssueDate = $state(getLocalDate()); // YYYY-MM-DD
 
     function getNextInvoiceNumber() {
         const year = new Date().getFullYear();
         const invoices = orgaStore.invoices?.data || [];
         let maxNr = 0;
+        const currentCompanyId = company?.id;
+        
         for (const inv of invoices) {
+            if (currentCompanyId && inv.company !== currentCompanyId) continue;
             const match = (inv.invoice_nr || '').match(/^(\d+)\/(\d{4})$/);
             if (match && parseInt(match[2]) === year) {
                 const nr = parseInt(match[1]);
@@ -39,6 +52,9 @@ export function useDocumentGenerator() {
     
     // Holt gezielt die Firma des aktuell eingeloggten Nutzers (Rechnungserstellers)
     let company = $derived.by(() => {
+        if (selectedCompanyId && selectedCompanyId !== "all") {
+            return orgaStore.company?.data.find((c: any) => c.id === selectedCompanyId) || orgaStore.company?.data[0];
+        }
         const user = pb.authStore.record;
         if (!user || !user.company) return orgaStore.company?.data[0];
         const userCompanyId = Array.isArray(user.company) ? user.company[0] : user.company;
@@ -115,7 +131,7 @@ export function useDocumentGenerator() {
                     if (app.expand?.tasks && app.expand.tasks.length > 0) {
                         titleDesc = app.expand.tasks.map((t:any) => t.title).join(', ');
                     }
-                    positions.push({ pos: posCounter++, date: new Date(app.appointment as string).toLocaleDateString('de-DE'), duration: `${hours.toFixed(2)} h`, title: `${titleDesc}`, price: `${hourlyWage.toFixed(2)} €`, total });
+                    positions.push({ pos: posCounter++, date: new Date(app.appointment as string).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }), duration: `${hours.toFixed(2).replace('.', ',')} h`, title: `${titleDesc}`, price: `${hourlyWage.toFixed(2).replace('.', ',')} €`, total });
                 }
             }
 
@@ -124,12 +140,12 @@ export function useDocumentGenerator() {
                 for (const dr of app.expand.drive_record) {
                     if (dr.lump_sum > 0 && includeDriveLumpSum) { 
                         netto += dr.lump_sum;
-                        positions.push({ pos: posCounter++, date: new Date(app.appointment as string).toLocaleDateString('de-DE'), duration: "1", title: `Anfahrt`, price: `${dr.lump_sum.toFixed(2)} €`, total: dr.lump_sum });
+                        positions.push({ pos: posCounter++, date: new Date(app.appointment as string).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }), duration: "1", title: `Anfahrt`, price: `${dr.lump_sum.toFixed(2).replace('.', ',')} €`, total: dr.lump_sum });
                     }
                     if (dr.km > 0 && includeDriveKm) { 
                         let total = dr.km * kmRate;
                         netto += total;
-                        positions.push({ pos: posCounter++, date: new Date(app.appointment as string).toLocaleDateString('de-DE'), duration: `${dr.km} km`, title: `Fahrtkosten (${dr.km} km)`, price: `${kmRate.toFixed(2)} €`, total: total });
+                        positions.push({ pos: posCounter++, date: new Date(app.appointment as string).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }), duration: `${dr.km.toString().replace('.', ',')} km`, title: `Fahrtkosten (${dr.km.toString().replace('.', ',')} km)`, price: `${kmRate.toFixed(2).replace('.', ',')} €`, total: total });
                     }
                 }
             }
@@ -139,7 +155,7 @@ export function useDocumentGenerator() {
                 for (const exp of app.expand.expenditures) {
                     if (exp.sum > 0) {
                         netto += exp.sum;
-                        positions.push({ pos: posCounter++, date: new Date(app.appointment as string).toLocaleDateString('de-DE'), duration: "1", title: `Auslage: ${exp.titel}`, price: `${exp.sum.toFixed(2)} €`, total: exp.sum });
+                        positions.push({ pos: posCounter++, date: new Date(app.appointment as string).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }), duration: "1", title: `Auslage: ${exp.titel}`, price: `${exp.sum.toFixed(2).replace('.', ',')} €`, total: exp.sum });
                     }
                 }
             }
@@ -191,7 +207,7 @@ export function useDocumentGenerator() {
                 if (app.expand?.tasks && app.expand.tasks.length > 0) {
                     titleDesc = app.expand.tasks.map((t:any) => t.title).join(', ');
                 }
-                positions.push({ pos: posCounter++, date: new Date(app.appointment as string).toLocaleDateString('de-DE'), duration: `${hours.toFixed(2)} h`, title: `${titleDesc}`, price: `${hourlyWage.toFixed(2)} €`, total });
+                positions.push({ pos: posCounter++, date: new Date(app.appointment as string).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }), duration: `${hours.toFixed(2).replace('.', ',')} h`, title: `${titleDesc}`, price: `${hourlyWage.toFixed(2).replace('.', ',')} €`, total });
             }
         }
 
@@ -275,7 +291,7 @@ export function useDocumentGenerator() {
             if (!val) return '';
             const clean = val.trim().replace(' ', 'T');
             const d = new Date(clean);
-            if (!isNaN(d.getTime())) return d.toLocaleDateString('de-DE', { timeZone: 'UTC' });
+            if (!isNaN(d.getTime())) return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' });
             const match = val.match(/^(\d{4})-(\d{2})-(\d{2})/);
             if (match) return `${match[3]}.${match[2]}.${match[1]}`;
             return val.split(' ')[0];
@@ -297,6 +313,8 @@ export function useDocumentGenerator() {
         const clientSignUrl = rec.sign ? pb.files.getURL(rec, rec.sign) : '';
         const userSignUrl = usr.sign ? pb.files.getURL(usr, usr.sign) : '';
 
+        const dueDate = new Date(new Date(manualIssueDate).getTime() + 14 * 24 * 60 * 60 * 1000);
+
         const map: Record<string, string> = {
             '{{client.salutation}}': rec.salutation || '',
             '{{client.salutation_formal}}': rec.salutation === 'Herr' ? `Sehr geehrter Herr ${rec.name_last},` : (rec.salutation === 'Frau' ? `Sehr geehrte Frau ${rec.name_last},` : `Guten Tag ${rec.name_first} ${rec.name_last},`),
@@ -310,12 +328,14 @@ export function useDocumentGenerator() {
             '{{client.insurance_nr}}': rec.insurance_nr || '',
             '{{client.birthdate}}': safeFormatDate(rec.birthdate),
             '{{client.level_of_care}}': rec.level_of_care || '',
-            '{{client.hourly_wage}}': (client?.hourly_wage || '').toString(),
-            '{{client.km_rate}}': (client?.km_rate || '').toString(),
-            '{{client.tax_rate}}': (client?.tax_rate || '').toString(),
+            '{{client.hourly_wage}}': (client?.hourly_wage ?? '').toString().replace('.', ','),
+            '{{client.km_rate}}': (client?.km_rate ?? '').toString().replace('.', ','),
+            '{{client.tax_rate}}': (client?.tax_rate ?? '').toString().replace('.', ','),
             '{{client.signature}}': clientSignUrl ? `<img src="${clientSignUrl}" style="max-height: 60px; object-fit: contain;" crossorigin="anonymous" />` : '',
             
             '{{insurance.name}}': ins.name || '',
+            '{{insurance.department}}': ins.department || '',
+            '{{insurance.addition}}': ins.addition || '',
             '{{insurance.type}}': ins.type || '',
             '{{insurance.street}}': ins.street || '',
             '{{insurance.zip}} {{insurance.city}}': `${ins.zip || ''} ${ins.city || ''}`.trim(),
@@ -343,7 +363,9 @@ export function useDocumentGenerator() {
             '{{company.bank_name}}': comp.bank_name || '',
             '{{company.bank_iban}}': comp.bank_iban || '',
             '{{company.bank_bic}}': comp.bank_bic || '',
-            '{{date.today}}': new Date().toLocaleDateString('de-DE'),
+            '{{date.today}}': new Date(manualIssueDate).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' }),
+            '{{invoice.issue_date}}': new Date(manualIssueDate).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' }),
+            '{{invoice.due_date}}': dueDate.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' }),
             
             // Rückwärtskompatibilität für alte HTML-Vorlagen
             '{{anrede}}': rec.salutation === 'Herr' ? `Sehr geehrter Herr ${rec.name_last},` : (rec.salutation === 'Frau' ? `Sehr geehrte Frau ${rec.name_last},` : `Guten Tag ${rec.name_first} ${rec.name_last},`),
@@ -359,7 +381,7 @@ export function useDocumentGenerator() {
             '{{housenr}}': rec.housenr || '',
             '{{zip}}': rec.zip || '',
             '{{city}}': rec.city || '',
-            '{{rechnungsdatum}}': new Date().toLocaleDateString('de-DE'),
+            '{{rechnungsdatum}}': new Date(manualIssueDate).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' }),
             
             // Rückwärtskompatibilität für alte User-Platzhalter
             '{{user_name_first}}': usr.name_first || '',
@@ -377,10 +399,6 @@ export function useDocumentGenerator() {
             map['{{invoice.number}}'] = dataToUse.invoice_nr || '';
             map['{{invoice.total}}'] = `${dataToUse.brutto.toFixed(2).replace('.', ',')} €`;
             map['{{rechnungs_nr}}'] = dataToUse.invoice_nr || '';
-            map['{{invoice.issue_date}}'] = new Date(dataToUse.issue_date).toLocaleDateString('de-DE', { timeZone: 'UTC' });
-            map['{{rechnungsdatum}}'] = new Date(dataToUse.issue_date).toLocaleDateString('de-DE', { timeZone: 'UTC' });
-            const due = new Date(new Date(dataToUse.issue_date).getTime() + 14 * 24 * 60 * 60 * 1000);
-            map['{{invoice.due_date}}'] = due.toLocaleDateString('de-DE', { timeZone: 'UTC' });
             map['{{invoice.service_period}}'] = dataToUse.service_period || '';
             map['{{leistungszeitraum}}'] = dataToUse.service_period || '';
         }
@@ -402,11 +420,12 @@ export function useDocumentGenerator() {
         kmRate = 0.3;
         taxRate = "0";
         manualInvoiceNr = getNextInvoiceNumber();
-        manualIssueDate = new Date().toISOString().split('T')[0];
+        manualIssueDate = getLocalDate();
     }
 
     return {
         get step() { return step; }, set step(v) { step = v; },
+        get selectedCompanyId() { return selectedCompanyId; }, set selectedCompanyId(v) { selectedCompanyId = v; },
         get selectedTemplateId() { return selectedTemplateId; }, set selectedTemplateId(v) { selectedTemplateId = v; },
         get selectedClientId() { return selectedClientId; }, set selectedClientId(v) { selectedClientId = v; },
         get recipientType() { return recipientType; }, set recipientType(v) { recipientType = v; },

@@ -10,6 +10,7 @@
 	import { getEmailService } from "$lib/services/emailService.svelte";
 	import { updateStore } from "$lib/services/updateService.svelte";
 	import { pb } from "$lib/services/pocketbase";
+	import { orgaStore } from "$lib/stores/orgaStore.svelte";
 	import NotificationSettingsModal from "$lib/components/NotificationSettingsModal.svelte";
 
 	let { items = [] } = $props<{
@@ -19,6 +20,16 @@
 	let currentPath = $derived($page.url.pathname);
 	let isMobileMenuOpen = $state(false);
 	let isDarkMode = $state(false);
+
+	let isGodMode = $derived(pb.authStore.isSuperuser || pb.authStore.model?.role === 'superadmin');
+	let globalCompanyId = $state('all');
+
+	function updateGlobalCompany(e: Event) {
+		const val = (e.target as HTMLSelectElement).value;
+		globalCompanyId = val;
+		localStorage.setItem('global_company_id', val);
+		window.dispatchEvent(new CustomEvent('global-company-changed', { detail: val }));
+	}
 
 	function toggleMenu() {
 		isMobileMenuOpen = !isMobileMenuOpen;
@@ -64,6 +75,12 @@
 	});
 
 	onMount(() => {
+		if (typeof localStorage !== 'undefined') {
+			globalCompanyId = localStorage.getItem('global_company_id') || 'all';
+		}
+		const handleCompanySync = (e: any) => { globalCompanyId = e.detail; };
+		window.addEventListener('global-company-changed', handleCompanySync);
+
 		// Initialer Ladevorgang für Badge-Counts im Hintergrund
 		mailboxService.loadFolders();
 		reqAdmin.init();
@@ -88,6 +105,8 @@
 		document.addEventListener('visibilitychange', handleResume);
 		window.addEventListener('focus', handleResume);
 		window.addEventListener('online', handleResume);
+
+		return () => window.removeEventListener('global-company-changed', handleCompanySync);
 	});
 
 	onDestroy(() => {
@@ -107,7 +126,13 @@
 
 	let unreadMails = $derived(mailboxService.totalUnread || 0);
 	let pendingRequests = $derived(reqAdmin.requests.filter(r => r.status === 'requested').length);
-	let totalNotifications = $derived(unreadMails + pendingRequests + (updateStore.hasUnread ? 1 : 0));
+	
+	let hasUnreadUpdates = $derived(updateStore.updates?.some((u: any) => {
+		const readByArray = Array.isArray(u.read_by) ? u.read_by : (u.read_by ? [u.read_by] : []);
+		return !readByArray.includes(pb.authStore.model?.id);
+	}) || false);
+
+	let totalNotifications = $derived(unreadMails + pendingRequests + (hasUnreadUpdates ? 1 : 0));
 
 	let prevUnread = $state(-1);
 	let prevPending = $state(-1);
@@ -126,7 +151,7 @@
 		isNotificationsOpen = !isNotificationsOpen;
 		if (isNotificationsOpen) {
 			// Wenn geöffnet wird, quittieren wir den aktuellen Stand als "gesehen"
-			ackData = { mails: unreadMails, reqs: pendingRequests, updates: updateStore.hasUnread };
+			ackData = { mails: unreadMails, reqs: pendingRequests, updates: hasUnreadUpdates };
 			if (typeof localStorage !== 'undefined') localStorage.setItem('orga_ack_data', JSON.stringify(ackData));
 			hasNewNotifications = false;
 		}
@@ -162,13 +187,13 @@
 		// Basislinie nach unten korrigieren (z.B. wenn eine Mail gelesen/gelöscht wurde)
 		if (unreadMails < ackData.mails) ackData.mails = unreadMails;
 		if (pendingRequests < ackData.reqs) ackData.reqs = pendingRequests;
-		if (!updateStore.hasUnread) ackData.updates = false;
+		if (!hasUnreadUpdates) ackData.updates = false;
 
 		// Gibt es ECHTE neue Benachrichtigungen, die unsere Basislinie übersteigen?
 		hasNewNotifications = 
 			unreadMails > ackData.mails || 
 			pendingRequests > ackData.reqs || 
-			(updateStore.hasUnread && !ackData.updates);
+			(hasUnreadUpdates && !ackData.updates);
 			
 		if (typeof localStorage !== 'undefined') localStorage.setItem('orga_ack_data', JSON.stringify(ackData));
 	});
@@ -201,6 +226,14 @@
 		</div>
 		
 		<div class="flex items-center gap-2 sm:gap-4">
+			{#if isGodMode}
+				<select value={globalCompanyId} onchange={updateGlobalCompany} class="hidden md:block bg-indigo-50 border border-indigo-200 text-sm font-bold text-indigo-700 rounded-lg px-3 py-1.5 shadow-sm focus:ring-2 focus:ring-indigo-500/20 outline-none cursor-pointer max-w-48 truncate">
+					<option value="all">🏢 Alle Firmen</option>
+					{#each orgaStore.company?.data || [] as comp}
+						<option value={comp.id}>{comp.city} {comp.name ? `(${comp.name})` : ''}</option>
+					{/each}
+				</select>
+			{/if}
 			<!-- Theme Toggle -->
 			<button 
 				class="hidden md:flex p-2 text-neutral-500 hover:text-indigo-600 transition-colors relative rounded-full hover:bg-neutral-100 outline-none items-center justify-center"
@@ -249,7 +282,7 @@
 								</div>
 							{:else}
 								<div class="flex flex-col">
-									{#if updateStore.hasUnread}
+									{#if hasUnreadUpdates}
 										<button type="button" onclick={() => { isNotificationsOpen = false; updateStore.open(); }} class="w-full text-left p-4 border-b border-neutral-50 hover:bg-neutral-50 transition-colors flex items-start gap-3 cursor-pointer">
 											<div class="w-10 h-10 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center shrink-0 shadow-inner text-xl">✨</div>
 											<div>
@@ -296,6 +329,16 @@
 	<!-- Aufklappbares Mobile Menü, klebt nahtlos unter dem Header -->
 	{#if isMobileMenuOpen}
 		<nav transition:slide={{ duration: 250, axis: 'y' }} class="md:hidden border-t border-neutral-200/60 py-4 w-full bg-white/95 backdrop-blur-xl absolute top-full left-0 shadow-[0_20px_40px_-15px_rgba(0,0,0,0.1)] rounded-b-3xl">
+			{#if isGodMode}
+				<div class="px-4 pb-3 border-b border-neutral-100 mb-3">
+					<select value={globalCompanyId} onchange={updateGlobalCompany} class="w-full bg-indigo-50 border border-indigo-200 text-sm font-bold text-indigo-700 rounded-lg px-3 py-2.5 shadow-sm focus:outline-none cursor-pointer">
+						<option value="all">🏢 Alle Firmen</option>
+						{#each orgaStore.company?.data || [] as comp}
+							<option value={comp.id}>{comp.city} {comp.name ? `(${comp.name})` : ''}</option>
+						{/each}
+					</select>
+				</div>
+			{/if}
 			<!-- Kompaktes Grid-Layout wie auf dem Homescreen von Handys, um vertikalen Platz massiv zu sparen -->
 			<div class="grid grid-cols-3 sm:grid-cols-4 gap-2 px-4 max-h-[70vh] overflow-y-auto custom-scrollbar pb-2">
 				{#each items as item}

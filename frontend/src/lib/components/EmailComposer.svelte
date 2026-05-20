@@ -158,6 +158,27 @@
                 html: htmlEmail,
                 attachments: attachmentPayload.length > 0 ? attachmentPayload : undefined
             });
+            
+            try {
+                if (pb.authStore.model) {
+                    let fullTo = to;
+                    if (cc) fullTo += `, CC: ${cc}`;
+                    if (bcc) fullTo += `, BCC: ${bcc}`;
+                    
+                    await pb.collection('mailbox_messages').create({
+                        user: pb.authStore.model.id,
+                        folder: 'Sent',
+                        from_address: `${userName} <${userEmail}>`,
+                        to_address: fullTo,
+                        subject: subject,
+                        body_text: textEmail,
+                        body_html: htmlEmail,
+                        date: new Date().toISOString(),
+                        is_read: true
+                    });
+                }
+            } catch (e) { console.warn("E-Mail konnte nicht im Postfach gespeichert werden", e); }
+
             successMsg = 'Ihre E-Mail wurde erfolgreich versendet!';
             to = '';
             cc = '';

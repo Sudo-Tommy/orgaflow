@@ -17,6 +17,23 @@
         if (updateStore.isOpen) {
             dialog?.showModal();
             isEditing = false;
+            
+            // Markiere alle ungesehenen Updates als gelesen
+            const user = pb.authStore.model;
+            if (user) {
+                updateStore.updates.forEach(async (u: any) => {
+                    let readBy = Array.isArray(u.read_by) ? u.read_by : (u.read_by ? [u.read_by] : []);
+                    if (!readBy.includes(user.id)) {
+                        readBy = [...readBy, user.id];
+                        try {
+                            await pb.collection('updates').update(u.id, { read_by: readBy }, { requestKey: null });
+                            u.read_by = readBy; // Aktualisiere lokal für UI-Feedback
+                        } catch (e) {
+                            console.error("Fehler beim Markieren als gelesen:", e);
+                        }
+                    }
+                });
+            }
         } else {
             dialog?.close();
         }

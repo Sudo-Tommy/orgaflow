@@ -173,7 +173,7 @@
                 for (const app of linkedAppointments) {
                     if (!app.report?.trim()) continue;
                     
-                    const dateStr = new Date(app.date).toLocaleDateString('de-DE');
+                    const dateStr = new Date(app.date).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
                     const timeStr = new Date(app.date).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
                     
                     reportsHtml += `
@@ -237,6 +237,26 @@
                 html: htmlEmail,
                 attachments
             });
+
+            try {
+                if (pb.authStore.model) {
+                    let fullTo = emailTo;
+                    if (cc) fullTo += `, CC: ${cc}`;
+                    if (bcc) fullTo += `, BCC: ${bcc}`;
+                    
+                    await pb.collection('mailbox_messages').create({
+                        user: pb.authStore.model.id,
+                        folder: 'Sent',
+                        from_address: `${userName} <${userEmail}>`,
+                        to_address: fullTo,
+                        subject: emailSubject,
+                        body_text: textEmail,
+                        body_html: htmlEmail,
+                        date: new Date().toISOString(),
+                        is_read: true
+                    });
+                }
+            } catch (e) { console.warn("E-Mail konnte nicht im Postfach gespeichert werden", e); }
 
             successMsg = "E-Mail wurde erfolgreich mit Anhang versendet!";
             setTimeout(() => {
@@ -326,7 +346,7 @@
                                     <div class="flex items-center justify-between mb-1">
                                         <div class="flex items-center gap-2">
                                             <span class="w-6 h-6 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center text-xs">📅</span>
-                                            <span class="text-sm font-bold text-neutral-900">{app.date ? new Date(app.date).toLocaleDateString('de-DE') : ''}</span>
+                                            <span class="text-sm font-bold text-neutral-900">{app.date ? new Date(app.date).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : ''}</span>
                                             <span class="text-xs text-neutral-500 font-medium">{app.date ? new Date(app.date).toLocaleTimeString('de-DE', {hour: '2-digit', minute:'2-digit'}) : ''} Uhr</span>
                                         </div>
                                         <span class="text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded truncate max-w-32 font-bold uppercase tracking-wider">{app.description || 'Termin'}</span>

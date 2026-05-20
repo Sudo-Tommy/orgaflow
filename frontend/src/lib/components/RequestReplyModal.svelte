@@ -194,12 +194,12 @@
 
             const textEmail = `${emailText.trim()}\n\n--\n${userName}\nIhre Seniorenassistenz\nDreyhauptstraße 2, 06108 Halle (Saale)\nTelefon: ${userPhone}\nE-Mail: ${userEmail}\nWeb: www.ihre-seniorenassistenz.com`;
 
-            let reqDate = request?.date ? new Date(request.date).toLocaleDateString('de-DE') : 'Kein Datum';
+            let reqDate = request?.date ? new Date(request.date).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : 'Kein Datum';
             let reqTime = request?.time ? new Date(request.time).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) + ' Uhr' : 'Keine Uhrzeit';
             const reqAnliegen = request?.request_text ? request.request_text.split('--- Kontaktdaten ---')[0].trim() : '';
 
             if (status === 'propose') {
-                reqDate = new Date(propDate).toLocaleDateString('de-DE');
+                reqDate = new Date(propDate).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
                 reqTime = propTime + ' Uhr';
             }
             
@@ -267,6 +267,22 @@
                 html: htmlEmail,
                 attachments: attachmentPayload.length > 0 ? attachmentPayload : undefined
             });
+
+        try {
+            if (pb.authStore.model) {
+                await pb.collection('mailbox_messages').create({
+                    user: pb.authStore.model.id,
+                    folder: 'Sent',
+                    from_address: `${userName} <${userEmail}>`,
+                    to_address: emailTo,
+                    subject: emailSubject,
+                    body_text: textEmail,
+                    body_html: htmlEmail,
+                    date: new Date().toISOString(),
+                    is_read: true
+                });
+            }
+        } catch (e) { console.warn("E-Mail konnte nicht im Postfach gespeichert werden", e); }
 
             toastStore.success("E-Mail wurde erfolgreich versendet!");
             close();

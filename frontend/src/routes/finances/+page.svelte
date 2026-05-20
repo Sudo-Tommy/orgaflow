@@ -135,7 +135,7 @@
                                     <span class="w-8 h-8 rounded-full flex items-center justify-center text-lg {t.type === 'income' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'} shrink-0">{t.type === 'income' ? '➕' : '➖'}</span>
                                     <div class="min-w-0">
                                         <p class="font-bold text-neutral-900 truncate">{t.title}</p>
-                                        <p class="text-xs text-neutral-500 truncate">{new Date(t.date).toLocaleDateString('de-DE')}</p>
+                                        <p class="text-xs text-neutral-500 truncate">{new Date(t.date).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}</p>
                                     </div>
                                 </div>
                                 <div class="flex items-center justify-between sm:justify-end gap-4 w-full sm:w-auto mt-1 sm:mt-0 pt-3 sm:pt-0 border-t border-neutral-100 sm:border-t-0">
