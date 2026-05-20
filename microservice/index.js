@@ -376,7 +376,7 @@ app.post('/api/emails/portal/request-otp', async (req, res) => {
         // Gesendete E-Mail in der Datenbank für die Nachverfolgung speichern
         try {
             await pbAdmin.collection('mailbox_messages').create({
-                folder: "Sent",
+                folder: "System",
                 message_id: info.messageId || `sent-otp-${Date.now()}`,
                 subject: subject,
                 from_address: smtpUser,
@@ -574,7 +574,7 @@ app.post('/api/emails/portal/notify-request', async (req, res) => {
         try {
             const pbAdmin = await getAdminPb();
             await pbAdmin.collection('mailbox_messages').create({
-                folder: "Sent",
+                folder: "System",
                 message_id: info.messageId || `sent-notify-${Date.now()}`,
                 subject: subject,
                 from_address: smtpUser,

@@ -430,11 +430,11 @@
                                 <span class="text-indigo-600">📝</span> Bericht & Notizen
                                 </h3>
                             <div class="flex items-center gap-2">
-                                <input type="file" accept="audio/*" class="hidden" bind:this={audioInput} onchange={uploadAudio} />
+                                <input type="file" accept="audio/*" multiple class="hidden" bind:this={audioInput} onchange={uploadAudio} />
                                 <button onclick={() => audioInput.click()} class="text-xs font-bold text-neutral-600 hover:text-indigo-600 bg-neutral-100 hover:bg-neutral-200 px-2 sm:px-3 py-1.5 rounded-lg transition-colors shadow-sm" title="Audio-Datei hochladen">
                                     📎 Audio
                                 </button>
-                                <button onclick={() => aiModal?.open(activeNoteTab)} class="text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2 sm:px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors shadow-sm">
+                                <button onclick={() => aiModal?.open(activeNoteTab, appointment, fullClient)} class="text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2 sm:px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors shadow-sm">
                                     <span>🤖</span> Gemini
                                 </button>
                             </div>

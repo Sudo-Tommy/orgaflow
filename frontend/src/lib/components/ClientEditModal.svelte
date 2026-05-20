@@ -25,7 +25,8 @@
         hourly_wage: 40,
         km_rate: 0.3,
         tax_rate: "0",
-        default_template: ""
+        default_template: "",
+        caregiver: ""
     });
 
     // Signatur-Status
@@ -67,7 +68,8 @@
                 hourly_wage: client.hourly_wage ?? 40,
                 km_rate: client.km_rate ?? 0.3,
                 tax_rate: client.tax_rate != null ? client.tax_rate.toString() : "0",
-                default_template: client.default_template || ""
+                default_template: client.default_template || "",
+                caregiver: client.caregiver || ""
             };
             
             if (client.sign) {

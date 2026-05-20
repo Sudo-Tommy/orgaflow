@@ -29,7 +29,7 @@ export const orgaStore = {
     
     clients: new OrgaLiveCollection<ClientRecord>('clients', { 
         sort: 'name_last', // Alphabetisch nach Nachnamen sortieren
-        expand: 'insurance,retirement_homes,contacts,templates' // WIRKLICH ALLE Verknüpfungen
+        expand: 'insurance,retirement_homes,contacts,templates,caregiver'
     }),
     
     company: new OrgaLiveCollection<CompanyRecord>('company', { 

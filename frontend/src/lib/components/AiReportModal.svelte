@@ -15,6 +15,9 @@
     let inputType = $state<'record' | 'text'>('record');
     let manualText = $state("");
 
+    let client = $state<any>(null);
+    let appointment = $state<any>(null);
+
     let recordings = $state<{ id: number, blob: Blob, mimeType: string, duration: number, url: string }[]>([]);
     
     const promptFamilie = "Erstelle einen professionellen und detaillierten Besuchsbericht aus den vorliegenden Aufzeichnungen. Fasse die wichtigsten medizinischen, privaten und organisatorischen Punkte übersichtlich und strukturiert zusammen. Der Bericht sollte folgende Abschnitte enthalten: 1. Zusammenfassung 2. Medizinische Informationen 3. Private Informationen 4. Organisatorische Punkte. Bitte formuliere den Bericht so, dass er professionell und empathisch klingt, damit ich ihn direkt an die Familie weiterleiten kann.";
@@ -33,9 +36,11 @@
     // Nutzt relativ zur aktuellen Domain (verhindert www. vs non-www Weiterleitungs-Fehler)
     const microserviceUrl = import.meta.env.DEV ? 'http://localhost:3000' : '';
 
-    export function open(defaultType: 'family' | 'internal' = 'family') {
+    export function open(defaultType: 'family' | 'internal' = 'family', app: any = null, cl: any = null) {
         reportType = defaultType;
         customPrompt = defaultType === 'internal' ? promptIntern : promptFamilie;
+        appointment = app;
+        client = cl;
         errorMsg = "";
         generatedText = "";
         recordings = [];
@@ -142,26 +147,35 @@
     }
 
     async function generateReport() {
-        if (inputType === 'record' && recordings.length === 0) {
-            errorMsg = "Bitte nehmen Sie zuerst eine Sprachnotiz auf oder laden Sie eine Datei hoch.";
-            return;
-        }
-        if (inputType === 'text' && !manualText.trim()) {
-            errorMsg = "Bitte geben Sie einen Text zur Verarbeitung ein.";
-            return;
-        }
+        const hasRecording = inputType === 'record' && recordings.length > 0;
+        const hasText = inputType === 'text' && manualText.trim();
+        const isEmpty = !hasRecording && !hasText;
 
         isGenerating = true;
         errorMsg = "";
         try {
-            const payload: any = { prompt: customPrompt };
+            const payload: any = {};
 
-            if (inputType === 'record' && recordings.length > 0) {
+            let contextText = "Kontext für den Bericht:\n";
+            if (client) {
+                contextText += `- Klient: ${client.name_first} ${client.name_last}\n`;
+            }
+            if (appointment) {
+                const appDate = new Date(appointment.appointment).toLocaleString('de-DE', { dateStyle: 'full', timeStyle: 'short' });
+                contextText += `- Termin: ${appDate} (${appointment.description || 'Allgemeiner Termin'})\n`;
+            }
+            contextText += "\n----\n\n";
+
+            payload.prompt = contextText + customPrompt;
+
+            if (hasRecording) {
                 const combinedBlob = new Blob(recordings.map(r => r.blob), { type: recordings[0].mimeType });
                 payload.audioBase64 = await blobToBase64(combinedBlob);
                 payload.mimeType = recordings[0].mimeType;
-            } else if (inputType === 'text' && manualText.trim()) {
+            } else if (hasText) {
                 payload.inputText = manualText;
+            } else if (isEmpty) {
+                payload.inputText = "Es gibt keine besonderen Vorkommnisse. Der Termin verlief gut und alles war in Ordnung. Bitte fasse dies als kurzen, positiven Satz für den Bericht zusammen.";
             } else {
                 throw new Error("Keine Eingabe zum Verarbeiten gefunden.");
             }

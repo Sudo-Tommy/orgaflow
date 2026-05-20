@@ -282,12 +282,18 @@ export function useDocumentGenerator() {
         }
 
         let res = text.replace(/\n/g, '<br/>');
-        const rec: any = getRecipientData() || {};
+        let rec: any = getRecipientData() || {};
         const comp: any = company || {};
         const usr: any = pb.authStore.record || {};
         const ins: any = client?.expand?.insurance || {};
         const dataToUse = isTimesheet ? timesheetData : invoiceData;
         
+        // Wenn der Empfänger der Klient ist, aber ein Betreuer existiert, wird der Betreuer zum Empfänger.
+        // Dies gilt nicht, wenn explizit ein anderer Kontakt (z.B. Angehöriger) als Empfänger gewählt wurde.
+        if (recipientType === 'client' && client?.expand?.caregiver) {
+            rec = client.expand.caregiver;
+        }
+
         const clientSignUrl = rec.sign ? pb.files.getURL(rec, rec.sign) : '';
         const userSignUrl = usr.sign ? pb.files.getURL(usr, usr.sign) : '';
 

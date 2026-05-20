@@ -26,10 +26,12 @@
         now.setHours(0, 0, 0, 0);
         availableAppointments = apps.filter(a => new Date(a.appointment) >= now).sort((a, b) => new Date(a.appointment).getTime() - new Date(b.appointment).getTime());
         selectedAppointmentIds = availableAppointments.map(a => a.id);
-        
-        method = cl?.email ? 'email' : (cl?.handy || cl?.phone ? 'whatsapp' : 'email');
-        recipient = method === 'email' ? (cl?.email || "") : (cl?.handy || cl?.phone || "");
-        
+
+        const caregiver = cl?.expand?.caregiver;
+
+        method = (caregiver?.email || cl?.email) ? 'email' : (caregiver?.handy || caregiver?.phone || cl?.handy || cl?.phone ? 'whatsapp' : 'email');
+        recipient = method === 'email' ? (caregiver?.email || cl?.email || "") : (caregiver?.handy || caregiver?.phone || cl?.handy || cl?.phone || "");
+
         cc = "";
         bcc = "";
         showCcBcc = false;
@@ -54,11 +56,15 @@
     });
 
     function updateMessage() {
-        const salutation = client?.salutation === 'Herr' ? `Sehr geehrter Herr ${client.name_last},` : 
-                          (client?.salutation === 'Frau' ? `Sehr geehrte Frau ${client.name_last},` : 
-                          `Guten Tag ${client?.name_first || ''} ${client?.name_last || ''},`.trim());
+        const caregiver = client?.expand?.caregiver;
+        const recipientRecord = caregiver || client;
 
-        let msg = `${salutation}\n\nhiermit möchten wir Ihnen die folgenden gebuchten Termine bestätigen:\n\n`;
+        const salutation = recipientRecord?.salutation === 'Herr' ? `Sehr geehrter Herr ${recipientRecord.name_last},` : 
+                          (recipientRecord?.salutation === 'Frau' ? `Sehr geehrte Frau ${recipientRecord.name_last},` : 
+                          `Guten Tag ${recipientRecord?.name_first || ''} ${recipientRecord?.name_last || ''},`.trim());
+
+        const baseText = caregiver ? `hiermit möchten wir Ihnen für ${client?.name_first} ${client?.name_last} die folgenden gebuchten Termine bestätigen:` : `hiermit möchten wir Ihnen die folgenden gebuchten Termine bestätigen:`;
+        let msg = `${salutation}\n\n${baseText}\n\n`;
         
         const selectedApps = availableAppointments.filter(a => selectedAppointmentIds.includes(a.id));
         

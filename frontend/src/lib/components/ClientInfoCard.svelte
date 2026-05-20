@@ -94,6 +94,21 @@
                 </div>
             </div>
         </div>
+
+        {#if client.expand?.caregiver}
+            <div class="mt-6 pt-6 border-t border-neutral-100">
+                <div class="flex items-start gap-4">
+                    <div class="w-10 h-10 rounded-xl bg-cyan-50 text-cyan-500 flex items-center justify-center shrink-0 shadow-sm"><span class="text-lg">⚖️</span></div>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-xs text-neutral-500 font-semibold uppercase tracking-wider mb-1">Gesetzl. Betreuung</p>
+                        <p class="text-neutral-900 font-bold truncate">{client.expand.caregiver.name_first} {client.expand.caregiver.name_last}</p>
+                        {#if client.expand.caregiver.phone}
+                            <p class="text-sm text-neutral-600 mt-1">Tel: {client.expand.caregiver.phone}</p>
+                        {/if}
+                    </div>
+                </div>
+            </div>
+        {/if}
         
         <div class="mt-6 pt-6 border-t border-neutral-100">
             <p class="text-xs text-neutral-500 font-semibold uppercase tracking-wider mb-3">Abrechnungskonditionen</p>

@@ -110,6 +110,7 @@ export interface ClientRecord extends BaseRecord {
     retirement_homes?: string | string[]; // Relation
     contacts?: string[]; // Relation
     templates?: string | string[]; // Relation
+    caregiver?: string; // Relation
 }
 
 export interface CompanyRecord extends BaseRecord {

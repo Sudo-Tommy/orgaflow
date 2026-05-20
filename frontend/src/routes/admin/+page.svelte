@@ -14,7 +14,7 @@
     // svelte-ignore non_reactive_update
     let controlModal: ReturnType<typeof AdminControlModal>;
 
-    let activeTab = $state<"dashboard" | "database">("dashboard");
+    let activeTab = $state<"dashboard" | "database" | "system_mails">("dashboard");
 
     function handleEdit(record: any) {
         modal?.open(adminService.activeCollection, record);
@@ -35,6 +35,11 @@
     let totalClients = $derived(orgaStore.clients?.data?.length || 0);
     let totalAppointments = $derived(orgaStore.appointments?.data?.length || 0);
     let totalInvoices = $derived(orgaStore.invoices?.data?.length || 0);
+
+    let systemMails = $derived.by(() => {
+        return (orgaStore.mailbox_messages?.data || [])
+            .filter(mail => mail.folder === 'System');
+    });
 
     // --- Custom Push Notification Logik ---
     let pushUsers = $derived.by(() => {
@@ -96,6 +101,7 @@
     <div class="flex bg-neutral-100 p-1 rounded-lg border border-neutral-200 shadow-inner shrink-0 w-full md:w-auto">
         <button onclick={() => activeTab = 'dashboard'} class="flex-1 md:flex-none px-4 py-2 sm:py-1.5 text-sm font-bold rounded-md transition-colors {activeTab === 'dashboard' ? 'bg-white shadow-sm text-neutral-900' : 'text-neutral-500 hover:text-neutral-700'}">📊 System-Übersicht</button>
         <button onclick={() => activeTab = 'database'} class="flex-1 md:flex-none px-4 py-2 sm:py-1.5 text-sm font-bold rounded-md transition-colors {activeTab === 'database' ? 'bg-white shadow-sm text-neutral-900' : 'text-neutral-500 hover:text-neutral-700'}">🗄️ Datenbank-Explorer</button>
+        <button onclick={() => activeTab = 'system_mails'} class="flex-1 md:flex-none px-4 py-2 sm:py-1.5 text-sm font-bold rounded-md transition-colors {activeTab === 'system_mails' ? 'bg-white shadow-sm text-neutral-900' : 'text-neutral-500 hover:text-neutral-700'}">🤖 System-E-Mails</button>
     </div>
 </div>
 
@@ -141,6 +147,45 @@
                     <div class="flex justify-end pt-2"><button type="submit" class="orga-button-primary w-full sm:w-auto py-3 sm:py-2.5" disabled={isSendingPush || !pushTargetId}>{isSendingPush ? 'Sendet...' : 'Push-Nachricht senden 🚀'}</button></div>
                 </form>
             {/if}
+        </div>
+    </div>
+{:else if activeTab === 'system_mails'}
+    <div class="animate-enter delay-200 mt-6">
+        <div class="orga-card-white overflow-hidden">
+            <div class="p-4 border-b border-neutral-100 bg-neutral-50/50">
+                <h3 class="font-bold text-neutral-900">Automatisch versendete System-E-Mails</h3>
+                <p class="text-xs text-neutral-500 mt-1">Dies ist ein Log der E-Mails, die vom System automatisch versendet wurden (z.B. Portal-Login-Codes).</p>
+            </div>
+            <div class="overflow-x-auto custom-scrollbar">
+                <table class="w-full text-left border-collapse min-w-150">
+                    <thead class="bg-neutral-50/80 border-b border-neutral-200">
+                        <tr>
+                            <th class="p-4 font-bold text-neutral-800">Datum</th>
+                            <th class="p-4 font-bold text-neutral-800">Empfänger</th>
+                            <th class="p-4 font-bold text-neutral-800">Betreff</th>
+                            <th class="p-4 font-bold text-neutral-800 text-center">Klient</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-neutral-50">
+                        {#if systemMails.length === 0}
+                            <tr><td colspan="4" class="p-10 text-center text-neutral-400 italic">Keine System-E-Mails gefunden.</td></tr>
+                        {/if}
+                        {#each systemMails as mail}
+                            <tr class="hover:bg-neutral-50/50 transition-colors">
+                                <td class="p-4 text-sm text-neutral-600 whitespace-nowrap">{mail.date ? new Date(mail.date).toLocaleString('de-DE') : '-'}</td>
+                                <td class="p-4 text-sm font-medium text-neutral-800">{mail.to_address}</td>
+                                <td class="p-4 text-sm text-neutral-700">{mail.subject}</td>
+                                <td class="p-4 text-center">
+                                    {#if mail.expand?.client}
+                                        {@const c = Array.isArray(mail.expand.client) ? mail.expand.client[0] : mail.expand.client}
+                                        <span class="px-2 py-1 bg-indigo-50 text-indigo-700 text-xs font-bold rounded-lg">{c.name_first} {c.name_last}</span>
+                                    {/if}
+                                </td>
+                            </tr>
+                        {/each}
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 {:else}
