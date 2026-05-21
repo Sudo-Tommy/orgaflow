@@ -23,6 +23,47 @@
     let propDate = $state("");
     let propTime = $state("");
 
+    let availableContacts = $state<any[]>([]);
+    let showContactDropdown = $state(false);
+    let selectedContactRefs = $state<any[]>([]);
+
+    function buildAvailableContacts() {
+        let list: any[] = [];
+        const add = (name: string, email: string, phone: string, salutation: string) => {
+            if (email || phone) list.push({ name, email, phone, salutation });
+        };
+        orgaStore.clients?.data?.forEach((c: any) => {
+            let sal = c.salutation === 'Herr' ? `Sehr geehrter Herr ${c.name_last}` : (c.salutation === 'Frau' ? `Sehr geehrte Frau ${c.name_last}` : `Guten Tag ${c.name_first} ${c.name_last}`);
+            add(`${c.name_first} ${c.name_last} (Klient)`, c.email, c.phone || c.handy, sal + ',');
+        });
+        orgaStore.contacts?.data?.forEach((c: any) => {
+            let sal = c.salutation === 'Herr' ? `Sehr geehrter Herr ${c.name_last}` : (c.salutation === 'Frau' ? `Sehr geehrte Frau ${c.name_last}` : `Guten Tag ${c.name_first} ${c.name_last}`);
+            add(`${c.name_first} ${c.name_last} (${c.company_name || 'Kontakt'})`, c.email, c.phone, sal + ',');
+        });
+        orgaStore.retirement_homes?.data?.forEach((h: any) => {
+            add(`${h.name} (Pflegeheim)`, h.email, h.phone, `Sehr geehrte Damen und Herren vom ${h.name},`);
+        });
+        const unique: any[] = [];
+        const seen = new Set();
+        for (const item of list) {
+            const key = `${item.email}-${item.phone}`;
+            if (!seen.has(key)) { seen.add(key); unique.push(item); }
+        }
+        return unique.sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    function toggleRecipient(contact: any, isChecked: boolean) {
+        let currentEmails = emailTo.split(',').map(e => e.trim()).filter(Boolean);
+        if (isChecked) {
+            if (!currentEmails.includes(contact.email)) currentEmails.push(contact.email);
+            if (!selectedContactRefs.find(c => c.email === contact.email)) selectedContactRefs.push(contact);
+        } else {
+            currentEmails = currentEmails.filter(e => e !== contact.email);
+            selectedContactRefs = selectedContactRefs.filter(c => c.email !== contact.email);
+        }
+        emailTo = currentEmails.join(', ');
+    }
+
     // Calendar State
     let currentDate = $state(new Date());
     let selectedDate = $state<Date | null>(null);
@@ -122,6 +163,13 @@
         status = newStatus;
         emailTo = toEmail;
         
+        availableContacts = buildAvailableContacts();
+        selectedContactRefs = [];
+        if (emailTo) {
+            const matched = availableContacts.find(c => c.email === emailTo);
+            if (matched) selectedContactRefs = [matched];
+        }
+
         emailSubject = status === 'accepted' ? 'Ihre Terminanfrage wurde bestätigt' : 'Rückmeldung zu Ihrer Terminanfrage';
         
         const savedTemplate = localStorage.getItem(`req_reply_template_${status}`);
@@ -306,12 +354,30 @@
 
         <form onsubmit={handleSend} class="space-y-4">
             <div>
-                <label for="reply-to" class="block text-sm font-semibold text-neutral-700 mb-1.5">Empfänger (An)</label>
-                <input id="reply-to" type="email" bind:value={emailTo} class="orga-input-clear py-2 text-sm" required disabled={isEmailSending} />
+                <label for="reply-to" class="block text-sm font-bold text-neutral-700 mb-1.5">Empfänger (An)</label>
+                <div class="flex flex-col sm:flex-row gap-2">
+                    <input id="reply-to" type="text" bind:value={emailTo} class="orga-input-clear w-full flex-1 py-3 sm:py-2.5 text-sm" placeholder="mail@beispiel.de, zweite@mail.de" required disabled={isEmailSending} />
+                    
+                    <div class="relative flex-1 sm:flex-none sm:w-auto">
+                        <button type="button" onclick={() => showContactDropdown = !showContactDropdown} class="orga-input-clear w-full bg-white border-neutral-200 shadow-sm cursor-pointer text-sm font-medium py-3 sm:py-2.5 flex justify-between items-center" disabled={isEmailSending}>
+                            <span>+ Adressbuch</span><span class="text-[10px] ml-2">▼</span>
+                        </button>
+                        {#if showContactDropdown}
+                            <!-- svelte-ignore a11y_consider_explicit_label -->
+                            <button type="button" class="fixed inset-0 z-40 w-full h-full cursor-default" onclick={() => showContactDropdown = false} tabindex="-1"></button>
+                            <div class="absolute top-full right-0 mt-1 w-64 bg-white border border-neutral-200 shadow-xl rounded-xl z-50 max-h-60 overflow-y-auto custom-scrollbar p-1">
+                                {#each availableContacts.filter(c => c.email) as c}
+                                    <label class="flex items-center gap-3 p-2 hover:bg-neutral-50 rounded-lg cursor-pointer transition-colors"><input type="checkbox" checked={emailTo.includes(c.email)} onchange={(e) => toggleRecipient(c, e.currentTarget.checked)} class="w-4 h-4 text-indigo-600 border-neutral-300 rounded focus:ring-indigo-500" /><div class="min-w-0"><p class="text-sm font-bold text-neutral-900 truncate">{c.name}</p><p class="text-[10px] text-neutral-500 truncate">{c.email}</p></div></label>
+                                {/each}
+                                {#if availableContacts.filter(c => c.email).length === 0}<p class="text-xs text-neutral-500 p-2 text-center">Keine E-Mails gefunden</p>{/if}
+                            </div>
+                        {/if}
+                    </div>
+                </div>
             </div>
             <div>
-                <label for="reply-subject" class="block text-sm font-semibold text-neutral-700 mb-1.5">Betreff</label>
-                <input id="reply-subject" type="text" bind:value={emailSubject} class="orga-input-clear py-2 text-sm" required disabled={isEmailSending} />
+                <label for="reply-subject" class="block text-sm font-bold text-neutral-700 mb-1.5">Betreff</label>
+                <input id="reply-subject" type="text" bind:value={emailSubject} class="orga-input-clear py-3 sm:py-2.5 text-sm" required disabled={isEmailSending} />
             </div>
             <div>
                 {#if status === 'propose'}
@@ -400,10 +466,10 @@
                     </div>
                 {/if}
                 <div class="flex items-center justify-between mb-1.5">
-                    <label for="reply-text" class="block text-sm font-semibold text-neutral-700">Nachricht</label>
+                    <label for="reply-text" class="block text-sm font-bold text-neutral-700">Nachricht</label>
                     <button type="button" onclick={saveAsTemplate} class="text-xs font-bold text-brand-600 hover:text-brand-800 transition-colors" title="Als Standard für zukünftige Antworten speichern">Als Vorlage speichern</button>
                 </div>
-                <textarea id="reply-text" bind:value={emailText} rows="6" class="orga-input-clear py-2 text-sm resize-none custom-scrollbar" required disabled={isEmailSending}></textarea>
+                <textarea id="reply-text" bind:value={emailText} rows="6" class="orga-input-clear py-3 sm:py-2.5 text-sm resize-y custom-scrollbar" required disabled={isEmailSending}></textarea>
                 <p class="text-[10px] text-neutral-400 mt-1">Die Termindaten des Klienten werden automatisch unten an die E-Mail angehängt.</p>
             </div>
             

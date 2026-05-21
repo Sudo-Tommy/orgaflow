@@ -2,6 +2,7 @@
     import { pb } from "$lib/services/pocketbase";
     import { sendEmail } from "$lib/services/emailService";
     import { toastStore } from "$lib/services/toastService.svelte";
+  import { orgaStore } from "$lib/stores/orgaStore.svelte";
 
     // svelte-ignore non_reactive_update
     let dialog: HTMLDialogElement;
@@ -20,6 +21,78 @@
     let appTime = $state("");
     let appDesc = $state("");
     let appLocation = $state("");
+
+    let availableContacts = $state<any[]>([]);
+    let showContactDropdown = $state(false);
+    let selectedContactRefs = $state<any[]>([]);
+    let futureAppointments = $state<any[]>([]);
+    let selectedFutureAppIds = $state<string[]>([]);
+    let includeFutureApps = $state(false);
+
+    function buildAvailableContacts() {
+        let list: any[] = [];
+        const add = (name: string, email: string, phone: string, salutation: string) => {
+            if (email || phone) list.push({ name, email, phone, salutation });
+        };
+        orgaStore.clients?.data?.forEach((c: any) => {
+            let sal = c.salutation === 'Herr' ? `Sehr geehrter Herr ${c.name_last}` : (c.salutation === 'Frau' ? `Sehr geehrte Frau ${c.name_last}` : `Guten Tag ${c.name_first} ${c.name_last}`);
+            add(`${c.name_first} ${c.name_last} (Klient)`, c.email, c.phone || c.handy, sal + ',');
+        });
+        orgaStore.contacts?.data?.forEach((c: any) => {
+            let sal = c.salutation === 'Herr' ? `Sehr geehrter Herr ${c.name_last}` : (c.salutation === 'Frau' ? `Sehr geehrte Frau ${c.name_last}` : `Guten Tag ${c.name_first} ${c.name_last}`);
+            add(`${c.name_first} ${c.name_last} (${c.company_name || 'Kontakt'})`, c.email, c.phone, sal + ',');
+        });
+        orgaStore.retirement_homes?.data?.forEach((h: any) => {
+            add(`${h.name} (Pflegeheim)`, h.email, h.phone, `Sehr geehrte Damen und Herren vom ${h.name},`);
+        });
+        const unique: any[] = [];
+        const seen = new Set();
+        for (const item of list) {
+            const key = `${item.email}-${item.phone}`;
+            if (!seen.has(key)) { seen.add(key); unique.push(item); }
+        }
+        return unique.sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    function toggleRecipient(contact: any, isChecked: boolean) {
+        const isEmail = method === 'email';
+        const contactVal = isEmail ? contact.email : contact.phone;
+        if (!contactVal) return;
+
+        let currentVals = recipient.split(',').map(e => e.trim()).filter(Boolean);
+        
+        if (isChecked) {
+            if (!currentVals.includes(contactVal)) currentVals.push(contactVal);
+            if (!selectedContactRefs.find(c => (isEmail ? c.email : c.phone) === contactVal)) selectedContactRefs.push(contact);
+        } else {
+            currentVals = currentVals.filter(e => e !== contactVal);
+            selectedContactRefs = selectedContactRefs.filter(c => (isEmail ? c.email : c.phone) !== contactVal);
+        }
+        
+        recipient = currentVals.join(', ');
+        updateSalutation();
+    }
+
+    function updateSalutation() {
+        if (selectedContactRefs.length === 0) return;
+        let newSalutation = "";
+        if (selectedContactRefs.length === 1) {
+            newSalutation = selectedContactRefs[0].salutation;
+        } else if (selectedContactRefs.length === 2) {
+            const first = selectedContactRefs[0].salutation.replace(',', '');
+            const second = selectedContactRefs[1].salutation.replace(',', '');
+            newSalutation = `${first},\n${second.charAt(0).toLowerCase() + second.slice(1)},`;
+        } else {
+            newSalutation = "Sehr geehrte Damen und Herren,";
+        }
+        const parts = message.split('\n\n');
+        if (parts.length > 1) {
+            parts[0] = newSalutation;
+            message = parts.join('\n\n');
+        } else {
+            message = `${newSalutation}\n\n${message}`;
+        }
+    }
 
     export function open(app: any, cl: any) {
         appointment = app;
@@ -57,8 +130,35 @@
                           (cl?.salutation === 'Frau' ? `Sehr geehrte Frau ${cl.name_last},` : 
                           `Guten Tag ${cl?.name_first || ''} ${cl?.name_last || ''},`.trim());
 
-        message = `${salutation}\n\nhiermit möchten wir Sie an unseren gemeinsamen Termin am ${dateStr} um ${timeStr} Uhr erinnern.\n\nIhre Termine können Sie auch jederzeit im Klienten-Portal einsehen:\n👉 https://www.ihre-seniorenassistenz.com/portal\n\nWir freuen uns auf Sie!`;
+        availableContacts = buildAvailableContacts();
+        selectedContactRefs = [];
+        if (recipient) {
+            const isEmail = method === 'email';
+            const matched = availableContacts.find(c => (isEmail ? c.email : c.phone) === recipient);
+            if (matched) selectedContactRefs = [matched];
+        }
+
+        message = `${selectedContactRefs.length > 0 ? selectedContactRefs[0].salutation : salutation}\n\nhiermit möchten wir Sie an unseren gemeinsamen Termin am ${dateStr} um ${timeStr} Uhr erinnern.\n\nIhre Termine können Sie auch jederzeit im Klienten-Portal einsehen:\n👉 https://www.ihre-seniorenassistenz.com/portal\n\nWir freuen uns auf Sie!`;
         
+        futureAppointments = [];
+        selectedFutureAppIds = [];
+        includeFutureApps = false;
+
+        if (cl?.id) {
+            const now = new Date();
+            now.setHours(0,0,0,0);
+            const nowStr = now.toISOString().split('T')[0] + ' 00:00:00';
+            
+            pb.collection('appointments').getFullList({
+                filter: `client ~ '${cl.id}' && appointment >= '${nowStr}' && id != '${app.id}'`,
+                sort: 'appointment',
+                requestKey: null
+            }).then(res => {
+                futureAppointments = res;
+                selectedFutureAppIds = res.map((a:any) => a.id);
+            }).catch(()=>{});
+        }
+
         dialog?.showModal();
     }
 
@@ -101,7 +201,41 @@
                 const finalUserEmail = assignedUser?.email || sendingUser?.email || 'info@ihre-seniorenassistenz.com';
                 const finalUserPhone = assignedUser?.handy || assignedUser?.tel || sendingUser?.handy || sendingUser?.tel || '0151 57515432';
 
-                const textEmail = `${message.trim()}\n\n--\n${finalUserName}\nIhre Seniorenassistenz\nDreyhauptstraße 2, 06108 Halle (Saale)\nTelefon: ${finalUserPhone}\nE-Mail: ${finalUserEmail}\nWeb: www.ihre-seniorenassistenz.com`;
+                let futureAppsHtml = '';
+                let futureAppsText = '';
+
+                if (method === 'email' && includeFutureApps && selectedFutureAppIds.length > 0) {
+                    const selectedApps = futureAppointments.filter(a => selectedFutureAppIds.includes(a.id));
+                    if (selectedApps.length > 0) {
+                        futureAppsHtml += `
+                            <div style="background-color: #f8fafc; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 25px 0;">
+                                <h3 style="margin-top: 0; color: #111827; font-size: 16px; margin-bottom: 12px;">Ihre nächsten Termine</h3>
+                                <table cellpadding="0" cellspacing="0" style="font-size: 14px; color: #4b5563; width: 100%; border-collapse: collapse;">
+                        `;
+                        futureAppsText += `\n\n--- IHRE NÄCHSTEN TERMINE ---\n`;
+
+                        for (const app of selectedApps) {
+                            const dateStr = new Date(app.appointment).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                            const timeStr = new Date(app.appointment).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+                            
+                            futureAppsHtml += `
+                                <tr>
+                                    <td style="padding: 10px 0; border-bottom: 1px solid #e5e7eb; width: 150px; vertical-align: top;">
+                                        <strong style="color: #111827;">${dateStr}</strong><br>
+                                        <span style="color: #6b7280; font-size: 13px;">${timeStr} Uhr</span>
+                                    </td>
+                                    <td style="padding: 10px 0; border-bottom: 1px solid #e5e7eb; vertical-align: top; line-height: 1.5;">
+                                        ${app.description || 'Termin'}
+                                    </td>
+                                </tr>
+                            `;
+                            futureAppsText += `• ${dateStr} um ${timeStr} Uhr: ${app.description || 'Termin'}\n`;
+                        }
+                        futureAppsHtml += `</table></div>`;
+                    }
+                }
+
+                const textEmail = `${message.trim()}\n${futureAppsText}\n--\n${finalUserName}\nIhre Seniorenassistenz\nDreyhauptstraße 2, 06108 Halle (Saale)\nTelefon: ${finalUserPhone}\nE-Mail: ${finalUserEmail}\nWeb: www.ihre-seniorenassistenz.com`;
 
                 const htmlEmail = `
                     <div style="font-family: 'Segoe UI', Arial, sans-serif; color: #374151; max-width: 650px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
@@ -132,6 +266,7 @@
                                     </tr>
                                 </table>
                             </div>
+                            ${futureAppsHtml}
                         </div>
                         <div style="background-color: #f8fafc; padding: 25px 30px; border-top: 1px solid #e5e7eb;">
                             <table width="100%" cellpadding="0" cellspacing="0" style="font-size: 13px; color: #4b5563;">
@@ -230,7 +365,25 @@
                         <button type="button" onclick={() => showCcBcc = !showCcBcc} class="text-xs font-bold text-indigo-600 hover:text-indigo-800 transition-colors">{showCcBcc ? '− CC / BCC ausblenden' : '+ CC / BCC hinzufügen'}</button>
                     {/if}
                 </div>
-                <input id="rem-recipient" type="text" bind:value={recipient} class="orga-input-clear py-3 sm:py-2.5 text-sm" required disabled={isSending} />
+                <div class="flex flex-col sm:flex-row gap-2">
+                    <input id="rem-recipient" type="text" bind:value={recipient} class="orga-input-clear py-3 sm:py-2.5 text-sm flex-1" required disabled={isSending} />
+                    <select 
+                        class="orga-input-clear flex-1 sm:flex-none sm:w-auto bg-white border-neutral-200 shadow-sm cursor-pointer sm:max-w-48 text-sm font-medium py-3 sm:py-2.5" 
+                        onchange={(e) => { 
+                            recipient = e.currentTarget.value; 
+                            e.currentTarget.value = ""; 
+                        }} 
+                        disabled={isSending}
+                    >
+                        <option value="">+ Aus Akte wählen</option>
+                        {#each availableContacts.filter(c => method === 'email' ? c.email : c.phone) as c}
+                            <option value="{method === 'email' ? c.email : c.phone}|{c.salutation}">{c.name}</option>
+                        {/each}
+                        {#if availableContacts.filter(c => method === 'email' ? c.email : c.phone).length === 0}
+                            <option value="" disabled>Keine {method === 'email' ? 'E-Mails' : 'Nummern'} in Akte</option>
+                        {/if}
+                    </select>
+                </div>
             </div>
             
             {#if method === 'email' && showCcBcc}
@@ -280,6 +433,35 @@
                 <label for="rem-message" class="block text-sm font-semibold text-neutral-700 mb-1.5">Nachricht</label>
                 <textarea id="rem-message" bind:value={message} rows="6" class="orga-input-clear py-3 sm:py-2.5 text-sm resize-none custom-scrollbar" required disabled={isSending}></textarea>
             </div>
+
+            {#if method === 'email' && futureAppointments.length > 0}
+                <div class="pt-4 mt-2 border-t border-neutral-100">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="text-sm font-bold text-neutral-900 flex items-center gap-2"><span>📅</span> Folgetermine übermitteln</h3>
+                        <label class="flex items-center gap-2 text-sm font-semibold text-neutral-700 cursor-pointer">
+                            <input type="checkbox" bind:checked={includeFutureApps} class="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500" disabled={isSending} />
+                            Anhängen
+                        </label>
+                    </div>
+                    
+                    {#if includeFutureApps}
+                        <div class="space-y-2 max-h-48 overflow-y-auto custom-scrollbar p-1 pr-2">
+                            {#each futureAppointments as app}
+                                <label class="flex items-start gap-3 p-3 bg-white rounded-xl border border-neutral-200 cursor-pointer hover:border-indigo-300 transition-colors shadow-sm focus-within:ring-2 focus-within:ring-indigo-500/20">
+                                    <input type="checkbox" checked={selectedFutureAppIds.includes(app.id)} onchange={() => {
+                                        if(selectedFutureAppIds.includes(app.id)) selectedFutureAppIds = selectedFutureAppIds.filter(id => id !== app.id);
+                                        else selectedFutureAppIds = [...selectedFutureAppIds, app.id];
+                                    }} class="w-5 h-5 mt-0.5 text-indigo-600 rounded focus:ring-indigo-500" disabled={isSending} />
+                                    <div class="min-w-0 flex-1">
+                                        <p class="text-sm font-bold text-neutral-900">{new Date(app.appointment).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })} um {new Date(app.appointment).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr</p>
+                                        <p class="text-xs text-neutral-500 truncate">{app.description || 'Termin'}</p>
+                                    </div>
+                                </label>
+                            {/each}
+                        </div>
+                    {/if}
+                </div>
+            {/if}
 
             <div class="pt-4 flex flex-col-reverse sm:flex-row justify-end gap-3 border-t border-neutral-100 mt-6">
                 <button type="button" onclick={close} class="orga-button-ghost w-full sm:w-auto py-3 sm:py-2.5" disabled={isSending}>Abbrechen</button>

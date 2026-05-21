@@ -24,6 +24,10 @@
     let availableRecipients = $state<{name: string, role: string}[]>([]);
     let selectedRecipientName = $state("");
 
+    let attachedDocuments = $state<{ id: number, blob: Blob, name: string, mimeType: string, url: string }[]>([]);
+    // svelte-ignore non_reactive_update
+    let documentInput: HTMLInputElement;
+
     const promptFamilie = `Erstelle einen professionellen und gut lesbaren Besuchsbericht aus den vorliegenden Aufzeichnungen.
 Der Bericht soll sich direkt an den Betreuer/Kontakt richten.
 
@@ -88,6 +92,7 @@ Schreibe KEINE Floskeln davor oder danach. Formuliere professionell im "Sie"-For
         manualText = "";
         availableRecipients = [];
         selectedRecipientName = "";
+        attachedDocuments = [];
         
         if (cl) {
             if (cl.caregiver) {
@@ -117,6 +122,7 @@ Schreibe KEINE Floskeln davor oder danach. Formuliere professionell im "Sie"-For
     export function close() {
         cancelRecording();
         recordings.forEach(r => URL.revokeObjectURL(r.url));
+        attachedDocuments.forEach(d => URL.revokeObjectURL(d.url));
         dialog?.close();
     }
 
@@ -210,6 +216,30 @@ Schreibe KEINE Floskeln davor oder danach. Formuliere professionell im "Sie"-For
         }
     }
 
+    function handleDocumentUpload(e: Event) {
+        const input = e.target as HTMLInputElement;
+        if (!input.files || input.files.length === 0) return;
+
+        const newDocs = [];
+        for (const file of input.files) {
+            newDocs.push({
+                id: Date.now() + Math.random(),
+                blob: file,
+                name: file.name,
+                mimeType: file.type || 'application/pdf',
+                url: URL.createObjectURL(file)
+            });
+        }
+        attachedDocuments = [...attachedDocuments, ...newDocs];
+        input.value = '';
+    }
+
+    function deleteDocument(id: number) {
+        const docToDelete = attachedDocuments.find(d => d.id === id);
+        if (docToDelete) URL.revokeObjectURL(docToDelete.url);
+        attachedDocuments = attachedDocuments.filter(d => d.id !== id);
+    }
+
     function blobToBase64(blob: Blob): Promise<string> {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
@@ -223,10 +253,6 @@ Schreibe KEINE Floskeln davor oder danach. Formuliere professionell im "Sie"-For
     }
 
     async function generateReport() {
-        const hasRecording = inputType === 'record' && recordings.length > 0;
-        const hasText = inputType === 'text' && manualText.trim();
-        const isEmpty = !hasRecording && !hasText;
-
         isGenerating = true;
         errorMsg = "";
         try {
@@ -255,6 +281,22 @@ Schreibe KEINE Floskeln davor oder danach. Formuliere professionell im "Sie"-For
                     const tasks = appointment.expand.tasks.map((t: any) => t.title).join(', ');
                     contextText += `- Durchgeführte Leistungen: ${tasks}\n`;
                 }
+
+                if (appointment.expand?.time_record) {
+                    let totalMs = 0;
+                    appointment.expand.time_record.forEach((tr: any) => {
+                        if (tr.start && tr.end) {
+                            totalMs += new Date(tr.end).getTime() - new Date(tr.start).getTime();
+                        }
+                    });
+                    if (totalMs > 0) {
+                        const totalMins = Math.round(totalMs / 60000);
+                        const hours = Math.floor(totalMins / 60);
+                        const mins = totalMins % 60;
+                        const durationStr = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+                        contextText += `- Erfasste Dauer: ${durationStr}\n`;
+                    }
+                }
             }
             if (selectedRecipientName) {
                 contextText += `- Adressat des Berichts (Betreuer/Angehöriger): ${selectedRecipientName}\n`;
@@ -263,16 +305,26 @@ Schreibe KEINE Floskeln davor oder danach. Formuliere professionell im "Sie"-For
 
             payload.prompt = contextText + customPrompt;
 
-            if (hasRecording) {
+            if (inputType === 'record' && recordings.length > 0) {
                 const combinedBlob = new Blob(recordings.map(r => r.blob), { type: recordings[0].mimeType });
                 payload.audioBase64 = await blobToBase64(combinedBlob);
                 payload.mimeType = recordings[0].mimeType;
-            } else if (hasText) {
+            } else if (inputType === 'text' && manualText.trim()) {
                 payload.inputText = manualText;
-            } else if (isEmpty) {
+            } else if (inputType === 'standard') {
                 payload.inputText = "Es gibt keine besonderen Vorkommnisse. Der Termin verlief gut und alles war in Ordnung. Der Ort und die Tätigkeiten sind aus dem Kontext ersichtlich.";
+            } else if (attachedDocuments.length > 0) {
+                payload.inputText = "Bitte werte die angehängten Dokumente aus.";
             } else {
-                throw new Error("Keine Eingabe zum Verarbeiten gefunden.");
+                throw new Error("Bitte eine Eingabe tätigen (Sprache, Text, Standard oder Dokument anhängen).");
+            }
+
+            if (attachedDocuments.length > 0) {
+                payload.attachedDocuments = await Promise.all(attachedDocuments.map(async doc => ({
+                    base64: await blobToBase64(doc.blob),
+                    mimeType: doc.mimeType,
+                    name: doc.name
+                })));
             }
             
             const response = await fetch(`${microserviceUrl}/api/emails/ai/transcribe`, {
@@ -322,7 +374,7 @@ Schreibe KEINE Floskeln davor oder danach. Formuliere professionell im "Sie"-For
         {#if isGenerating}
             <div class="flex flex-col items-center justify-center p-12 bg-indigo-50/50 rounded-2xl border-2 border-dashed border-indigo-200">
                 <div class="w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-4"></div>
-                <p class="font-bold text-indigo-900">KI analysiert Aufnahme...</p>
+                <p class="font-bold text-indigo-900">KI analysiert Termine & Daten...</p>
                 <p class="text-xs text-indigo-600 mt-1">Das kann je nach Länge ein paar Sekunden dauern.</p>
             </div>
         {:else if generatedText}
@@ -369,6 +421,26 @@ Schreibe KEINE Floskeln davor oder danach. Formuliere professionell im "Sie"-For
                     <button type="button" onclick={() => inputType = 'record'} class="flex-1 py-2 text-sm font-bold rounded-md transition-colors {inputType === 'record' ? 'bg-white shadow-sm text-indigo-600' : 'text-neutral-500 hover:text-neutral-700'}">🎤 Aufnahme</button>
                     <button type="button" onclick={() => inputType = 'text'} class="flex-1 py-2 text-sm font-bold rounded-md transition-colors {inputType === 'text' ? 'bg-white shadow-sm text-indigo-600' : 'text-neutral-500 hover:text-neutral-700'}">✍️ Text eingeben</button>
                     <button type="button" onclick={() => { inputType = 'standard'; reportType = 'standard'; customPrompt = promptStandard; }} class="flex-1 py-2 text-sm font-bold rounded-md transition-colors {inputType === 'standard' ? 'bg-white shadow-sm text-indigo-600' : 'text-neutral-500 hover:text-neutral-700'}">✅ Ohne Vorkommnisse</button>
+                </div>
+
+                <div class="flex flex-col gap-2">
+                    <div class="flex items-center justify-between px-1">
+                        <span class="text-sm font-semibold text-neutral-700">Zusätzliche Dokumente (Arztbrief etc.)</span>
+                        <input type="file" bind:this={documentInput} onchange={handleDocumentUpload} class="hidden" accept="image/*,application/pdf" multiple />
+                        <button type="button" onclick={() => documentInput.click()} class="text-xs font-bold text-indigo-600 hover:text-indigo-800 transition-colors flex items-center gap-1 bg-indigo-50 px-2 py-1.5 rounded-md">
+                            <span>📎</span> Anhängen
+                        </button>
+                    </div>
+                    {#if attachedDocuments.length > 0}
+                        <div class="flex flex-col gap-2 max-h-32 overflow-y-auto custom-scrollbar p-1">
+                            {#each attachedDocuments as doc (doc.id)}
+                                <div class="flex items-center justify-between bg-neutral-50 p-2.5 rounded-lg border border-neutral-200 shadow-sm">
+                                    <span class="text-xs font-medium text-neutral-700 truncate mr-2">📄 {doc.name}</span>
+                                    <button type="button" onclick={() => deleteDocument(doc.id)} class="text-rose-500 hover:text-rose-700 w-6 h-6 flex items-center justify-center rounded-full hover:bg-rose-50 transition-colors font-bold text-sm">✕</button>
+                                </div>
+                            {/each}
+                        </div>
+                    {/if}
                 </div>
 
                 {#if inputType === 'standard'}
@@ -427,7 +499,7 @@ Schreibe KEINE Floskeln davor oder danach. Formuliere professionell im "Sie"-For
                     </div>
                 {/if}
 
-                {#if (inputType === 'record' && recordings.length > 0 && !isRecording) || (inputType === 'text' && manualText.trim()) || inputType === 'standard'}
+                {#if (inputType === 'record' && recordings.length > 0 && !isRecording) || (inputType === 'text' && manualText.trim()) || inputType === 'standard' || attachedDocuments.length > 0}
                     <div class="bg-neutral-50 p-4 rounded-xl border border-neutral-200">
                         {#if (reportType === 'family' || reportType === 'standard') && availableRecipients.length > 0}
                             <div class="mb-4 pb-4 border-b border-neutral-200">

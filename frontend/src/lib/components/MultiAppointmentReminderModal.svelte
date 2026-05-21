@@ -2,6 +2,7 @@
     import { pb } from "$lib/services/pocketbase";
     import { sendEmail } from "$lib/services/emailService";
     import { toastStore } from "$lib/services/toastService.svelte";
+    import { orgaStore } from "$lib/stores/orgaStore.svelte";
 
     // svelte-ignore non_reactive_update
     let dialog: HTMLDialogElement;
@@ -17,6 +18,51 @@
     let subject = $state("");
     let message = $state("");
     let isSending = $state(false);
+    
+    let availableContacts = $state<any[]>([]);
+    let showContactDropdown = $state(false);
+    let selectedContactRefs = $state<any[]>([]);
+
+    function buildAvailableContacts() {
+        let list: any[] = [];
+        const add = (name: string, email: string, phone: string, salutation: string) => {
+            if (email || phone) list.push({ name, email, phone, salutation });
+        };
+        orgaStore.clients?.data?.forEach((c: any) => {
+            let sal = c.salutation === 'Herr' ? `Sehr geehrter Herr ${c.name_last}` : (c.salutation === 'Frau' ? `Sehr geehrte Frau ${c.name_last}` : `Guten Tag ${c.name_first} ${c.name_last}`);
+            add(`${c.name_first} ${c.name_last} (Klient)`, c.email, c.phone || c.handy, sal + ',');
+        });
+        orgaStore.contacts?.data?.forEach((c: any) => {
+            let sal = c.salutation === 'Herr' ? `Sehr geehrter Herr ${c.name_last}` : (c.salutation === 'Frau' ? `Sehr geehrte Frau ${c.name_last}` : `Guten Tag ${c.name_first} ${c.name_last}`);
+            add(`${c.name_first} ${c.name_last} (${c.company_name || 'Kontakt'})`, c.email, c.phone, sal + ',');
+        });
+        orgaStore.retirement_homes?.data?.forEach((h: any) => {
+            add(`${h.name} (Pflegeheim)`, h.email, h.phone, `Sehr geehrte Damen und Herren vom ${h.name},`);
+        });
+        const unique: any[] = [];
+        const seen = new Set();
+        for (const item of list) {
+            const key = `${item.email}-${item.phone}`;
+            if (!seen.has(key)) { seen.add(key); unique.push(item); }
+        }
+        return unique.sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    function toggleRecipient(contact: any, isChecked: boolean) {
+        const isEmail = method === 'email';
+        const contactVal = isEmail ? contact.email : contact.phone;
+        if (!contactVal) return;
+        let currentVals = recipient.split(',').map(e => e.trim()).filter(Boolean);
+        if (isChecked) {
+            if (!currentVals.includes(contactVal)) currentVals.push(contactVal);
+            if (!selectedContactRefs.find(c => (isEmail ? c.email : c.phone) === contactVal)) selectedContactRefs.push(contact);
+        } else {
+            currentVals = currentVals.filter(e => e !== contactVal);
+            selectedContactRefs = selectedContactRefs.filter(c => (isEmail ? c.email : c.phone) !== contactVal);
+        }
+        recipient = currentVals.join(', ');
+        updateMessage();
+    }
 
     export function open(apps: any[], cl: any) {
         client = cl;
@@ -37,6 +83,14 @@
         showCcBcc = false;
         subject = `Ihre gebuchten Termine`;
         
+        availableContacts = buildAvailableContacts();
+        selectedContactRefs = [];
+        if (recipient) {
+            const isEmail = method === 'email';
+            const matched = availableContacts.find(c => (isEmail ? c.email : c.phone) === recipient);
+            if (matched) selectedContactRefs = [matched];
+        }
+        
         updateMessage();
         dialog?.showModal();
     }
@@ -56,15 +110,25 @@
     });
 
     function updateMessage() {
-        const caregiver = client?.expand?.caregiver;
-        const recipientRecord = caregiver || client;
+        let newSalutation = "";
+        if (selectedContactRefs.length === 1) {
+            newSalutation = selectedContactRefs[0].salutation;
+        } else if (selectedContactRefs.length === 2) {
+            const first = selectedContactRefs[0].salutation.replace(',', '');
+            const second = selectedContactRefs[1].salutation.replace(',', '');
+            newSalutation = `${first},\n${second.charAt(0).toLowerCase() + second.slice(1)},`;
+        } else if (selectedContactRefs.length >= 3) {
+            newSalutation = "Sehr geehrte Damen und Herren,";
+        } else {
+            // Fallback auf Klient
+            const recipientRecord = client?.expand?.caregiver || client;
+            newSalutation = recipientRecord?.salutation === 'Herr' ? `Sehr geehrter Herr ${recipientRecord.name_last},` : 
+                            (recipientRecord?.salutation === 'Frau' ? `Sehr geehrte Frau ${recipientRecord.name_last},` : 
+                            `Guten Tag ${recipientRecord?.name_first || ''} ${recipientRecord?.name_last || ''},`.trim());
+        }
 
-        const salutation = recipientRecord?.salutation === 'Herr' ? `Sehr geehrter Herr ${recipientRecord.name_last},` : 
-                          (recipientRecord?.salutation === 'Frau' ? `Sehr geehrte Frau ${recipientRecord.name_last},` : 
-                          `Guten Tag ${recipientRecord?.name_first || ''} ${recipientRecord?.name_last || ''},`.trim());
-
-        const baseText = caregiver ? `hiermit möchten wir Ihnen für ${client?.name_first} ${client?.name_last} die folgenden gebuchten Termine bestätigen:` : `hiermit möchten wir Ihnen die folgenden gebuchten Termine bestätigen:`;
-        let msg = `${salutation}\n\n${baseText}\n\n`;
+        const baseText = client?.expand?.caregiver ? `hiermit möchten wir Ihnen für ${client?.name_first} ${client?.name_last} die folgenden gebuchten Termine bestätigen:` : `hiermit möchten wir Ihnen die folgenden gebuchten Termine bestätigen:`;
+        let msg = `${newSalutation}\n\n${baseText}\n\n`;
         
         const selectedApps = availableAppointments.filter(a => selectedAppointmentIds.includes(a.id));
         

@@ -193,8 +193,8 @@
     }
 </script>
 
-<dialog bind:this={dialog} class="p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-full max-w-2xl mx-auto my-auto rounded-3xl" onclick={(e) => { if (e.target === dialog) close(); }}>
-    <div class="bg-white rounded-3xl p-6 md:p-8 w-full min-h-100 flex flex-col relative overflow-hidden">
+<dialog bind:this={dialog} class="p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-full max-w-4xl mx-auto my-auto rounded-3xl" onclick={(e) => { if (e.target === dialog) close(); }}>
+    <div class="bg-white rounded-3xl p-6 md:p-8 w-full min-h-100 max-h-[90vh] flex flex-col relative overflow-hidden">
         <button aria-label="Schließen" title="Schließen" onclick={close} class="absolute top-5 right-5 w-10 h-10 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-colors z-10"><svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
         
         <h2 class="text-2xl font-bold text-neutral-900 mb-2">Dokument generieren</h2>
