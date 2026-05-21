@@ -61,6 +61,23 @@
         const handleSync = (e: any) => { selectedCompanyId = e.detail; };
         window.addEventListener('global-company-changed', handleSync);
 
+        pb.collection('appointments').subscribe('*', async (e) => {
+            if (orgaStore.appointments) {
+                if (e.action === 'delete') {
+                    orgaStore.appointments.data = orgaStore.appointments.data.filter((a: any) => a.id !== e.record.id);
+                } else {
+                    try {
+                        const updatedApp = await pb.collection<any>('appointments').getOne(e.record.id, { expand: 'user,client,drive_record,time_record,tasks,expenditures,appointment_at', requestKey: null });
+                        const idx = orgaStore.appointments.data.findIndex((a: any) => a.id === e.record.id);
+                        const newData = [...orgaStore.appointments.data];
+                        if (idx !== -1) newData[idx] = updatedApp;
+                        else newData.push(updatedApp);
+                        orgaStore.appointments.data = newData;
+                    } catch (err) {}
+                }
+            }
+        }).catch(() => {});
+
         if (isSuperAdmin) {
             pb.collection('users').getFullList({ requestKey: null }).then(res => {
                 if (isGodMode) {
@@ -81,6 +98,7 @@
         return () => {
             clearInterval(timeInterval);
             window.removeEventListener('global-company-changed', handleSync);
+            pb.collection('appointments').unsubscribe('*');
             unsub();
         };
     });
@@ -487,10 +505,11 @@
                                             {/if}
                                         </button>
                                     {:else}
-                                        <button type="button" draggable="true" ondragstart={(e) => handleDragStart(e, app.id)} ondragend={handleDragEnd} onclick={(e) => { e.stopPropagation(); detailModal?.open(app.id); }} class="cursor-grab active:cursor-grabbing w-full text-left block px-2 py-1.5 rounded-lg border border-transparent shadow-sm hover:shadow-md transition-all hover:-translate-y-px {cColor ? 'hover:brightness-95' : (app.is_private ? 'bg-rose-50 hover:border-rose-200 text-rose-800' : 'bg-indigo-50 hover:border-indigo-200 text-indigo-800')} {draggedAppId === app.id ? 'opacity-40' : ''}" style="{cColor ? `background-color: color-mix(in srgb, ${cColor} 10%, white); border-left: 3px solid ${cColor}; color: color-mix(in srgb, ${cColor} 90%, black);` : ''}" title={app.description}>
+                                        <button type="button" draggable="true" ondragstart={(e) => handleDragStart(e, app.id)} ondragend={handleDragEnd} onclick={(e) => { e.stopPropagation(); detailModal?.open(app.id); }} class="cursor-grab active:cursor-grabbing w-full text-left block px-2 py-1.5 rounded-lg border border-transparent shadow-sm hover:shadow-md transition-all hover:-translate-y-px {cColor ? 'hover:brightness-95' : (app.is_private ? 'bg-rose-50 hover:border-rose-200 text-rose-800' : 'bg-indigo-50 hover:border-indigo-200 text-indigo-800')} {draggedAppId === app.id ? 'opacity-40' : ''} {app.settled ? 'opacity-50 grayscale' : ''}" style="{cColor ? `background-color: color-mix(in srgb, ${cColor} 10%, white); border-left: 3px solid ${cColor}; color: color-mix(in srgb, ${cColor} 90%, black);` : ''}" title={app.description}>
                                             <div class="flex items-center gap-1 mb-0.5">
                                                 <span class="font-bold text-[11px] leading-none">{getDisplayTime(app)}</span>
-                                                {#if app.is_private}<span class="text-[9px]">🔒</span>{/if}
+                                                {#if app.is_private}<span class="text-[9px]" title="Privat">🔒</span>{/if}
+                                                {#if app.settled}<span class="text-[10px] text-emerald-600 font-bold" title="Abgerechnet">✓</span>{/if}
                                             </div>
                                             <div class="text-xs font-semibold truncate text-neutral-900">
                                                 {#if isSuperAdmin && app.expand?.user}
@@ -545,10 +564,12 @@
                                             <p class="text-[10px] sm:text-xs text-neutral-800 font-medium line-clamp-2">🚫 {app.description.replace('[BLOCK]', '').trim() || 'Blockiert'}</p>
                                         </button>
                                     {:else}
-                                        <button type="button" onclick={(e) => { e.stopPropagation(); detailModal?.open(app.id); }} class="w-full text-left block bg-white p-2 sm:p-3 rounded-lg border border-neutral-200 hover:border-indigo-300 hover:shadow-md transition-all group">
+                                        <button type="button" onclick={(e) => { e.stopPropagation(); detailModal?.open(app.id); }} class="w-full text-left block bg-white p-2 sm:p-3 rounded-lg border border-neutral-200 hover:border-indigo-300 hover:shadow-md transition-all group {app.settled ? 'opacity-50 grayscale' : ''}">
                                             <div class="flex justify-between items-start mb-1 gap-2">
-                                                <span class="text-[10px] sm:text-xs font-bold shrink-0 {app.is_private ? 'text-rose-600' : 'text-indigo-600'}">
+                                                <span class="flex items-center gap-1 text-[10px] sm:text-xs font-bold shrink-0 {app.is_private ? 'text-rose-600' : 'text-indigo-600'}">
                                                     {getDisplayTime(app)}
+                                                    {#if app.is_private}<span class="text-[9px]" title="Privat">🔒</span>{/if}
+                                                    {#if app.settled}<span class="text-[10px] text-emerald-600 font-bold" title="Abgerechnet">✓</span>{/if}
                                                 </span>
                                                 <div class="flex items-center gap-1.5 min-w-0 justify-end text-right">
                                                     {#if isSuperAdmin && app.expand?.user}
@@ -636,10 +657,11 @@
                                             <div class="truncate opacity-75">{app.description.replace('[BLOCK]', '').trim()}</div>
                                         </button>
                                     {:else}
-                                        <button type="button" draggable="true" ondragstart={(e) => handleDragStart(e, app.id)} ondragend={handleDragEnd} onclick={(e) => { e.stopPropagation(); detailModal?.open(app.id); }} class="cursor-grab active:cursor-grabbing text-left absolute left-0.5 right-0.5 sm:left-1 sm:right-1 rounded-md p-1 sm:p-1.5 text-[10px] sm:text-xs overflow-hidden transition-all border shadow-sm hover:shadow-md hover:z-20 {cColor ? 'hover:brightness-95' : (app.is_private ? 'bg-rose-50 border-rose-200 text-rose-800' : 'bg-indigo-50 border-indigo-200 text-indigo-800')} {draggedAppId === app.id ? 'opacity-40 z-50 pointer-events-none' : ''}" style="top: {getAppTop(app)}px; height: {getAppHeight(app)}px; {cColor ? `background-color: color-mix(in srgb, ${cColor} 15%, white); border-color: color-mix(in srgb, ${cColor} 40%, white); color: color-mix(in srgb, ${cColor} 90%, black); border-left: 3px solid ${cColor};` : ''}" title={app.description}>
+                                        <button type="button" draggable="true" ondragstart={(e) => handleDragStart(e, app.id)} ondragend={handleDragEnd} onclick={(e) => { e.stopPropagation(); detailModal?.open(app.id); }} class="cursor-grab active:cursor-grabbing text-left absolute left-0.5 right-0.5 sm:left-1 sm:right-1 rounded-md p-1 sm:p-1.5 text-[10px] sm:text-xs overflow-hidden transition-all border shadow-sm hover:shadow-md hover:z-20 {cColor ? 'hover:brightness-95' : (app.is_private ? 'bg-rose-50 border-rose-200 text-rose-800' : 'bg-indigo-50 border-indigo-200 text-indigo-800')} {draggedAppId === app.id ? 'opacity-40 z-50 pointer-events-none' : ''} {app.settled ? 'opacity-50 grayscale' : ''}" style="top: {getAppTop(app)}px; height: {getAppHeight(app)}px; {cColor ? `background-color: color-mix(in srgb, ${cColor} 15%, white); border-color: color-mix(in srgb, ${cColor} 40%, white); color: color-mix(in srgb, ${cColor} 90%, black); border-left: 3px solid ${cColor};` : ''}" title={app.description}>
                                             <div class="font-bold flex items-center gap-1 mb-0.5">
                                                 <span>{getDisplayTime(app)}</span>
-                                                {#if app.is_private}<span class="text-[8px] sm:text-[10px]">🔒</span>{/if}
+                                                {#if app.is_private}<span class="text-[8px] sm:text-[10px]" title="Privat">🔒</span>{/if}
+                                                {#if app.settled}<span class="text-[9px] sm:text-[11px] text-emerald-600 font-bold" title="Abgerechnet">✓</span>{/if}
                                             </div>
                                             <div class="truncate font-semibold text-neutral-900">
                                                 {#if isSuperAdmin && app.expand?.user}
@@ -691,9 +713,13 @@
                                     <p class="text-sm text-neutral-800 font-medium line-clamp-2">🚫 {app.description.replace('[BLOCK]', '').trim() || 'Urlaub / Blockiert'}</p>
                                 </button>
                             {:else}
-                                <button type="button" onclick={(e) => { e.stopPropagation(); detailModal?.open(app.id); }} class="w-full text-left block bg-white p-4 rounded-xl border border-neutral-200 hover:border-indigo-300 hover:shadow-md transition-all group">
+                                <button type="button" onclick={(e) => { e.stopPropagation(); detailModal?.open(app.id); }} class="w-full text-left block bg-white p-4 rounded-xl border border-neutral-200 hover:border-indigo-300 hover:shadow-md transition-all group {app.settled ? 'opacity-50 grayscale' : ''}">
                                     <div class="flex justify-between items-start mb-2 gap-2">
-                                        <span class="text-sm font-bold shrink-0 {app.is_private ? 'text-rose-600' : 'text-indigo-600'}">{getDisplayTime(app)} Uhr</span>
+                                        <span class="flex items-center gap-1.5 text-sm font-bold shrink-0 {app.is_private ? 'text-rose-600' : 'text-indigo-600'}">
+                                            {getDisplayTime(app)} Uhr
+                                            {#if app.is_private}<span class="text-xs" title="Privat">🔒</span>{/if}
+                                            {#if app.settled}<span class="text-sm text-emerald-600 font-bold" title="Abgerechnet">✓</span>{/if}
+                                        </span>
                                         <div class="flex items-center gap-1.5 min-w-0 justify-end text-right">
                                             {#if isSuperAdmin && app.expand?.user}
                                                 <span class="hidden sm:inline-block text-[10px] sm:text-xs font-bold text-neutral-500 bg-neutral-100 border border-neutral-200 px-2 py-0.5 rounded-md truncate max-w-37.5" title="{app.expand.user.name_first} {app.expand.user.name_last}">👤 {app.expand.user.name_first}</span>

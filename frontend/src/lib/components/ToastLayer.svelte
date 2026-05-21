@@ -10,6 +10,23 @@
             popoverEl.showPopover();
         }
     });
+
+    let lastToastId = "";
+
+    $effect(() => {
+        const toasts = toastStore.toasts;
+        if (toasts.length > 0) {
+            const newest = toasts[toasts.length - 1];
+            // Sobald ein neuer Toast auftaucht, rücken wir den Container wieder nach ganz oben
+            if (newest.id !== lastToastId && popoverEl && typeof popoverEl.showPopover === 'function') {
+                try {
+                    if (popoverEl.matches(':popover-open')) popoverEl.hidePopover();
+                    popoverEl.showPopover();
+                } catch (e) {}
+                lastToastId = newest.id;
+            }
+        }
+    });
 </script>
 
 <div bind:this={popoverEl} popover="manual" class="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-8 sm:bottom-8 z-9999 flex flex-col items-center sm:items-end gap-4 pointer-events-none bg-transparent border-none m-0 p-0 overflow-visible w-auto h-auto outline-none">

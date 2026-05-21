@@ -2,6 +2,7 @@
     import { pb } from "$lib/services/pocketbase";
     import { sendEmail } from "$lib/services/emailService";
     import { toastStore } from "$lib/services/toastService.svelte";
+    import { orgaStore } from "$lib/stores/orgaStore.svelte";
 
     // svelte-ignore non_reactive_update
     let dialog: HTMLDialogElement;
@@ -24,20 +25,72 @@
     let showContactDropdown = $state(false);
     let selectedContactRefs = $state<any[]>([]);
 
+    let selectedPdfFiles = $state<string[]>([]);
     let futureAppointments = $state<any[]>([]);
     let selectedFutureAppIds = $state<string[]>([]);
     let includeFutureApps = $state(false);
 
+    function buildAvailableContacts() {
+        let list: any[] = [];
+        const add = (name: string, email: string, phone: string, salutation: string, isClient: boolean = false) => {
+            if (email || phone) list.push({ name, email, phone, salutation, isClient });
+        };
+        orgaStore.clients?.data?.forEach((c: any) => {
+            let sal = c.salutation === 'Herr' ? `Sehr geehrter Herr ${c.name_last}` : (c.salutation === 'Frau' ? `Sehr geehrte Frau ${c.name_last}` : `Guten Tag ${c.name_first} ${c.name_last}`);
+            add(`${c.name_first} ${c.name_last} (Klient)`, c.email, c.phone || c.handy, sal + ',', true);
+        });
+        orgaStore.contacts?.data?.forEach((c: any) => {
+            let sal = c.salutation === 'Herr' ? `Sehr geehrter Herr ${c.name_last}` : (c.salutation === 'Frau' ? `Sehr geehrte Frau ${c.name_last}` : `Guten Tag ${c.name_first} ${c.name_last}`);
+            add(`${c.name_first} ${c.name_last} (${c.company_name || 'Kontakt'})`, c.email, c.phone, sal + ',', false);
+        });
+        orgaStore.retirement_homes?.data?.forEach((h: any) => {
+            add(`${h.name} (Pflegeheim)`, h.email, h.phone, `Sehr geehrte Damen und Herren vom ${h.name},`, false);
+        });
+        const unique: any[] = [];
+        const seen = new Set();
+        for (const item of list) {
+            const key = `${item.email}-${item.phone}`;
+            if (!seen.has(key)) { seen.add(key); unique.push(item); }
+        }
+        return unique.sort((a, b) => a.name.localeCompare(b.name));
+    }
+
     function toggleRecipient(contact: any, isChecked: boolean) {
         let currentEmails = emailTo.split(',').map(e => e.trim()).filter(Boolean);
         if (isChecked) {
-            if (!currentEmails.includes(contact.email)) {
-                currentEmails.push(contact.email);
-            }
+            if (!currentEmails.includes(contact.email)) currentEmails.push(contact.email);
+            if (!selectedContactRefs.find(c => c.email === contact.email)) selectedContactRefs.push(contact);
         } else {
             currentEmails = currentEmails.filter(e => e !== contact.email);
+            selectedContactRefs = selectedContactRefs.filter(c => c.email !== contact.email);
         }
         emailTo = currentEmails.join(', ');
+        updateMessage();
+    }
+
+    function updateMessage() {
+        if (selectedContactRefs.length === 0) return;
+        
+        let newSalutation = "";
+        if (selectedContactRefs.length === 1) {
+            newSalutation = selectedContactRefs[0].salutation;
+        } else if (selectedContactRefs.length === 2) {
+            const first = selectedContactRefs[0].salutation.replace(',', '');
+            const second = selectedContactRefs[1].salutation.replace(',', '');
+            newSalutation = `${first},\n${second.charAt(0).toLowerCase() + second.slice(1)},`;
+        } else {
+            newSalutation = "Sehr geehrte Damen und Herren,";
+        }
+
+        const isClientOnly = selectedContactRefs.every(c => c.isClient);
+        const clientObj = Array.isArray(invoice?.expand?.client) ? invoice.expand.client[0] : invoice?.expand?.client;
+        const clientName = clientObj ? `${clientObj.name_first} ${clientObj.name_last}`.trim() : '';
+        
+        const bodyText = isClientOnly 
+            ? `anbei erhalten Sie Ihre Rechnung sowie ggf. zugehörige Arbeitszeitnachweise als PDF-Dokument.\n\nIhre Rechnungen und Dokumente können Sie ab sofort auch jederzeit sicher in unserem neuen Klienten-Portal einsehen:\n👉 https://www.ihre-seniorenassistenz.com/portal \n\nMit freundlichen Grüßen\nIhre Seniorenassistenz`
+            : `anbei erhalten Sie die Rechnung sowie ggf. zugehörige Arbeitszeitnachweise für ${clientName} als PDF-Dokument.\n\nDie Rechnungen und Dokumente können ab sofort auch jederzeit sicher im neuen Klienten-Portal eingesehen werden:\n👉 https://www.ihre-seniorenassistenz.com/portal \n\nMit freundlichen Grüßen\nIhre Seniorenassistenz`;
+            
+        emailText = `${newSalutation}\n\n${bodyText}`;
     }
 
     export function open(inv: any) {
@@ -47,23 +100,45 @@
         const client = Array.isArray(invoice?.expand?.client) ? invoice.expand.client[0] : invoice?.expand?.client;
         emailTo = client?.email || "";
         
-        const clientSalutation = client?.salutation === 'Herr' ? `Sehr geehrter Herr ${client.name_last}` : (client?.salutation === 'Frau' ? `Sehr geehrte Frau ${client.name_last}` : `Guten Tag ${client?.name_first || ''} ${client?.name_last || ''}`.trim());
-        const salutationText = client?.email ? clientSalutation + ',' : 'Guten Tag,';
-        
-        emailSubject = `Ihre Dokumente (Ref: ${invoice?.invoice_nr || 'Neu'})`;
-        const defaultBody = `\n\nanbei erhalten Sie Ihre Rechnung sowie ggf. zugehörige Arbeitszeitnachweise als PDF-Dokument.\n\nIhre Rechnungen und Dokumente können Sie ab sofort auch jederzeit sicher in unserem neuen Klienten-Portal einsehen:\n👉 https://www.ihre-seniorenassistenz.com/portal \n\nMit freundlichen Grüßen\nIhre Seniorenassistenz`;
-        emailText = `${salutationText}${defaultBody}`;
-        
         successMsg = "";
         errorMsg = "";
         cc = "";
         bcc = "";
         showCcBcc = false;
+        showContactDropdown = false;
+
+        if (inv?.pdf) {
+            selectedPdfFiles = Array.isArray(inv.pdf) ? [...inv.pdf] : [inv.pdf];
+        } else {
+            selectedPdfFiles = [];
+        }
         
+        availableContacts = buildAvailableContacts();
+        selectedContactRefs = [];
+        if (emailTo) {
+            const matched = availableContacts.find(c => c.email === emailTo);
+            if (matched) selectedContactRefs = [matched];
+        }
+        
+        emailSubject = `Ihre Dokumente (Ref: ${invoice?.invoice_nr || 'Neu'})`;
+        
+        let initialSalutation = "Guten Tag,";
+        if (selectedContactRefs.length > 0) {
+            initialSalutation = selectedContactRefs[0].salutation;
+        } else if (client) {
+            initialSalutation = client.salutation === 'Herr' ? `Sehr geehrter Herr ${client.name_last},` : (client.salutation === 'Frau' ? `Sehr geehrte Frau ${client.name_last},` : `Guten Tag ${client.name_first} ${client.name_last},`);
+        }
+        
+        const defaultBody = `anbei erhalten Sie Ihre Rechnung sowie ggf. zugehörige Arbeitszeitnachweise als PDF-Dokument.\n\nIhre Rechnungen und Dokumente können Sie ab sofort auch jederzeit sicher in unserem neuen Klienten-Portal einsehen:\n👉 https://www.ihre-seniorenassistenz.com/portal \n\nMit freundlichen Grüßen\nIhre Seniorenassistenz`;
+        emailText = `${initialSalutation}\n\n${defaultBody}`;
+        
+        if (selectedContactRefs.length > 0) {
+            updateMessage();
+        }
+
         // Termine und Berichte laden
         linkedAppointments = [];
         includeReports = true;
-        availableContacts = [];
         
         const appIds = Array.isArray(invoice?.appointments) ? invoice.appointments : (invoice?.appointments ? [invoice.appointments] : []);
         
@@ -124,20 +199,19 @@
     }
 
     async function sendInvoiceEmail() {
-        if (!invoice || !invoice.pdf || invoice.pdf.length === 0) {
-            errorMsg = "Keine PDF-Datei an dieser Rechnung gefunden.";
+        if (selectedPdfFiles.length === 0) {
+            errorMsg = "Bitte wählen Sie mindestens ein Dokument zum Senden aus.";
             return;
         }
 
         isEmailSending = true;
         errorMsg = "";
         successMsg = "";
-
         try {
             const attachments = [];
             
             // Lade alle angehängten PDFs der Rechnung herunter und wandle sie um
-            for (const pdfFilename of invoice.pdf) {
+            for (const pdfFilename of selectedPdfFiles) {
                 const fileUrl = pb.files.getURL(invoice, pdfFilename);
                 const response = await fetch(fileUrl);
                 const blob = await response.blob();
@@ -153,6 +227,21 @@
             const userName = user ? `${user.name_first || ''} ${user.name_last || ''}`.trim() : 'Ihre Seniorenassistenz';
             const userEmail = user?.email || 'info@ihre-seniorenassistenz.com';
             const userPhone = user?.handy || user?.tel || '0151 57515432';
+
+            let compName = 'Ihre Seniorenassistenz';
+            let compStreet = 'Dreyhauptstraße 2';
+            let compCity = '06108 Halle (Saale)';
+            let compWeb = 'www.ihre-seniorenassistenz.com';
+            if (user && user.company) {
+                const cId = Array.isArray(user.company) ? user.company[0] : user.company;
+                const comp = orgaStore.company?.data?.find((c: any) => c.id === cId);
+                if (comp) {
+                    compName = comp.name || compName;
+                    compStreet = `${comp.street || ''} ${comp.housenr || ''}`.trim() || compStreet;
+                    compCity = `${comp.zip || ''} ${comp.city || ''}`.trim() || compCity;
+                    compWeb = comp.website || compWeb;
+                }
+            }
 
             // HTML & Text für die Besuchsberichte generieren
             let reportsHtml = '';
@@ -221,12 +310,12 @@
                 }
             }
 
-            const textEmail = `${emailText.trim()}${reportsText}${futureAppsText}\n\n--\n${userName}\nIhre Seniorenassistenz\nDreyhauptstraße 2, 06108 Halle (Saale)\nTelefon: ${userPhone}\nE-Mail: ${userEmail}\nWeb: www.ihre-seniorenassistenz.com`;
+            const textEmail = `${emailText.trim()}${reportsText}${futureAppsText}\n\n--\n${userName}\n${compName}\n${compStreet}, ${compCity}\nTelefon: ${userPhone}\nE-Mail: ${userEmail}\nWeb: ${compWeb}`;
 
             const htmlEmail = `
                 <div style="font-family: 'Segoe UI', Arial, sans-serif; color: #374151; max-width: 650px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
                     <div style="background-color: #fdf8f6; padding: 25px 30px; border-bottom: 3px solid #c66a4d;">
-                        <h1 style="color: #954028; margin: 0; font-size: 24px; letter-spacing: -0.5px;">Ihre Seniorenassistenz</h1>
+                        <h1 style="color: #954028; margin: 0; font-size: 24px; letter-spacing: -0.5px;">${compName}</h1>
                         <p style="color: #c66a4d; margin: 4px 0 0 0; font-size: 14px; font-weight: 500;">Alltagshilfe • Betreuung • Organisation</p>
                     </div>
                     <div style="padding: 30px; font-size: 15px; line-height: 1.6; color: #1f2937; background-color: #ffffff;">
@@ -245,12 +334,12 @@
                             </tr>
                             <tr>
                                 <td style="line-height: 1.6;">
-                                    <strong>Ihre Seniorenassistenz</strong><br>
-                                    Dreyhauptstraße 2<br>
-                                    06108 Halle (Saale)<br><br>
+                                        <strong>${compName}</strong><br>
+                                        ${compStreet}<br>
+                                        ${compCity}<br><br>
                                     📞 <a href="tel:${userPhone}" style="color: #c66a4d; text-decoration: none;">${userPhone}</a><br>
                                     ✉️ <a href="mailto:${userEmail}" style="color: #c66a4d; text-decoration: none;">${userEmail}</a><br>
-                                    🌐 <a href="https://www.ihre-seniorenassistenz.com" style="color: #c66a4d; text-decoration: none;">www.ihre-seniorenassistenz.com</a>
+                                        🌐 <a href="${compWeb.startsWith('http') ? compWeb : 'https://' + compWeb}" style="color: #c66a4d; text-decoration: none;">${compWeb}</a>
                                 </td>
                             </tr>
                         </table>
@@ -440,21 +529,28 @@
             </div>
             
             <!-- PDFs anhängen -->
-            <div class="flex flex-wrap gap-2 pt-4 mt-2 border-t border-neutral-100">
-                {#if invoice?.pdf && invoice.pdf.length > 0}
-                    {#each invoice.pdf as pdfFile}
-                        <div class="flex items-center gap-2 bg-neutral-100 text-neutral-700 px-3 py-1.5 rounded-lg text-sm border border-neutral-200 shadow-sm animate-enter">
-                            <span class="truncate max-w-50 font-medium">📎 {pdfFile}</span>
-                        </div>
-                    {/each}
-                {:else}
-                    <span class="text-sm text-neutral-500 italic">Keine PDF an dieser Rechnung gefunden.</span>
-                {/if}
+            <div class="pt-4 mt-4 border-t border-neutral-100">
+                <h3 class="text-sm font-bold text-neutral-900 flex items-center gap-2 mb-3"><span>📎</span> Dokumente zum Senden auswählen</h3>
+                <div class="space-y-2">
+                    {#if invoice?.pdf && invoice.pdf.length > 0}
+                        {#each invoice.pdf as pdfFile}
+                            <label class="flex items-center gap-3 p-3 bg-white rounded-xl border border-neutral-200 cursor-pointer hover:border-indigo-300 transition-colors shadow-sm">
+                                <input type="checkbox" checked={selectedPdfFiles.includes(pdfFile)} onchange={() => {
+                                    if (selectedPdfFiles.includes(pdfFile)) selectedPdfFiles = selectedPdfFiles.filter(f => f !== pdfFile);
+                                    else selectedPdfFiles = [...selectedPdfFiles, pdfFile];
+                                }} class="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500" disabled={isEmailSending || !!successMsg} />
+                                <span class="text-sm font-medium text-neutral-800">{pdfFile}</span>
+                            </label>
+                        {/each}
+                    {:else}
+                        <p class="text-sm text-neutral-500 italic">Keine PDF an dieser Rechnung gefunden.</p>
+                    {/if}
+                </div>
             </div>
 
             <div class="pt-4 flex flex-col-reverse sm:flex-row justify-end gap-3 border-t border-neutral-100 mt-6">
                 <button type="button" onclick={close} class="orga-button-ghost w-full sm:w-auto py-3 sm:py-2.5" disabled={isEmailSending}>Abbrechen</button>
-                <button type="submit" class="orga-button-primary shadow-indigo-600/20 w-full sm:w-auto py-3 sm:py-2.5" disabled={isEmailSending || !!successMsg || !invoice?.pdf?.length}>
+                <button type="submit" class="orga-button-primary shadow-indigo-600/20 w-full sm:w-auto py-3 sm:py-2.5" disabled={isEmailSending || !!successMsg || selectedPdfFiles.length === 0}>
                     {isEmailSending ? 'Wird gesendet...' : 'E-Mail senden ✉️'}
                 </button>
             </div>

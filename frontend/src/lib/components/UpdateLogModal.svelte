@@ -115,7 +115,7 @@
                                         <div class="absolute top-4 right-4 flex items-center gap-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                                             <button onclick={() => {
                                                 editId = update.id; editNumber = update.number?.toString() || "";
-                                                editDate = update.date ? update.date.split('T')[0] : "";
+                                                editDate = update.date ? update.date.substring(0, 10) : "";
                                                 editText = update.text || ""; isEditing = true;
                                             }} class="w-7 h-7 bg-white border border-neutral-200 text-neutral-500 hover:text-indigo-600 hover:border-indigo-200 rounded-lg flex items-center justify-center shadow-sm transition-colors" title="Bearbeiten">✎</button>
                                             <button onclick={async () => {
@@ -127,7 +127,7 @@
                                         </div>
                                     {/if}
                                     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3 pr-16 sm:pr-20">
-                                        <span class="font-bold text-lg text-neutral-900">Version {update.number || 'Unbekannt'}</span>
+                                        <span class="font-bold text-lg text-neutral-900">Version {update.number ? update.number.toString().replace(/^v/i, '') : 'Unbekannt'}</span>
                                         <span class="text-xs font-semibold text-neutral-500 bg-white border border-neutral-200 px-2.5 py-1 rounded-lg shadow-sm w-fit">{update.date ? new Date(update.date).toLocaleDateString('de-DE', {day:'2-digit', month:'long', year:'numeric'}) : 'Neuestes'}</span>
                                     </div>
                                     <div class="text-sm text-neutral-700 leading-relaxed whitespace-pre-wrap">{update.text || 'Keine Beschreibung angegeben.'}</div>

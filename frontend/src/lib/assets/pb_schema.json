@@ -1086,6 +1086,16 @@
       {
         "help": "",
         "hidden": false,
+        "id": "bool99999999",
+        "name": "settled",
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "bool"
+      },
+      {
+        "help": "",
+        "hidden": false,
         "id": "gxbsgg5f",
         "max": "",
         "min": "",
@@ -2754,17 +2764,19 @@
         "type": "text"
       },
       {
+        "autogeneratePattern": "",
         "help": "",
         "hidden": false,
         "id": "number3367870285",
-        "max": null,
-        "min": null,
+        "max": 0,
+        "min": 0,
         "name": "sum",
-        "onlyInt": false,
+        "pattern": "",
         "presentable": false,
+        "primaryKey": false,
         "required": false,
         "system": false,
-        "type": "number"
+        "type": "text"
       },
       {
         "hidden": false,
@@ -2972,11 +2984,11 @@
   },
   {
     "id": "pbc_3332084752",
-    "listRule": "",
-    "viewRule": "client.company_via_clients.id = @request.auth.company.id || @request.auth.role = \"superadmin\"",
-    "createRule": "client.company_via_clients.id = @request.auth.company.id || @request.auth.role = \"superadmin\"",
-    "updateRule": "client.company_via_clients.id = @request.auth.company.id || @request.auth.role = \"superadmin\"",
-    "deleteRule": "client.company_via_clients.id = @request.auth.company.id || @request.auth.role = \"superadmin\"",
+    "listRule": "company.users.id ?= @request.auth.id || client.company_via_clients.users.id ?= @request.auth.id || @request.auth.role = \"superadmin\"",
+    "viewRule": "company.users.id ?= @request.auth.id || client.company_via_clients.users.id ?= @request.auth.id || @request.auth.role = \"superadmin\"",
+    "createRule": "company.users.id ?= @request.auth.id || client.company_via_clients.users.id ?= @request.auth.id || @request.auth.role = \"superadmin\"",
+    "updateRule": "company.users.id ?= @request.auth.id || client.company_via_clients.users.id ?= @request.auth.id || @request.auth.role = \"superadmin\"",
+    "deleteRule": "company.users.id ?= @request.auth.id || client.company_via_clients.users.id ?= @request.auth.id || @request.auth.role = \"superadmin\"",
     "name": "invoices",
     "type": "base",
     "fields": [
@@ -4539,17 +4551,19 @@
         "type": "text"
       },
       {
+        "autogeneratePattern": "",
         "help": "",
         "hidden": false,
         "id": "number2526027604",
-        "max": null,
-        "min": null,
+        "max": 0,
+        "min": 0,
         "name": "number",
-        "onlyInt": false,
+        "pattern": "",
         "presentable": false,
+        "primaryKey": false,
         "required": false,
         "system": false,
-        "type": "number"
+        "type": "text"
       },
       {
         "help": "",

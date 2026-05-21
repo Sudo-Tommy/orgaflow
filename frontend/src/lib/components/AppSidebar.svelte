@@ -13,7 +13,7 @@
 	let supportModal: HTMLDialogElement;
 	
 	// Zieht sich die Versionsnummer nun live und fehlerfrei direkt aus dem Update-Log!
-	let appVersion = $derived(updateStore.updates?.length > 0 ? `v${updateStore.updates[0].number}` : "v1.0.0");
+	let appVersion = $derived(updateStore.updates?.length > 0 ? (String(updateStore.updates[0].number).toLowerCase().startsWith('v') ? updateStore.updates[0].number : `v${updateStore.updates[0].number}`) : "v1.0.0");
 </script>
 
 <aside class="w-64 bg-neutral-950 text-neutral-400 flex-col border-r border-neutral-900 hidden md:flex h-full shadow-2xl relative overflow-hidden">

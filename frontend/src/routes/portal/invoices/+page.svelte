@@ -9,6 +9,14 @@
     let isLoading = $state(true);
     let errorMsg = $state("");
 
+    function getSafeUrl(url: string) {
+        if (!url) return '';
+        if (typeof window !== 'undefined' && !window.location.hostname.includes('localhost') && !window.location.hostname.includes('127.0.0.1')) {
+            return url.replace(/http:\/\/(127\.0\.0\.1|localhost)(:\d+)?/gi, window.location.origin);
+        }
+        return url;
+    }
+
     onMount(async () => {
         const token = localStorage.getItem('portal_token');
         if (!token) { goto('/portal'); return; }
@@ -69,13 +77,13 @@
                             <div class="flex gap-2 w-full sm:w-auto">
                                 {#if inv.files}
                                     {#each inv.files as file, i}
-                                        <a href={file.url} target="_blank" class="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-2 bg-white border border-neutral-200 hover:bg-brand-50 hover:text-brand-700 hover:border-brand-200 text-sm font-bold text-neutral-700 rounded-xl transition-colors shadow-sm">
+                                        <a href={getSafeUrl(file.url)} target="_blank" class="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-2 bg-white border border-neutral-200 hover:bg-brand-50 hover:text-brand-700 hover:border-brand-200 text-sm font-bold text-neutral-700 rounded-xl transition-colors shadow-sm">
                                             {file.name.toLowerCase().includes('zeit') || file.name.toLowerCase().includes('nachweis') || i > 0 ? '⏱️ Zeitnachweis' : '⬇️ Rechnung'}
                                         </a>
                                     {/each}
                                 {:else if inv.download_urls}
                                     {#each inv.download_urls as url, i}
-                                        <a href={url} target="_blank" class="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-2 bg-white border border-neutral-200 hover:bg-brand-50 hover:text-brand-700 hover:border-brand-200 text-sm font-bold text-neutral-700 rounded-xl transition-colors shadow-sm">
+                                        <a href={getSafeUrl(url)} target="_blank" class="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-2 bg-white border border-neutral-200 hover:bg-brand-50 hover:text-brand-700 hover:border-brand-200 text-sm font-bold text-neutral-700 rounded-xl transition-colors shadow-sm">
                                             {i === 0 ? '⬇️ Rechnung' : '⏱️ Zeitnachweis'}
                                         </a>
                                     {/each}

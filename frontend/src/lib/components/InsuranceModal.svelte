@@ -15,7 +15,7 @@
     let street = $state("");
     let zip = $state("");
     let city = $state("");
-    let billing_address_extra = $state("");
+    let addition = $state("");
     let notes = $state("");
 
     export function open(record?: any) {
@@ -28,7 +28,7 @@
             street = record.street || "";
             zip = record.zip || "";
             city = record.city || "";
-            billing_address_extra = record.billing_address_extra || "";
+            addition = record.addition || "";
             // Notes kommt aus einem Editor-Feld als HTML, wir bereinigen es für ein einfaches Textfeld
             notes = typeof record.notes === 'string' ? record.notes.replace(/<[^>]*>?/gm, '') : "";
         } else {
@@ -40,7 +40,7 @@
             street = "";
             zip = "";
             city = "";
-            billing_address_extra = "";
+            addition = "";
             notes = "";
         }
         errorMsg = "";
@@ -57,7 +57,7 @@
         errorMsg = "";
 
         try {
-            const data = { name, type, email, phone, street, zip, city, billing_address_extra, notes };
+            const data = { name, type, email, phone, street, zip, city, addition, notes };
             if (editId) {
                 await pb.collection('insurancies').update(editId, data);
             } else {
@@ -103,7 +103,7 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div class="md:col-span-2"><label for="ins-name" class="block text-sm font-semibold text-neutral-700 mb-1.5">Name der Kasse</label><input id="ins-name" type="text" bind:value={name} class="orga-input-clear" required disabled={isLoading} /></div>
                 <div><label for="ins-type" class="block text-sm font-semibold text-neutral-700 mb-1.5">Versicherungsart</label><select id="ins-type" bind:value={type} class="orga-input-clear" disabled={isLoading}><option value="GKV (Gesetzlich)">GKV (Gesetzlich)</option><option value="PKV (Privat)">PKV (Privat)</option><option value="Beihilfe">Beihilfe</option><option value="Berufsgenossenschaft">Berufsgenossenschaft</option></select></div>
-                <div><label for="ins-extra" class="block text-sm font-semibold text-neutral-700 mb-1.5">Abt. / Zusatz (optional)</label><input id="ins-extra" type="text" bind:value={billing_address_extra} class="orga-input-clear" disabled={isLoading} /></div>
+                <div><label for="ins-extra" class="block text-sm font-semibold text-neutral-700 mb-1.5">Abt. / Zusatz (optional)</label><input id="ins-extra" type="text" bind:value={addition} class="orga-input-clear" disabled={isLoading} /></div>
                 <div><label for="ins-email" class="block text-sm font-semibold text-neutral-700 mb-1.5">E-Mail</label><input id="ins-email" type="email" bind:value={email} class="orga-input-clear" disabled={isLoading} /></div>
                 <div><label for="ins-phone" class="block text-sm font-semibold text-neutral-700 mb-1.5">Telefon</label><input id="ins-phone" type="text" bind:value={phone} class="orga-input-clear" disabled={isLoading} /></div>
             </div>

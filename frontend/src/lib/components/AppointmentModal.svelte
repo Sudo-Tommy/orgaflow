@@ -17,6 +17,7 @@
     let selectedTasks = $state<string[]>([]);
     let is_private = $state(false);
     let is_blocked = $state(false);
+    let settled = $state(false);
     let selectedClientId = $state("");
     let selectedContactId = $state("");
     // Holt sich live die Daten (inkl. Notizen) des aktuell gewählten Klienten
@@ -63,6 +64,7 @@
                 is_blocked = false;
             }
             is_private = data.is_private || false;
+            settled = data.settled || false;
             
             let cId = "";
             if (data.client) {
@@ -86,6 +88,7 @@
             description = "";
             location_address = "";
             is_private = false;
+            settled = false;
             is_blocked = data?.is_blocked || false;
             selectedClientId = data?.preselectedClient || "";
             selectedUserId = pb.authStore.model?.id || "";
@@ -153,6 +156,7 @@
                 description: finalDesc,
                 location_address: location_address,
                 is_private,
+                settled,
                 user: selectedUserId || pb.authStore.model?.id,
                 client: selectedClientId ? [selectedClientId] : [],
                 notes: internalNotes,
@@ -337,37 +341,38 @@
             </div>
             {/if}
 
-            <!-- Toggles (Privat / Blocked) -->
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-neutral-100">
+            <!-- Toggles (Privat / Blocked / Settled) -->
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 border-t border-neutral-100">
                 <button type="button" onclick={() => is_private = !is_private} class="flex items-center justify-between w-full p-4 border-2 rounded-xl cursor-pointer transition-all {is_private ? 'border-indigo-500 bg-indigo-50/50' : 'border-neutral-200 bg-white hover:border-indigo-200'} {isLoading ? 'opacity-50 pointer-events-none' : ''}">
                     <div class="flex items-center gap-3">
-                        <div class="w-10 h-10 rounded-full flex items-center justify-center transition-colors {is_private ? 'bg-indigo-100 text-indigo-600' : 'bg-neutral-100 text-neutral-500'}">
-                            <span class="text-lg">🔒</span>
+                        <div class="w-8 h-8 rounded-full flex items-center justify-center transition-colors {is_private ? 'bg-indigo-100 text-indigo-600' : 'bg-neutral-100 text-neutral-500'}">
+                            <span class="text-base">🔒</span>
                         </div>
                         <div class="text-left">
                             <p class="text-sm font-bold {is_private ? 'text-indigo-900' : 'text-neutral-900'}">Privat</p>
-                            <p class="text-[10px] {is_private ? 'text-indigo-700' : 'text-neutral-500'}">Interner Termin</p>
-                        </div>
+                        </div>                        
                     </div>
-                    <!-- Custom Toggle Switch -->
-                    <div class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors {is_private ? 'bg-indigo-600' : 'bg-neutral-300'}">
-                        <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-sm {is_private ? 'translate-x-6' : 'translate-x-1'}"></span>
+                </button>
+
+                <button type="button" onclick={() => settled = !settled} class="flex items-center justify-between w-full p-4 border-2 rounded-xl cursor-pointer transition-all {settled ? 'border-emerald-500 bg-emerald-50/50' : 'border-neutral-200 bg-white hover:border-emerald-200'} {isLoading ? 'opacity-50 pointer-events-none' : ''}">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-full flex items-center justify-center transition-colors {settled ? 'bg-emerald-100 text-emerald-600' : 'bg-neutral-100 text-neutral-500'}">
+                            <span class="text-base">✓</span>
+                        </div>
+                        <div class="text-left">
+                            <p class="text-sm font-bold {settled ? 'text-emerald-900' : 'text-neutral-900'}">Abgerechnet</p>                            
+                        </div>
                     </div>
                 </button>
 
                 <button type="button" onclick={() => is_blocked = !is_blocked} class="flex items-center justify-between w-full p-4 border-2 rounded-xl cursor-pointer transition-all {is_blocked ? 'border-rose-500 bg-rose-50/50' : 'border-neutral-200 bg-white hover:border-rose-200'} {isLoading ? 'opacity-50 pointer-events-none' : ''}">
                     <div class="flex items-center gap-3">
-                        <div class="w-10 h-10 rounded-full flex items-center justify-center transition-colors {is_blocked ? 'bg-rose-100 text-rose-600' : 'bg-neutral-100 text-neutral-500'}">
-                            <span class="text-lg">🚫</span>
+                        <div class="w-8 h-8 rounded-full flex items-center justify-center transition-colors {is_blocked ? 'bg-rose-100 text-rose-600' : 'bg-neutral-100 text-neutral-500'}">
+                            <span class="text-base">🚫</span>
                         </div>
                         <div class="text-left">
                             <p class="text-sm font-bold {is_blocked ? 'text-rose-900' : 'text-neutral-900'}">Tag sperren</p>
-                            <p class="text-[10px] {is_blocked ? 'text-rose-700' : 'text-neutral-500'}">Keine Online-Anfragen</p>
-                        </div>
-                    </div>
-                    <!-- Custom Toggle Switch -->
-                    <div class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors {is_blocked ? 'bg-rose-600' : 'bg-neutral-300'}">
-                        <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-sm {is_blocked ? 'translate-x-6' : 'translate-x-1'}"></span>
+                        </div>                        
                     </div>
                 </button>
             </div>

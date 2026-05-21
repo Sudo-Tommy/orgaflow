@@ -240,7 +240,22 @@
             const userEmail = user?.email || 'info@ihre-seniorenassistenz.com';
             const userPhone = user?.handy || user?.tel || '0151 57515432';
 
-            const textEmail = `${emailText.trim()}\n\n--\n${userName}\nIhre Seniorenassistenz\nDreyhauptstraße 2, 06108 Halle (Saale)\nTelefon: ${userPhone}\nE-Mail: ${userEmail}\nWeb: www.ihre-seniorenassistenz.com`;
+            let compName = 'Ihre Seniorenassistenz';
+            let compStreet = 'Dreyhauptstraße 2';
+            let compCity = '06108 Halle (Saale)';
+            let compWeb = 'www.ihre-seniorenassistenz.com';
+            if (user && user.company) {
+                const cId = Array.isArray(user.company) ? user.company[0] : user.company;
+                const comp = orgaStore.company?.data?.find((c: any) => c.id === cId);
+                if (comp) {
+                    compName = comp.name || compName;
+                    compStreet = `${comp.street || ''} ${comp.housenr || ''}`.trim() || compStreet;
+                    compCity = `${comp.zip || ''} ${comp.city || ''}`.trim() || compCity;
+                    compWeb = comp.website || compWeb;
+                }
+            }
+
+            const textEmail = `${emailText.trim()}\n\n--\n${userName}\n${compName}\n${compStreet}, ${compCity}\nTelefon: ${userPhone}\nE-Mail: ${userEmail}\nWeb: ${compWeb}`;
 
             let reqDate = request?.date ? new Date(request.date).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : 'Kein Datum';
             let reqTime = request?.time ? new Date(request.time).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) + ' Uhr' : 'Keine Uhrzeit';
@@ -256,7 +271,7 @@
             const htmlEmail = `
                 <div style="font-family: 'Segoe UI', Arial, sans-serif; color: #374151; max-width: 650px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
                     <div style="background-color: #fdf8f6; padding: 25px 30px; border-bottom: 3px solid #c66a4d;">
-                        <h1 style="color: #954028; margin: 0; font-size: 24px; letter-spacing: -0.5px;">Ihre Seniorenassistenz</h1>
+                        <h1 style="color: #954028; margin: 0; font-size: 24px; letter-spacing: -0.5px;">${compName}</h1>
                         <p style="color: #c66a4d; margin: 4px 0 0 0; font-size: 14px; font-weight: 500;">Alltagshilfe • Betreuung • Organisation</p>
                     </div>
                     <div style="padding: 30px; font-size: 15px; line-height: 1.6; color: #1f2937; background-color: #ffffff;">
@@ -289,12 +304,12 @@
                             </tr>
                             <tr>
                                 <td style="line-height: 1.6;">
-                                    <strong>Ihre Seniorenassistenz</strong><br>
-                                    Dreyhauptstraße 2<br>
-                                    06108 Halle (Saale)<br><br>
+                                        <strong>${compName}</strong><br>
+                                        ${compStreet}<br>
+                                        ${compCity}<br><br>
                                     📞 <a href="tel:${userPhone}" style="color: #c66a4d; text-decoration: none;">${userPhone}</a><br>
                                     ✉️ <a href="mailto:${userEmail}" style="color: #c66a4d; text-decoration: none;">${userEmail}</a><br>
-                                    🌐 <a href="https://www.ihre-seniorenassistenz.com" style="color: #c66a4d; text-decoration: none;">www.ihre-seniorenassistenz.com</a>
+                                        🌐 <a href="${compWeb.startsWith('http') ? compWeb : 'https://' + compWeb}" style="color: #c66a4d; text-decoration: none;">${compWeb}</a>
                                 </td>
                             </tr>
                         </table>

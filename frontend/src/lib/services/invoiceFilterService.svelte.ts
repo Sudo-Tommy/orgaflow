@@ -22,7 +22,7 @@ export function useInvoiceFilter(invoicesProvider: () => any[]) {
             
             // Filter nach Status
             const matchStatus = statusFilter === 'all' || (inv.status || '') === statusFilter;
-            const matchCompany = companyFilter === 'all' || inv.company === companyFilter;
+            const matchCompany = companyFilter === 'all' || inv.company === companyFilter || (Array.isArray(inv.company) && inv.company.includes(companyFilter));
             
             return matchQuery && matchStatus && matchCompany;
         });

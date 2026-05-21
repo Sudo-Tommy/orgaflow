@@ -51,19 +51,19 @@ function getRecipientEmail() {
 
 function buildAvailableContacts() {
     let list: any[] = [];
-    const add = (name: string, email: string, phone: string, salutation: string) => {
-        if (email || phone) list.push({ name, email, phone, salutation });
+    const add = (name: string, email: string, phone: string, salutation: string, isClient: boolean = false) => {
+        if (email || phone) list.push({ name, email, phone, salutation, isClient });
     };
     orgaStore.clients?.data?.forEach((c: any) => {
         let sal = c.salutation === 'Herr' ? `Sehr geehrter Herr ${c.name_last}` : (c.salutation === 'Frau' ? `Sehr geehrte Frau ${c.name_last}` : `Guten Tag ${c.name_first} ${c.name_last}`);
-        add(`${c.name_first} ${c.name_last} (Klient)`, c.email, c.phone || c.handy, sal + ',');
+        add(`${c.name_first} ${c.name_last} (Klient)`, c.email, c.phone || c.handy, sal + ',', true);
     });
     orgaStore.contacts?.data?.forEach((c: any) => {
         let sal = c.salutation === 'Herr' ? `Sehr geehrter Herr ${c.name_last}` : (c.salutation === 'Frau' ? `Sehr geehrte Frau ${c.name_last}` : `Guten Tag ${c.name_first} ${c.name_last}`);
-        add(`${c.name_first} ${c.name_last} (${c.company_name || 'Kontakt'})`, c.email, c.phone, sal + ',');
+        add(`${c.name_first} ${c.name_last} (${c.company_name || 'Kontakt'})`, c.email, c.phone, sal + ',', false);
     });
     orgaStore.retirement_homes?.data?.forEach((h: any) => {
-        add(`${h.name} (Pflegeheim)`, h.email, h.phone, `Sehr geehrte Damen und Herren vom ${h.name},`);
+        add(`${h.name} (Pflegeheim)`, h.email, h.phone, `Sehr geehrte Damen und Herren vom ${h.name},`, false);
     });
     const unique: any[] = [];
     const seen = new Set();
@@ -84,10 +84,10 @@ function toggleRecipient(contact: any, isChecked: boolean) {
         selectedContactRefs = selectedContactRefs.filter(c => c.email !== contact.email);
     }
     emailTo = currentEmails.join(', ');
-    updateSalutation();
+    updateMessage();
 }
 
-function updateSalutation() {
+function updateMessage() {
     if (selectedContactRefs.length === 0) return;
     let newSalutation = "";
     if (selectedContactRefs.length === 1) {
@@ -99,12 +99,20 @@ function updateSalutation() {
     } else {
         newSalutation = "Sehr geehrte Damen und Herren,";
     }
-    const parts = emailText.split('\n\n');
-    if (parts.length > 1) {
-        parts[0] = newSalutation;
-        emailText = parts.join('\n\n');
+    
+    const isClientOnly = selectedContactRefs.every(c => c.isClient);
+    const clientName = service.client ? `${service.client.name_first} ${service.client.name_last}`.trim() : '';
+    
+    if (service.isInvoice) {
+        const bodyText = isClientOnly 
+            ? `anbei erhalten Sie Ihre Rechnung sowie ggf. zugehörige Arbeitszeitnachweise als PDF-Dokument.\n\nIhre Rechnungen und Dokumente können Sie ab sofort auch jederzeit sicher in unserem neuen Klienten-Portal einsehen:\n👉 https://www.ihre-seniorenassistenz.com/portal\n\nMit freundlichen Grüßen\nIhre Seniorenassistenz`
+            : `anbei erhalten Sie die Rechnung sowie ggf. zugehörige Arbeitszeitnachweise für ${clientName} als PDF-Dokument.\n\nDie Rechnungen und Dokumente können ab sofort auch jederzeit sicher im neuen Klienten-Portal eingesehen werden:\n👉 https://www.ihre-seniorenassistenz.com/portal\n\nMit freundlichen Grüßen\nIhre Seniorenassistenz`;
+        emailText = `${newSalutation}\n\n${bodyText}`;
     } else {
-        emailText = `${newSalutation}\n\n${emailText}`;
+        const bodyText = isClientOnly 
+            ? `anbei erhalten Sie die gewünschten Dokumente.\n\nMit freundlichen Grüßen\nIhre Seniorenassistenz`
+            : `anbei erhalten Sie die gewünschten Dokumente für ${clientName}.\n\nMit freundlichen Grüßen\nIhre Seniorenassistenz`;
+        emailText = `${newSalutation}\n\n${bodyText}`;
     }
 }
 
@@ -196,6 +204,21 @@ async function sendPdfViaEmail() {
         const userEmail = user?.email || 'info@ihre-seniorenassistenz.com';
         const userPhone = user?.handy || user?.tel || '0151 57515432';
 
+        let compName = 'Ihre Seniorenassistenz';
+        let compStreet = 'Dreyhauptstraße 2';
+        let compCity = '06108 Halle (Saale)';
+        let compWeb = 'www.ihre-seniorenassistenz.com';
+        if (user && user.company) {
+            const cId = Array.isArray(user.company) ? user.company[0] : user.company;
+            const comp = orgaStore.company?.data?.find((c: any) => c.id === cId);
+            if (comp) {
+                compName = comp.name || compName;
+                compStreet = `${comp.street || ''} ${comp.housenr || ''}`.trim() || compStreet;
+                compCity = `${comp.zip || ''} ${comp.city || ''}`.trim() || compCity;
+                compWeb = comp.website || compWeb;
+            }
+        }
+
         let reportsHtml = '';
         let reportsText = '';
 
@@ -262,12 +285,12 @@ async function sendPdfViaEmail() {
             }
         }
 
-        const textEmail = `${emailText.trim()}${reportsText}${futureAppsText}\n\n--\n${userName}\nIhre Seniorenassistenz\nDreyhauptstraße 2, 06108 Halle (Saale)\nTelefon: ${userPhone}\nE-Mail: ${userEmail}\nWeb: www.ihre-seniorenassistenz.com`;
+        const textEmail = `${emailText.trim()}${reportsText}${futureAppsText}\n\n--\n${userName}\n${compName}\n${compStreet}, ${compCity}\nTelefon: ${userPhone}\nE-Mail: ${userEmail}\nWeb: ${compWeb}`;
 
         const htmlEmail = `
             <div style="font-family: 'Segoe UI', Arial, sans-serif; color: #374151; max-width: 650px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
                 <div style="background-color: #fdf8f6; padding: 25px 30px; border-bottom: 3px solid #c66a4d;">
-                    <h1 style="color: #954028; margin: 0; font-size: 24px; letter-spacing: -0.5px;">Ihre Seniorenassistenz</h1>
+                    <h1 style="color: #954028; margin: 0; font-size: 24px; letter-spacing: -0.5px;">${compName}</h1>
                     <p style="color: #c66a4d; margin: 4px 0 0 0; font-size: 14px; font-weight: 500;">Alltagshilfe • Betreuung • Organisation</p>
                 </div>
                 <div style="padding: 30px; font-size: 15px; line-height: 1.6; color: #1f2937; background-color: #ffffff;">
@@ -286,12 +309,12 @@ async function sendPdfViaEmail() {
                         </tr>
                         <tr>
                             <td style="line-height: 1.6;">
-                                <strong>Ihre Seniorenassistenz</strong><br>
-                                Dreyhauptstraße 2<br>
-                                06108 Halle (Saale)<br><br>
+                                        <strong>${compName}</strong><br>
+                                        ${compStreet}<br>
+                                        ${compCity}<br><br>
                                 📞 <a href="tel:${userPhone}" style="color: #c66a4d; text-decoration: none;">${userPhone}</a><br>
                                 ✉️ <a href="mailto:${userEmail}" style="color: #c66a4d; text-decoration: none;">${userEmail}</a><br>
-                                🌐 <a href="https://www.ihre-seniorenassistenz.com" style="color: #c66a4d; text-decoration: none;">www.ihre-seniorenassistenz.com</a>
+                                        🌐 <a href="${compWeb.startsWith('http') ? compWeb : 'https://' + compWeb}" style="color: #c66a4d; text-decoration: none;">${compWeb}</a>
                             </td>
                         </tr>
                     </table>

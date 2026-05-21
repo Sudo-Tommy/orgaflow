@@ -109,7 +109,22 @@
             // @ts-ignore
             const html2pdf = (await import('html2pdf.js')).default;
             
-            const filename = (service.invoiceData ? service.invoiceData.invoice_nr : 'Dokument') + '.pdf';
+            const lastName = service.client?.name_last ? `-${service.client.name_last}` : '';
+            let baseNr = service.invoiceData?.invoice_nr || new Date().toLocaleDateString('de-DE', { month: '2-digit', year: 'numeric' });
+            
+            let filename = 'Dokument.pdf';
+            let tsFilename = '';
+
+            if (service.isInvoice && service.invoiceData) {
+                // Slashes im Dateinamen sind im Betriebssystem problematisch, daher durch Bindestriche ersetzen
+                filename = `RE-${baseNr}${lastName}.pdf`.replace(/\//g, '-');
+                tsFilename = `AZ-${baseNr}${lastName}.pdf`.replace(/\//g, '-');
+            } else if (service.template?.type?.toLowerCase() === 'arbeitszeitnachweis') {
+                filename = `AZ-${baseNr}${lastName}.pdf`.replace(/\//g, '-');
+            } else {
+                filename = `${service.template?.title || 'Dokument'}.pdf`.replace(/\//g, '-');
+            }
+
             const opt = {
                 margin: 0,
                 filename: filename,
@@ -120,10 +135,8 @@
 
             const pdfBlob = await html2pdf().set(opt).from(pdfContainerRef).output('blob');
 
-            let tsFilename = "";
             let tsBlob = null;
             if (service.isInvoice && service.timesheetTemplate && timesheetPdfContainerRef) {
-                tsFilename = `Zeitnachweis_${filename}`;
                 const optTs = {
                     margin: 0,
                     filename: tsFilename,
@@ -172,6 +185,12 @@
                 }
 
                 await pb.collection('invoices').create(pbFormData);
+                
+                // Setze alle verknüpften Termine auf "abgerechnet" (settled = true)
+                for (const appId of service.selectedAppointmentIds) {
+                    await pb.collection('appointments').update(appId, { settled: true });
+                }
+                
                 service.successMsg = "Dokument erfolgreich generiert und für das Portal gespeichert!";
             } else {
                 service.successMsg = "Dokument erfolgreich generiert!";
@@ -235,7 +254,7 @@
                 <h3 class="text-lg font-bold text-neutral-800 mb-4">3. Termine & Abrechnungsdaten</h3>
                 {#if service.isInvoice}
                     <div class="grid grid-cols-2 gap-4 mb-6">
-                        <div><label for="gen-invoice-nr" class="block text-xs font-semibold text-neutral-600 mb-1">Rechnungsnummer</label><input id="gen-invoice-nr" type="text" bind:value={service.manualInvoiceNr} class="orga-input-clear py-2 text-sm" placeholder="z.B. 01/2026" /></div>
+                        <div><label for="gen-invoice-nr" class="block text-xs font-semibold text-neutral-600 mb-1">Rechnungsnummer</label><input id="gen-invoice-nr" type="text" bind:value={service.manualInvoiceNr} class="orga-input-clear py-2 text-sm" placeholder="z.B. 01/2026" />{#if service.isInvoiceNrDuplicate}<p class="text-[10px] text-rose-600 font-bold mt-1 leading-tight">⚠️ Nummer bereits vergeben!</p>{/if}</div>
                         <div><label for="gen-issue-date" class="block text-xs font-semibold text-neutral-600 mb-1">Rechnungsdatum</label><input id="gen-issue-date" type="date" bind:value={service.manualIssueDate} class="orga-input-clear py-2 text-sm" /></div>
                     </div>
                     <hr class="border-neutral-100 mb-6" />
@@ -245,10 +264,13 @@
                         <div><label for="gen-tax" class="block text-xs font-semibold text-neutral-600 mb-1">Steuersatz (%)</label><select id="gen-tax" bind:value={service.taxRate} class="orga-input-clear py-2 text-sm px-2"><option value="0">0%</option><option value="7">7%</option><option value="19">19%</option></select></div>
                     </div>
                 {/if}
-                <p class="text-sm font-semibold text-neutral-700 mb-2">Abzurechnende Termine wählen</p>
+                <div class="flex items-center justify-between mb-2">
+                    <p class="text-sm font-semibold text-neutral-700">Abzurechnende Termine wählen</p>
+                    <label class="flex items-center gap-2 text-xs font-semibold text-neutral-600 cursor-pointer"><input type="checkbox" bind:checked={service.showBilledAppointments} class="text-indigo-600 rounded border-neutral-300" /> Bereits abgerechnete einblenden</label>
+                </div>
                 <div class="space-y-2">
                     {#each service.availableAppointments as app}
-                        <label class="flex items-start gap-3 p-3 rounded-xl border border-neutral-200 hover:border-indigo-300 cursor-pointer transition-colors {service.selectedAppointmentIds.includes(app.id) ? 'bg-indigo-50/30' : ''}"><input type="checkbox" bind:group={service.selectedAppointmentIds} value={app.id} class="w-4 h-4 mt-1 text-indigo-600 rounded focus:ring-indigo-500" /><div><p class="text-sm font-bold text-neutral-900">{app.appointment ? new Date(app.appointment as string).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : ''} - {app.description || 'Termin'}</p><div class="flex gap-2 mt-1">{#if app.expand?.time_record}<span class="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded font-bold">Zeiten</span>{/if}{#if app.expand?.drive_record}<span class="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-bold">Fahrten</span>{/if}{#if app.expand?.expenditures}<span class="text-[10px] bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded font-bold">Ausgaben</span>{/if}</div></div></label>
+                        <label class="flex items-start gap-3 p-3 rounded-xl border border-neutral-200 hover:border-indigo-300 cursor-pointer transition-colors {service.selectedAppointmentIds.includes(app.id) ? 'bg-indigo-50/30' : ''}"><input type="checkbox" bind:group={service.selectedAppointmentIds} value={app.id} class="w-4 h-4 mt-1 text-indigo-600 rounded focus:ring-indigo-500" /><div><p class="text-sm font-bold text-neutral-900">{app.appointment ? new Date(app.appointment as string).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : ''} - {app.description || 'Termin'} {#if app.settled}<span class="ml-1 text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-bold whitespace-nowrap">✓ Abgerechnet</span>{/if}</p><div class="flex gap-2 mt-1">{#if app.expand?.time_record}<span class="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded font-bold">Zeiten</span>{/if}{#if app.expand?.drive_record}<span class="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-bold">Fahrten</span>{/if}{#if app.expand?.expenditures}<span class="text-[10px] bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded font-bold">Ausgaben</span>{/if}</div></div></label>
                     {/each}
                     {#if service.availableAppointments.length === 0}<p class="text-sm italic text-neutral-500">Keine Termine vorhanden.</p>{/if}
                 </div>
@@ -258,7 +280,7 @@
                     <p class="text-sm"><span class="font-semibold text-neutral-500 w-24 inline-block">Vorlage:</span> <span class="font-bold">{service.template?.title}</span></p>
                     <p class="text-sm"><span class="font-semibold text-neutral-500 w-24 inline-block">Empfänger:</span> <span class="font-bold">{service.recipientType}</span></p>
                     {#if service.isInvoice && service.invoiceData}
-                        <hr class="border-neutral-200 my-2" /><p class="text-sm"><span class="font-semibold text-neutral-500 w-24 inline-block">Rechnung:</span> <span class="font-bold">{service.invoiceData.invoice_nr}</span></p><p class="text-sm"><span class="font-semibold text-neutral-500 w-24 inline-block">Posten:</span> <span class="font-bold">{service.invoiceData.positions.length} Stück</span></p><p class="text-sm mt-2"><span class="font-semibold text-neutral-500 w-24 inline-block">Gesamt Brutto:</span> <span class="font-bold text-indigo-700 text-lg">{service.invoiceData.brutto.toFixed(2).replace('.', ',')} €</span></p>
+                        <hr class="border-neutral-200 my-2" /><p class="text-sm"><span class="font-semibold text-neutral-500 w-24 inline-block">Rechnung:</span> <span class="font-bold {service.isInvoiceNrDuplicate ? 'text-rose-600' : ''}">{service.invoiceData.invoice_nr}</span></p>{#if service.isInvoiceNrDuplicate}<p class="text-xs text-rose-600 font-bold mb-1">⚠️ Diese Rechnungsnummer existiert bereits im System!</p>{/if}<p class="text-sm"><span class="font-semibold text-neutral-500 w-24 inline-block">Posten:</span> <span class="font-bold">{service.invoiceData.positions.length} Stück</span></p><p class="text-sm mt-2"><span class="font-semibold text-neutral-500 w-24 inline-block">Gesamt Brutto:</span> <span class="font-bold text-indigo-700 text-lg">{service.invoiceData.brutto.toFixed(2).replace('.', ',')} €</span></p>
                     {/if}
                 </div>
                 <div class="mt-6 p-4 bg-indigo-50 border border-indigo-100 rounded-xl flex items-start gap-3"><span class="text-xl">📄</span><p class="text-sm text-indigo-900">Das Dokument wird nun hochauflösend als PDF generiert. Dies kann wenige Sekunden dauern.</p></div>

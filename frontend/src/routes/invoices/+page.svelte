@@ -81,9 +81,23 @@
             const a = document.createElement('a');
             a.style.display = 'none';
             a.href = blobUrl;
-            const safeNr = (record.invoice_nr || 'Unbekannt').replace(/\//g, '-');
-            a.download = `${prefix}_${safeNr}.pdf`;
             
+            let clientLastName = '';
+            if (record.expand?.client) {
+                const client = Array.isArray(record.expand.client) ? record.expand.client[0] : record.expand.client;
+                if (client?.name_last) clientLastName = `-${client.name_last}`;
+            }
+            
+            const safeNr = (record.invoice_nr || 'Unbekannt').replace(/\//g, '-');
+            let finalName = `${prefix}_${safeNr}.pdf`;
+            
+            if (index === 0 && record.invoice_nr !== 'Zeitnachweis') {
+                finalName = `RE-${safeNr}${clientLastName}.pdf`;
+            } else if (index === 1 || record.invoice_nr === 'Zeitnachweis') {
+                finalName = `AZ-${safeNr}${clientLastName}.pdf`;
+            }
+            
+            a.download = finalName;
             document.body.appendChild(a);
             a.click();
             

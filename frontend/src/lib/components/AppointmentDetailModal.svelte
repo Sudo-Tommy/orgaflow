@@ -201,25 +201,21 @@
         if (!appointment) return;
         isReportSaving = true;
         try {
-            const pbFormData = new FormData();
-            pbFormData.append('report', report);
-            pbFormData.append('notes', notes);
-            pbFormData.append('internal_notes', notes); // Fallback
-            
-            const existing = appointment.voice_records || [];
-            for (const vr of existing) {
-                pbFormData.append('voice_records', vr);
-            }
-            
             if (blobs && blobs.length > 0) {
-                blobs.forEach((blob, i) => {
+                // Zuerst Text-Felder updaten
+                let currentApp = await pb.collection('appointments').update(appointment.id, { report, notes, internal_notes: notes });
+                let currentVoiceRecords = currentApp.voice_records || [];
+                
+                // Dann Audio-Blobs einzeln hochladen
+                for (let i = 0; i < blobs.length; i++) {
+                    const blob = blobs[i];
                     const ext = blob.type.includes('webm') ? 'webm' : 'mp3';
-                    pbFormData.append('voice_records', blob, `Sprachnotiz_${Date.now()}_${i}.${ext}`);
-                });
-            }
-
-            if (blobs && blobs.length > 0) {
-                await pb.collection('appointments').update(appointment.id, pbFormData);
+                    const fd = new FormData();
+                    for (const vr of currentVoiceRecords) fd.append('voice_records', vr);
+                    fd.append('voice_records', blob, `Sprachnotiz_${Date.now()}_${i}.${ext}`);
+                    const updated = await pb.collection('appointments').update(appointment.id, fd);
+                    currentVoiceRecords = updated.voice_records || [];
+                }
             } else {
                 await pb.collection('appointments').update(appointment.id, { report, notes, internal_notes: notes });
             }
@@ -245,15 +241,17 @@
             }
             if (hasHugeFile) toastStore.info("Upload läuft. Große Dateien können je nach Internetverbindung einige Zeit in Anspruch nehmen.");
 
-            const pbFormData = new FormData();
-            const existing = appointment.voice_records || [];
-            for (const vr of existing) {
-                pbFormData.append('voice_records', vr);
+            let currentExisting = [...(appointment.voice_records || [])];
+            for (let i = 0; i < input.files.length; i++) {
+                const file = input.files[i];
+                const fd = new FormData();
+                for (const vr of currentExisting) {
+                    fd.append('voice_records', vr);
+                }
+                fd.append('voice_records', file);
+                const updatedRecord = await pb.collection('appointments').update(appointment.id, fd);
+                currentExisting = updatedRecord.voice_records || [];
             }
-            for (const file of input.files) {
-                pbFormData.append('voice_records', file);
-            }
-            await pb.collection('appointments').update(appointment.id, pbFormData);
             await updateAppointmentStore();
             toastStore.success("Audio-Datei hochgeladen.");
         } catch (err) {
@@ -338,6 +336,7 @@
                 <div class="min-w-0">
                     <h2 class="text-lg sm:text-xl font-bold text-neutral-900 flex items-center gap-2 truncate">
                         Termin-Details {#if appointment?.is_private}<span class="px-2 py-0.5 text-[10px] font-bold rounded-full bg-rose-100 text-rose-700 shrink-0">Privat</span>{/if}
+                        {#if appointment?.settled}<span class="px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-100 text-emerald-700 shrink-0">✓ Abgerechnet</span>{/if}
                     </h2>
                     <p class="text-[10px] sm:text-xs text-neutral-500 font-medium truncate">
                         {appointment?.appointment ? new Date(appointment.appointment).toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' }) : ''} 

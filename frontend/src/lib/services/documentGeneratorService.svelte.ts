@@ -14,6 +14,7 @@ export function useDocumentGenerator() {
     let selectedAppointmentIds = $state<string[]>([]);
     let selectedCompanyId = $state<string>("all");
 
+    let showBilledAppointments = $state(false);
     let hourlyWage = $state(40);
     let kmRate = $state(0.3);
     let taxRate = $state("0");
@@ -33,6 +34,50 @@ export function useDocumentGenerator() {
     function getNextInvoiceNumber() {
         const year = new Date().getFullYear();
         const invoices = orgaStore.invoices?.data || [];
+        const currentUser = pb.authStore.record?.id || pb.authStore.model?.id;
+        
+        // Finde alle Rechnungen des aktuell eingeloggten Nutzers
+        const userInvoices = invoices.filter((inv: any) => inv.user === currentUser || (Array.isArray(inv.user) && inv.user.includes(currentUser)));
+        
+        if (userInvoices.length > 0) {
+            // Nach Erstellungsdatum absteigend sortieren
+            userInvoices.sort((a: any, b: any) => new Date(b.created).getTime() - new Date(a.created).getTime());
+            const lastInvoice = userInvoices[0];
+            const lastNrStr = lastInvoice.invoice_nr || '';
+            
+            // Format 1: 01/2026 -> 02/2026
+            const matchYearSuffix = lastNrStr.match(/^(.*?)(\d+)\/(\d{4})$/);
+            if (matchYearSuffix) {
+                const prefix = matchYearSuffix[1];
+                const nrStr = matchYearSuffix[2];
+                const yearStr = matchYearSuffix[3];
+                
+                const currentYearStr = year.toString();
+                // Wenn das Jahr gewechselt hat, fangen wir wieder bei 1 an
+                if (yearStr !== currentYearStr) {
+                    return `${prefix}${'1'.padStart(nrStr.length, '0')}/${currentYearStr}`;
+                }
+                
+                const nextNr = parseInt(nrStr, 10) + 1;
+                const paddedNr = nextNr.toString().padStart(nrStr.length, '0');
+                return `${prefix}${paddedNr}/${yearStr}`;
+            } 
+            
+            // Format 2: RE-2026-001 -> RE-2026-002 (findet die LETZTE Zahl im String und erhöht sie)
+            const matchLastNum = lastNrStr.match(/^(.*?)(\d+)(\D*)$/);
+            if (matchLastNum) {
+                const prefix = matchLastNum[1];
+                const nrStr = matchLastNum[2];
+                const suffix = matchLastNum[3];
+                const nextNr = parseInt(nrStr, 10) + 1;
+                const paddedNr = nextNr.toString().padStart(nrStr.length, '0');
+                return `${prefix}${paddedNr}${suffix}`;
+            }
+            
+            return lastNrStr;
+        }
+
+        // Fallback: Wenn der Nutzer noch keine Rechnung erstellt hat, wie bisher fortfahren
         let maxNr = 0;
         const currentCompanyId = company?.id;
         
@@ -89,6 +134,12 @@ export function useDocumentGenerator() {
             const hasTime = a.expand?.time_record && a.expand.time_record.length > 0;
             if (!hasTime) return false;
             
+            // Bereits abgerechnete Termine ausblenden, außer der Nutzer will sie sehen
+            if (!showBilledAppointments && a.settled) {
+                // Wenn der Termin bereits (z.B. aus Versehen) markiert ist, bleibt er trotzdem sichtbar
+                if (!selectedAppointmentIds.includes(a.id)) return false;
+            }
+
             return true;
         }).sort((a: any, b: any) => new Date(b.appointment).getTime() - new Date(a.appointment).getTime());
     });
@@ -178,6 +229,14 @@ export function useDocumentGenerator() {
         }
 
         return { invoice_nr, netto, tax_sum: taxSum, brutto, positions, service_period, issue_date: manualIssueDate };
+    });
+
+    let isInvoiceNrDuplicate = $derived.by(() => {
+        if (!isInvoice || !invoiceData?.invoice_nr) return false;
+        const nr = invoiceData.invoice_nr;
+        const invoices = orgaStore.invoices?.data || [];
+        // Prüfen, ob die Nummer bereits in einer Rechnung vergeben wurde
+        return invoices.some((inv: any) => inv.invoice_nr === nr);
     });
 
     // NEU: Eigene Datenberechnung für den Zeitnachweis, damit dieser unabhängig von der Rechnungskonfiguration IMMER die Zeiten enthält
@@ -416,6 +475,7 @@ export function useDocumentGenerator() {
         recipientType = "client";
         recipientId = "";
         selectedAppointmentIds = [];
+        showBilledAppointments = false;
         hourlyWage = 40;
         kmRate = 0.3;
         taxRate = "0";
@@ -431,6 +491,7 @@ export function useDocumentGenerator() {
         get recipientType() { return recipientType; }, set recipientType(v) { recipientType = v; },
         get recipientId() { return recipientId; }, set recipientId(v) { recipientId = v; },
         get selectedAppointmentIds() { return selectedAppointmentIds; }, set selectedAppointmentIds(v) { selectedAppointmentIds = v; },
+        get showBilledAppointments() { return showBilledAppointments; }, set showBilledAppointments(v) { showBilledAppointments = v; },
         get hourlyWage() { return hourlyWage; }, set hourlyWage(v) { hourlyWage = v; },
         get kmRate() { return kmRate; }, set kmRate(v) { kmRate = v; },
         get taxRate() { return taxRate; }, set taxRate(v) { taxRate = v; },
@@ -445,6 +506,7 @@ export function useDocumentGenerator() {
         get isInvoice() { return isInvoice; },
         get requiresAppointments() { return requiresAppointments; },
         get invoiceData() { return invoiceData; },
+        get isInvoiceNrDuplicate() { return isInvoiceNrDuplicate; },
         get isLoading() { return isLoading; }, set isLoading(v) { isLoading = v; },
         get errorMsg() { return errorMsg; }, set errorMsg(v) { errorMsg = v; },
         get successMsg() { return successMsg; }, set successMsg(v) { successMsg = v; },

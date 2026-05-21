@@ -46,25 +46,28 @@
     let fileInput: HTMLInputElement;
     let isUploading = $state(false);
 
-    // Helper um live zu prüfen, ob dieser Termin bereits in einer Rechnung auftaucht
-    function isAppointmentBilled(appId: string) {
-        const invoices = orgaStore.invoices?.data || [];
-        return invoices.some((inv: any) => 
-            Array.isArray(inv.appointments) ? inv.appointments.includes(appId) : inv.appointments === appId
-        );
-    }
-
     async function uploadDocuments(e: Event) {
         const input = e.target as HTMLInputElement;
         if (!input.files || input.files.length === 0) return;
         isUploading = true;
         try {
-            const formData = new FormData();
-            const existingFiles = clientData?.documents ?? [];
-            for (const existing of existingFiles) formData.append('documents', existing);
-            for (const file of input.files) formData.append('documents', file);
+            let currentExistingFiles = [...(clientData?.documents ?? [])];
+            let successCount = 0;
             
-            await pb.collection('clients').update(clientId, formData);
+            // Dateien einzeln hochladen, um den "413 Payload Too Large" Fehler zu vermeiden
+            for (let i = 0; i < input.files.length; i++) {
+                const file = input.files[i];
+                const formData = new FormData();
+                
+                for (const existing of currentExistingFiles) {
+                    formData.append('documents', existing);
+                }
+                formData.append('documents', file);
+                
+                const updatedRecord = await pb.collection('clients').update(clientId, formData);
+                currentExistingFiles = updatedRecord.documents || [];
+                successCount++;
+            }
             
             setTimeout(async () => {
                 const updatedClient = await pb.collection('clients').getOne(clientId, { expand: 'insurance,retirement_homes,contacts', requestKey: null }) as any;
@@ -72,10 +75,10 @@
                 if (index !== -1 && orgaStore.clients) orgaStore.clients.data[index] = updatedClient;
             }, 400);
             
-            toastStore.success(`${input.files.length} Dokument(e) erfolgreich hochgeladen.`);
+            toastStore.success(`${successCount} Dokument(e) erfolgreich hochgeladen.`);
         } catch (err) {
             console.error(err);
-            toastStore.error("Fehler beim Hochladen der Dokumente. Existiert das Feld 'documents' in PocketBase?");
+            toastStore.error("Fehler beim Hochladen. Möglicherweise ist eine Einzeldatei zu groß.");
         } finally {
             isUploading = false;
             input.value = '';
@@ -128,7 +131,7 @@
                     {#each appointments as app}
                         <button type="button" onclick={() => detailModal?.open(app.id)} class="w-full text-left group flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 sm:p-5 hover:bg-indigo-50/50 transition-colors cursor-pointer">
                             <div class="flex items-start gap-3 min-w-0 flex-1">
-                                <div class="w-2.5 h-2.5 mt-1.5 rounded-full {isAppointmentBilled(app.id) ? 'bg-emerald-400' : 'bg-amber-400'} group-hover:scale-125 transition-transform shadow-sm shrink-0"></div>
+                                <div class="w-2.5 h-2.5 mt-1.5 rounded-full {app.settled ? 'bg-emerald-400' : 'bg-amber-400'} group-hover:scale-125 transition-transform shadow-sm shrink-0"></div>
                                 <div class="min-w-0 flex-1">
                                     <p class="text-sm font-bold text-neutral-900 leading-snug truncate">{app.description || 'Termin ohne Beschreibung'}</p>
                                     
@@ -169,7 +172,7 @@
                                 </div>
                             </div>
                             
-                            {#if isAppointmentBilled(app.id)}
+                            {#if app.settled}
                                 <div class="shrink-0 self-start sm:self-center pl-5 sm:pl-0">
                                     <span class="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-200">✓ Abgerechnet</span>
                                 </div>

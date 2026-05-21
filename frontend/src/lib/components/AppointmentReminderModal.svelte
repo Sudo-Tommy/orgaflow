@@ -31,19 +31,19 @@
 
     function buildAvailableContacts() {
         let list: any[] = [];
-        const add = (name: string, email: string, phone: string, salutation: string) => {
-            if (email || phone) list.push({ name, email, phone, salutation });
+        const add = (name: string, email: string, phone: string, salutation: string, isClient: boolean = false) => {
+            if (email || phone) list.push({ name, email, phone, salutation, isClient });
         };
         orgaStore.clients?.data?.forEach((c: any) => {
             let sal = c.salutation === 'Herr' ? `Sehr geehrter Herr ${c.name_last}` : (c.salutation === 'Frau' ? `Sehr geehrte Frau ${c.name_last}` : `Guten Tag ${c.name_first} ${c.name_last}`);
-            add(`${c.name_first} ${c.name_last} (Klient)`, c.email, c.phone || c.handy, sal + ',');
+            add(`${c.name_first} ${c.name_last} (Klient)`, c.email, c.phone || c.handy, sal + ',', true);
         });
         orgaStore.contacts?.data?.forEach((c: any) => {
             let sal = c.salutation === 'Herr' ? `Sehr geehrter Herr ${c.name_last}` : (c.salutation === 'Frau' ? `Sehr geehrte Frau ${c.name_last}` : `Guten Tag ${c.name_first} ${c.name_last}`);
-            add(`${c.name_first} ${c.name_last} (${c.company_name || 'Kontakt'})`, c.email, c.phone, sal + ',');
+            add(`${c.name_first} ${c.name_last} (${c.company_name || 'Kontakt'})`, c.email, c.phone, sal + ',', false);
         });
         orgaStore.retirement_homes?.data?.forEach((h: any) => {
-            add(`${h.name} (Pflegeheim)`, h.email, h.phone, `Sehr geehrte Damen und Herren vom ${h.name},`);
+            add(`${h.name} (Pflegeheim)`, h.email, h.phone, `Sehr geehrte Damen und Herren vom ${h.name},`, false);
         });
         const unique: any[] = [];
         const seen = new Set();
@@ -70,11 +70,10 @@
         }
         
         recipient = currentVals.join(', ');
-        updateSalutation();
+        updateMessage();
     }
 
-    function updateSalutation() {
-        if (selectedContactRefs.length === 0) return;
+    function updateMessage() {
         let newSalutation = "";
         if (selectedContactRefs.length === 1) {
             newSalutation = selectedContactRefs[0].salutation;
@@ -82,16 +81,23 @@
             const first = selectedContactRefs[0].salutation.replace(',', '');
             const second = selectedContactRefs[1].salutation.replace(',', '');
             newSalutation = `${first},\n${second.charAt(0).toLowerCase() + second.slice(1)},`;
-        } else {
+        } else if (selectedContactRefs.length >= 3) {
             newSalutation = "Sehr geehrte Damen und Herren,";
-        }
-        const parts = message.split('\n\n');
-        if (parts.length > 1) {
-            parts[0] = newSalutation;
-            message = parts.join('\n\n');
         } else {
-            message = `${newSalutation}\n\n${message}`;
+            const recipientRecord = client?.expand?.caregiver || client;
+            newSalutation = recipientRecord?.salutation === 'Herr' ? `Sehr geehrter Herr ${recipientRecord.name_last},` : 
+                            (recipientRecord?.salutation === 'Frau' ? `Sehr geehrte Frau ${recipientRecord.name_last},` : 
+                            `Guten Tag ${recipientRecord?.name_first || ''} ${recipientRecord?.name_last || ''},`.trim());
         }
+        
+        const isClientOnly = selectedContactRefs.length > 0 ? selectedContactRefs.every(c => c.isClient) : (client?.expand?.caregiver ? false : true);
+        const clientName = `${client?.name_first || ''} ${client?.name_last || ''}`.trim();
+        
+        const baseText = isClientOnly 
+            ? `hiermit möchten wir Sie an unseren gemeinsamen Termin am ${appDate} um ${appTime} erinnern.`
+            : `hiermit möchten wir Sie an unseren Termin mit ${clientName} am ${appDate} um ${appTime} erinnern.`;
+            
+        message = `${newSalutation}\n\n${baseText}\n\nIhre Termine können Sie auch jederzeit im Klienten-Portal einsehen:\n👉 https://www.ihre-seniorenassistenz.com/portal\n\nWir freuen uns auf Sie!`;
     }
 
     export function open(app: any, cl: any) {
@@ -125,10 +131,6 @@
             locationStr = app.location_address;
         }
         appLocation = locationStr;
-        
-        const salutation = cl?.salutation === 'Herr' ? `Sehr geehrter Herr ${cl.name_last},` : 
-                          (cl?.salutation === 'Frau' ? `Sehr geehrte Frau ${cl.name_last},` : 
-                          `Guten Tag ${cl?.name_first || ''} ${cl?.name_last || ''},`.trim());
 
         availableContacts = buildAvailableContacts();
         selectedContactRefs = [];
@@ -138,7 +140,7 @@
             if (matched) selectedContactRefs = [matched];
         }
 
-        message = `${selectedContactRefs.length > 0 ? selectedContactRefs[0].salutation : salutation}\n\nhiermit möchten wir Sie an unseren gemeinsamen Termin am ${dateStr} um ${timeStr} Uhr erinnern.\n\nIhre Termine können Sie auch jederzeit im Klienten-Portal einsehen:\n👉 https://www.ihre-seniorenassistenz.com/portal\n\nWir freuen uns auf Sie!`;
+        updateMessage();
         
         futureAppointments = [];
         selectedFutureAppIds = [];
@@ -168,14 +170,17 @@
         client = null;
     }
 
-    // Wenn man den Reiter zwischen E-Mail/WhatsApp wechselt, wird der Empfänger automatisch getauscht
-    $effect(() => {
-        if (method === 'email') {
-            recipient = client?.email || "";
-        } else {
-            recipient = client?.handy || client?.phone || "";
+    function changeMethod(newMethod: 'email' | 'whatsapp') {
+        method = newMethod;
+        recipient = method === 'email' ? (client?.email || "") : (client?.handy || client?.phone || "");
+        selectedContactRefs = [];
+        if (recipient) {
+            const isEmail = method === 'email';
+            const matched = availableContacts.find(c => (isEmail ? c.email : c.phone) === recipient);
+            if (matched) selectedContactRefs = [matched];
         }
-    });
+        updateMessage();
+    }
 
     async function handleSend(e: Event) {
         e.preventDefault();
@@ -200,6 +205,22 @@
                 }
                 const finalUserEmail = assignedUser?.email || sendingUser?.email || 'info@ihre-seniorenassistenz.com';
                 const finalUserPhone = assignedUser?.handy || assignedUser?.tel || sendingUser?.handy || sendingUser?.tel || '0151 57515432';
+
+                let compName = 'Ihre Seniorenassistenz';
+                let compStreet = 'Dreyhauptstraße 2';
+                let compCity = '06108 Halle (Saale)';
+                let compWeb = 'www.ihre-seniorenassistenz.com';
+                const compSource = assignedUser || sendingUser;
+                if (compSource && compSource.company) {
+                    const cId = Array.isArray(compSource.company) ? compSource.company[0] : compSource.company;
+                    const comp = orgaStore.company?.data?.find((c: any) => c.id === cId);
+                    if (comp) {
+                        compName = comp.name || compName;
+                        compStreet = `${comp.street || ''} ${comp.housenr || ''}`.trim() || compStreet;
+                        compCity = `${comp.zip || ''} ${comp.city || ''}`.trim() || compCity;
+                        compWeb = comp.website || compWeb;
+                    }
+                }
 
                 let futureAppsHtml = '';
                 let futureAppsText = '';
@@ -235,12 +256,12 @@
                     }
                 }
 
-                const textEmail = `${message.trim()}\n${futureAppsText}\n--\n${finalUserName}\nIhre Seniorenassistenz\nDreyhauptstraße 2, 06108 Halle (Saale)\nTelefon: ${finalUserPhone}\nE-Mail: ${finalUserEmail}\nWeb: www.ihre-seniorenassistenz.com`;
+                const textEmail = `${message.trim()}\n${futureAppsText}\n--\n${finalUserName}\n${compName}\n${compStreet}, ${compCity}\nTelefon: ${finalUserPhone}\nE-Mail: ${finalUserEmail}\nWeb: ${compWeb}`;
 
                 const htmlEmail = `
                     <div style="font-family: 'Segoe UI', Arial, sans-serif; color: #374151; max-width: 650px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
                         <div style="background-color: #fdf8f6; padding: 25px 30px; border-bottom: 3px solid #c66a4d;">
-                            <h1 style="color: #954028; margin: 0; font-size: 24px; letter-spacing: -0.5px;">Ihre Seniorenassistenz</h1>
+                            <h1 style="color: #954028; margin: 0; font-size: 24px; letter-spacing: -0.5px;">${compName}</h1>
                             <p style="color: #c66a4d; margin: 4px 0 0 0; font-size: 14px; font-weight: 500;">Alltagshilfe • Betreuung • Organisation</p>
                         </div>
                         <div style="padding: 30px; font-size: 15px; line-height: 1.6; color: #1f2937; background-color: #ffffff;">
@@ -278,12 +299,12 @@
                                 </tr>
                                 <tr>
                                     <td style="line-height: 1.6;">
-                                        <strong>Ihre Seniorenassistenz</strong><br>
-                                        Dreyhauptstraße 2<br>
-                                        06108 Halle (Saale)<br><br>
+                                        <strong>${compName}</strong><br>
+                                        ${compStreet}<br>
+                                        ${compCity}<br><br>
                                         📞 <a href="tel:${finalUserPhone}" style="color: #c66a4d; text-decoration: none;">${finalUserPhone}</a><br>
                                         ✉️ <a href="mailto:${finalUserEmail}" style="color: #c66a4d; text-decoration: none;">${finalUserEmail}</a><br>
-                                        🌐 <a href="https://www.ihre-seniorenassistenz.com" style="color: #c66a4d; text-decoration: none;">www.ihre-seniorenassistenz.com</a>
+                                        🌐 <a href="${compWeb.startsWith('http') ? compWeb : 'https://' + compWeb}" style="color: #c66a4d; text-decoration: none;">${compWeb}</a>
                                     </td>
                                 </tr>
                             </table>
@@ -354,8 +375,8 @@
         <form onsubmit={handleSend} class="space-y-4">
             <!-- Toggle E-Mail vs WhatsApp -->
             <div class="flex gap-2 p-1 bg-neutral-100 rounded-lg">
-                <button type="button" onclick={() => method = 'email'} class="flex-1 py-2 text-sm font-bold rounded-md transition-colors {method === 'email' ? 'bg-white shadow-sm text-indigo-600' : 'text-neutral-500 hover:text-neutral-700'}">✉️ E-Mail</button>
-                <button type="button" onclick={() => method = 'whatsapp'} class="flex-1 py-2 text-sm font-bold rounded-md transition-colors {method === 'whatsapp' ? 'bg-white shadow-sm text-emerald-600' : 'text-neutral-500 hover:text-neutral-700'}">💬 WhatsApp</button>
+                <button type="button" onclick={() => changeMethod('email')} class="flex-1 py-2 text-sm font-bold rounded-md transition-colors {method === 'email' ? 'bg-white shadow-sm text-indigo-600' : 'text-neutral-500 hover:text-neutral-700'}">✉️ E-Mail</button>
+                <button type="button" onclick={() => changeMethod('whatsapp')} class="flex-1 py-2 text-sm font-bold rounded-md transition-colors {method === 'whatsapp' ? 'bg-white shadow-sm text-emerald-600' : 'text-neutral-500 hover:text-neutral-700'}">💬 WhatsApp</button>
             </div>
 
             <div>
@@ -367,22 +388,21 @@
                 </div>
                 <div class="flex flex-col sm:flex-row gap-2">
                     <input id="rem-recipient" type="text" bind:value={recipient} class="orga-input-clear py-3 sm:py-2.5 text-sm flex-1" required disabled={isSending} />
-                    <select 
-                        class="orga-input-clear flex-1 sm:flex-none sm:w-auto bg-white border-neutral-200 shadow-sm cursor-pointer sm:max-w-48 text-sm font-medium py-3 sm:py-2.5" 
-                        onchange={(e) => { 
-                            recipient = e.currentTarget.value; 
-                            e.currentTarget.value = ""; 
-                        }} 
-                        disabled={isSending}
-                    >
-                        <option value="">+ Aus Akte wählen</option>
-                        {#each availableContacts.filter(c => method === 'email' ? c.email : c.phone) as c}
-                            <option value="{method === 'email' ? c.email : c.phone}|{c.salutation}">{c.name}</option>
-                        {/each}
-                        {#if availableContacts.filter(c => method === 'email' ? c.email : c.phone).length === 0}
-                            <option value="" disabled>Keine {method === 'email' ? 'E-Mails' : 'Nummern'} in Akte</option>
-                        {/if}
-                    </select>
+                <div class="relative flex-1 sm:flex-none sm:w-auto">
+                    <button type="button" onclick={() => showContactDropdown = !showContactDropdown} class="orga-input-clear w-full bg-white border-neutral-200 shadow-sm cursor-pointer text-sm font-medium py-3 sm:py-2.5 flex justify-between items-center" disabled={isSending}>
+                        <span>+ Adressbuch</span><span class="text-[10px] ml-2">▼</span>
+                    </button>
+                    {#if showContactDropdown}
+                        <!-- svelte-ignore a11y_consider_explicit_label -->
+                        <button type="button" class="fixed inset-0 z-40 w-full h-full cursor-default" onclick={() => showContactDropdown = false} tabindex="-1"></button>
+                        <div class="absolute top-full right-0 mt-1 w-64 bg-white border border-neutral-200 shadow-xl rounded-xl z-50 max-h-60 overflow-y-auto custom-scrollbar p-1">
+                            {#each availableContacts.filter(c => method === 'email' ? c.email : c.phone) as c}
+                                <label class="flex items-center gap-3 p-2 hover:bg-neutral-50 rounded-lg cursor-pointer transition-colors"><input type="checkbox" checked={recipient.includes(method === 'email' ? c.email : c.phone)} onchange={(e) => toggleRecipient(c, e.currentTarget.checked)} class="w-4 h-4 text-indigo-600 border-neutral-300 rounded focus:ring-indigo-500" /><div class="min-w-0"><p class="text-sm font-bold text-neutral-900 truncate">{c.name}</p><p class="text-[10px] text-neutral-500 truncate">{method === 'email' ? c.email : c.phone}</p></div></label>
+                            {/each}
+                            {#if availableContacts.filter(c => method === 'email' ? c.email : c.phone).length === 0}<p class="text-xs text-neutral-500 p-2 text-center">Keine {method === 'email' ? 'E-Mails' : 'Nummern'} gefunden</p>{/if}
+                        </div>
+                    {/if}
+                </div>
                 </div>
             </div>
             
