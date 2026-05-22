@@ -76,9 +76,13 @@
             }, 400);
             
             toastStore.success(`${successCount} Dokument(e) erfolgreich hochgeladen.`);
-        } catch (err) {
+        } catch (err: any) {
             console.error(err);
-            toastStore.error("Fehler beim Hochladen. Möglicherweise ist eine Einzeldatei zu groß.");
+            if (err?.status === 413 || err?.message?.includes('413')) {
+                toastStore.error("Datei zu groß! Der Webserver blockiert Uploads über 1MB. Bitte Server-Limit anpassen.");
+            } else {
+                toastStore.error("Fehler beim Hochladen. Bitte überprüfen Sie Ihre Internetverbindung.");
+            }
         } finally {
             isUploading = false;
             input.value = '';
@@ -148,6 +152,11 @@
                                         {#if app.is_private}
                                             <div class="flex items-center gap-1 text-rose-600 font-bold">
                                                 <span class="leading-none">🔒</span> Privat
+                                            </div>
+                                        {/if}
+                                        {#if app.is_series}
+                                            <div class="flex items-center gap-1 text-indigo-600 font-bold">
+                                                <span class="leading-none">🔁</span> Serie
                                             </div>
                                         {/if}
                                     </div>

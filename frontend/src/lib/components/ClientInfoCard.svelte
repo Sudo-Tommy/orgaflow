@@ -74,7 +74,12 @@
                 <div class="w-10 h-10 rounded-xl bg-amber-50 text-amber-500 flex items-center justify-center shrink-0 shadow-sm"><span class="text-lg">🏠</span></div>
                 <div>
                     <p class="text-xs text-neutral-500 font-semibold uppercase tracking-wider mb-1">Adresse</p>
-                    <p class="text-neutral-900 font-bold leading-relaxed">{#if client.street || client.city}{client.street || ''} <br /> {client.zip || ''} {client.city || ''}{:else}Nicht hinterlegt{/if}</p>
+                    <p class="text-neutral-900 font-bold leading-relaxed">{#if client.street || client.city}{client.street || ''} {client.housenr || ''}<br /> {client.zip || ''} {client.city || ''}{:else}Nicht hinterlegt{/if}</p>
+                    {#if client.street || client.city}
+                        <a href="https://www.google.com/maps/search/?api=1&query={encodeURIComponent(`${client.street || ''} ${client.housenr || ''}, ${client.zip || ''} ${client.city || ''}`)}" target="_blank" rel="noopener noreferrer" class="mt-2 inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2.5 py-1.5 rounded-lg transition-colors border border-blue-200 shadow-sm active:scale-95">
+                            <span>🗺️</span> In Google Maps öffnen
+                        </a>
+                    {/if}
                 </div>
             </div>
         </div>
@@ -123,7 +128,7 @@
             <div class="pt-6 mt-6 border-t border-neutral-100">
                 <p class="text-xs text-neutral-500 font-semibold uppercase tracking-wider mb-3">Unterschrift</p>
                 <div class="bg-white rounded-xl border border-neutral-100 p-4 flex justify-center shadow-sm">
-                    <img src={pb.files.getURL(client, client.sign)} alt="Unterschrift von {client.name_first}" class="max-h-24 object-contain mix-blend-multiply" />
+                    <img src={pb.files.getURL(client, client.sign)} alt="Unterschrift von {client.name_first}" class="max-h-24 object-contain bg-white rounded-lg p-1 safe-signature" />
                 </div>
             </div>
         {/if}
@@ -131,3 +136,9 @@
 </div>
 
 <ClientLinkInsuranceModal bind:this={linkInsuranceModal} {client} />
+
+<style>
+    :global(.theme-negative) .safe-signature {
+        filter: invert(1) hue-rotate(180deg);
+    }
+</style>

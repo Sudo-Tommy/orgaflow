@@ -509,6 +509,7 @@
                                             <div class="flex items-center gap-1 mb-0.5">
                                                 <span class="font-bold text-[11px] leading-none">{getDisplayTime(app)}</span>
                                                 {#if app.is_private}<span class="text-[9px]" title="Privat">🔒</span>{/if}
+                                                {#if app.is_series}<span class="text-[10px] text-indigo-500 font-bold" title="Serientermin">🔁</span>{/if}
                                                 {#if app.settled}<span class="text-[10px] text-emerald-600 font-bold" title="Abgerechnet">✓</span>{/if}
                                             </div>
                                             <div class="text-xs font-semibold truncate text-neutral-900">
@@ -569,6 +570,7 @@
                                                 <span class="flex items-center gap-1 text-[10px] sm:text-xs font-bold shrink-0 {app.is_private ? 'text-rose-600' : 'text-indigo-600'}">
                                                     {getDisplayTime(app)}
                                                     {#if app.is_private}<span class="text-[9px]" title="Privat">🔒</span>{/if}
+                                                    {#if app.is_series}<span class="text-[10px] text-indigo-500 font-bold" title="Serientermin">🔁</span>{/if}
                                                     {#if app.settled}<span class="text-[10px] text-emerald-600 font-bold" title="Abgerechnet">✓</span>{/if}
                                                 </span>
                                                 <div class="flex items-center gap-1.5 min-w-0 justify-end text-right">
@@ -661,6 +663,7 @@
                                             <div class="font-bold flex items-center gap-1 mb-0.5">
                                                 <span>{getDisplayTime(app)}</span>
                                                 {#if app.is_private}<span class="text-[8px] sm:text-[10px]" title="Privat">🔒</span>{/if}
+                                                {#if app.is_series}<span class="text-[9px] sm:text-[11px] text-indigo-500 font-bold" title="Serientermin">🔁</span>{/if}
                                                 {#if app.settled}<span class="text-[9px] sm:text-[11px] text-emerald-600 font-bold" title="Abgerechnet">✓</span>{/if}
                                             </div>
                                             <div class="truncate font-semibold text-neutral-900">
@@ -718,6 +721,7 @@
                                         <span class="flex items-center gap-1.5 text-sm font-bold shrink-0 {app.is_private ? 'text-rose-600' : 'text-indigo-600'}">
                                             {getDisplayTime(app)} Uhr
                                             {#if app.is_private}<span class="text-xs" title="Privat">🔒</span>{/if}
+                                            {#if app.is_series}<span class="text-sm text-indigo-500 font-bold" title="Serientermin">🔁</span>{/if}
                                             {#if app.settled}<span class="text-sm text-emerald-600 font-bold" title="Abgerechnet">✓</span>{/if}
                                         </span>
                                         <div class="flex items-center gap-1.5 min-w-0 justify-end text-right">

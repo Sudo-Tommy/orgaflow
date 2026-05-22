@@ -113,6 +113,13 @@
                 <div><label for="ins-zip" class="block text-sm font-semibold text-neutral-700 mb-1.5">PLZ</label><input id="ins-zip" type="text" bind:value={zip} class="orga-input-clear" disabled={isLoading} /></div>
                 <div><label for="ins-city" class="block text-sm font-semibold text-neutral-700 mb-1.5">Stadt</label><input id="ins-city" type="text" bind:value={city} class="orga-input-clear" disabled={isLoading} /></div>
             </div>
+            {#if street || city}
+                <div class="flex justify-end mt-1">
+                    <a href="https://www.google.com/maps/search/?api=1&query={encodeURIComponent(`${name || ''}, ${street || ''}, ${zip || ''} ${city || ''}`)}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1.5 text-[10px] font-bold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded transition-colors border border-blue-200 shadow-sm">
+                        <span>🗺️</span> Auf Karte prüfen
+                    </a>
+                </div>
+            {/if}
             
             <div class="pt-2"><label for="ins-notes" class="block text-sm font-semibold text-neutral-700 mb-1.5">Notizen</label><textarea id="ins-notes" bind:value={notes} class="orga-input-clear resize-none py-3 sm:py-2" rows="2" disabled={isLoading}></textarea></div>
             <div class="pt-4 flex flex-col sm:flex-row justify-between items-center border-t border-neutral-100 mt-6 gap-3">

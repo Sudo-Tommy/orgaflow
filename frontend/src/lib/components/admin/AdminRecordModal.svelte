@@ -1,4 +1,6 @@
 <script lang="ts">
+    import { pb } from "$lib/services/pocketbase";
+
     let { onSave } = $props<{ onSave: (col: string, id: string | null, data: any) => Promise<void> }>();
 
     // svelte-ignore non_reactive_update
@@ -21,7 +23,17 @@
             jsonContent = JSON.stringify(editable, null, 4);
         } else {
             editId = null;
-            jsonContent = "{\n    \n}";
+            
+            let defaultData: any = {};
+            // Automatisch die Firma des erstellenden Users übernehmen
+            if (['clients', 'contacts', 'retirement_homes'].includes(col)) {
+                const userCompany = pb.authStore.model?.company;
+                if (userCompany) {
+                    defaultData.company = Array.isArray(userCompany) ? userCompany[0] : userCompany;
+                }
+            }
+            
+            jsonContent = JSON.stringify(defaultData, null, 4);
         }
         errorMsg = "";
         dialog?.showModal();

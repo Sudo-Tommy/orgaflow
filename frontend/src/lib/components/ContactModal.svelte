@@ -294,6 +294,11 @@
                                     <div>
                                         <p class="text-xs text-neutral-500 font-semibold uppercase tracking-wider mb-1">Adresse</p>
                                         <p class="text-neutral-900 font-bold leading-relaxed">{#if street || city}{street || ''} {housenr || ''}<br /> {zip || ''} {city || ''}{:else}Nicht hinterlegt{/if}</p>
+                                        {#if street || city}
+                                            <a href="https://www.google.com/maps/search/?api=1&query={encodeURIComponent(`${company_name ? company_name + ' ' : ''}${name_first || ''} ${name_last || ''}, ${street || ''} ${housenr || ''}, ${zip || ''} ${city || ''}`)}" target="_blank" rel="noopener noreferrer" class="mt-2 inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2.5 py-1.5 rounded-lg transition-colors border border-blue-200 shadow-sm active:scale-95">
+                                                <span>🗺️</span> In Google Maps öffnen
+                                            </a>
+                                        {/if}
                                     </div>
                                 </div>
                             </div>
@@ -309,7 +314,7 @@
                                 <div class="pt-6 mt-6 border-t border-neutral-100">
                                     <p class="text-xs text-neutral-500 font-semibold uppercase tracking-wider mb-3">Unterschrift</p>
                                     <div class="bg-white rounded-xl border border-neutral-100 p-4 flex justify-center shadow-sm">
-                                        <img src={existingSignatureUrl} alt="Unterschrift" class="max-h-24 object-contain mix-blend-multiply" />
+                                    <img src={existingSignatureUrl} alt="Unterschrift" class="max-h-24 object-contain bg-white rounded-lg p-1 safe-signature" />
                                     </div>
                                 </div>
                             {/if}
@@ -334,6 +339,13 @@
                         <div><label for="contact-zip" class="block text-sm font-semibold text-neutral-700 mb-1.5">PLZ</label><input id="contact-zip" type="text" bind:value={zip} class="orga-input-clear" disabled={isLoading} /></div>
                         <div class="md:col-span-4"><label for="contact-city" class="block text-sm font-semibold text-neutral-700 mb-1.5">Stadt</label><input id="contact-city" type="text" bind:value={city} class="orga-input-clear" disabled={isLoading} /></div>
                     </div>
+                    {#if street || city}
+                        <div class="flex justify-end mt-1">
+                            <a href="https://www.google.com/maps/search/?api=1&query={encodeURIComponent(`${company_name ? company_name + ' ' : ''}${name_first || ''} ${name_last || ''}, ${street || ''} ${housenr || ''}, ${zip || ''} ${city || ''}`)}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1.5 text-[10px] font-bold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded transition-colors border border-blue-200">
+                                <span>🗺️</span> Auf Karte prüfen
+                            </a>
+                        </div>
+                    {/if}
                     
                     <div class="pt-2">
                         <label for="contact-notes" class="block text-sm font-semibold text-neutral-700 mb-1.5">Notizen</label>
@@ -355,7 +367,7 @@
                             
                         {#if existingSignatureUrl && !deleteExistingSignature}
                             <div class="bg-white border border-neutral-200 rounded-xl p-6 text-center shadow-sm">
-                                <img src={existingSignatureUrl} alt="Hinterlegte Unterschrift" class="max-h-24 object-contain mx-auto mix-blend-multiply mb-4" />
+                                <img src={existingSignatureUrl} alt="Hinterlegte Unterschrift" class="max-h-24 object-contain mx-auto bg-white rounded-lg p-2 mb-4 safe-signature" />
                                 <button type="button" onclick={() => deleteExistingSignature = true} class="bg-red-50 text-red-600 hover:bg-red-500 hover:text-white font-bold py-2 px-4 rounded-lg transition-colors text-sm">
                                     Entfernen & Neu anlegen
                                 </button>
@@ -398,3 +410,9 @@
         </div>
     </div>
 </dialog>
+
+<style>
+    :global(.theme-negative) .safe-signature {
+        filter: invert(1) hue-rotate(180deg);
+    }
+</style>

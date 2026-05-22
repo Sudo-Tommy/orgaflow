@@ -1,6 +1,8 @@
 <script lang="ts">
     import { pb } from "$lib/services/pocketbase";
     import { orgaStore } from "$lib/stores/orgaStore.svelte";
+    import { toastStore } from "$lib/services/toastService.svelte";
+    import { confirmStore } from "$lib/services/confirmService.svelte";
 
     // svelte-ignore non_reactive_update
     let dialog: HTMLDialogElement;
@@ -18,6 +20,9 @@
     let is_private = $state(false);
     let is_blocked = $state(false);
     let settled = $state(false);
+    let is_series = $state(false);
+    let seriesEndDate = $state("");
+    let series_id = $state("");
     let selectedClientId = $state("");
     let selectedContactId = $state("");
     // Holt sich live die Daten (inkl. Notizen) des aktuell gewählten Klienten
@@ -65,6 +70,8 @@
             }
             is_private = data.is_private || false;
             settled = data.settled || false;
+            is_series = data.is_series || false;
+            series_id = data.series_id || "";
             
             let cId = "";
             if (data.client) {
@@ -89,6 +96,9 @@
             location_address = "";
             is_private = false;
             settled = false;
+            is_series = false;
+            seriesEndDate = "";
+            series_id = "";
             is_blocked = data?.is_blocked || false;
             selectedClientId = data?.preselectedClient || "";
             selectedUserId = pb.authStore.model?.id || "";
@@ -137,6 +147,18 @@
             isLoading = false;
             return;
         }
+        
+        if (!editId && is_series) {
+            if (!seriesEndDate) {
+                errorMsg = "Bitte wählen Sie ein Enddatum für die Serie.";
+                isLoading = false;
+                return;
+            } else if (new Date(seriesEndDate) < new Date(appDate)) {
+                errorMsg = "Das Enddatum der Serie darf nicht vor dem Startdatum liegen.";
+                isLoading = false;
+                return;
+            }
+        }
 
         let finalDesc = description.trim();
         if (is_blocked) {
@@ -150,6 +172,8 @@
         try {
             const localDateStr = `${appDate}T${is_blocked ? '12:00' : (appStartTime || '12:00')}:00`;
             const utcAppointment = new Date(localDateStr).toISOString();
+            
+            const safeSeriesId = series_id || (is_series ? (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2)) : "");
 
             const payload: any = {
                 appointment: utcAppointment,
@@ -157,6 +181,8 @@
                 location_address: location_address,
                 is_private,
                 settled,
+                is_series,
+                series_id: safeSeriesId,
                 user: selectedUserId || pb.authStore.model?.id,
                 client: selectedClientId ? [selectedClientId] : [],
                 notes: internalNotes,
@@ -168,8 +194,46 @@
             if (editId) {
                 await pb.collection('appointments').update(editId, payload, { requestKey: null });
             } else {
-                const record = await pb.collection('appointments').create(payload, { requestKey: null });
-                savedId = record.id;
+                if (is_series && seriesEndDate) {
+                    let curr = new Date(appDate);
+                    const end = new Date(seriesEndDate);
+                    const promises = [];
+                    
+                    while(curr <= end) {
+                        const iterDateStr = getLocalDateString(curr);
+                        const iterLocalStr = `${iterDateStr}T${is_blocked ? '12:00' : (appStartTime || '12:00')}:00`;
+                        const iterUtc = new Date(iterLocalStr).toISOString();
+
+                        promises.push((async () => {
+                            const record = await pb.collection('appointments').create({ ...payload, appointment: iterUtc }, { requestKey: null });
+                            
+                            if (appStartTime && appEndTime && !is_blocked) {
+                                const startLocal = new Date(`${iterDateStr}T${appStartTime}:00`).toISOString();
+                                const endDateObj = new Date(`${iterDateStr}T${appEndTime}:00`);
+                                if (appEndTime < appStartTime) endDateObj.setDate(endDateObj.getDate() + 1);
+                                const endLocal = endDateObj.toISOString();
+                                
+                                const newTr = await pb.collection('time_records').create({ start: startLocal, end: endLocal });
+                                await pb.collection('appointments').update(record.id, { time_record: [newTr.id] });
+                            }
+                        })());
+                        curr.setDate(curr.getDate() + 7);
+                    }
+
+                    const chunkSize = 20;
+                    for (let i = 0; i < promises.length; i += chunkSize) {
+                        await Promise.all(promises.slice(i, i + chunkSize));
+                    }
+                    
+                    if (orgaStore.appointments) await orgaStore.appointments.init();
+                    toastStore.success(`Serientermin erfolgreich angelegt (${promises.length} Termine)!`);
+                    close();
+                    isLoading = false;
+                    return;
+                } else {
+                    const record = await pb.collection('appointments').create(payload, { requestKey: null });
+                    savedId = record.id;
+                }
             }
 
             // Zeit-Eintrag anlegen, wenn Start & Endzeit ausgefüllt sind
@@ -222,10 +286,46 @@
     
     async function deleteAppointment() {
         if (!editId) return;
+        
+        if (!(await confirmStore.ask("Möchten Sie diesen Termin wirklich löschen?", "Termin löschen?", "Löschen", "Abbrechen", true))) return;
+
+        let deleteFutureSeries = false;
+        if (is_series && series_id) {
+            deleteFutureSeries = await confirmStore.ask("Dies ist ein Serientermin. Wollen Sie zusätzlich ALLE zukünftigen Termine dieser Serie löschen?", "Komplette Serie löschen?", "Ja, Serie löschen", "Nein, nur diesen", true);
+        }
+
         isLoading = true;
         try {
-            await pb.collection('appointments').delete(editId);
-            if (orgaStore.appointments) orgaStore.appointments.data = orgaStore.appointments.data.filter((a:any) => a.id !== editId);
+            if (deleteFutureSeries && series_id && appDate) {
+                const localDateStr = `${appDate}T00:00:00`;
+                const futureApps = await pb.collection('appointments').getFullList({
+                    filter: `series_id = '${series_id}' && appointment >= '${new Date(localDateStr).toISOString()}'`,
+                    requestKey: null
+                });
+                
+                const promises = [];
+                for (const a of futureApps) {
+                    if (a.time_record) {
+                        for (const trId of a.time_record) promises.push(pb.collection('time_records').delete(trId).catch(()=>{}));
+                    }
+                    promises.push(pb.collection('appointments').delete(a.id));
+                }
+
+                const chunkSize = 20;
+                for (let i = 0; i < promises.length; i += chunkSize) {
+                    await Promise.all(promises.slice(i, i + chunkSize));
+                }
+                
+                if (orgaStore.appointments) {
+                    const deletedIds = futureApps.map((a:any) => a.id);
+                    orgaStore.appointments.data = orgaStore.appointments.data.filter((a:any) => !deletedIds.includes(a.id));
+                }
+                toastStore.info(`Komplette Terminserie gelöscht (${futureApps.length} Termine).`);
+            } else {
+                await pb.collection('appointments').delete(editId);
+                if (orgaStore.appointments) orgaStore.appointments.data = orgaStore.appointments.data.filter((a:any) => a.id !== editId);
+                toastStore.info("Termin gelöscht.");
+            }
             close();
         } catch (err) {
             errorMsg = "Fehler beim Löschen.";
@@ -261,6 +361,22 @@
                 </div>
                 {/if}
             </div>
+
+            {#if !editId}
+            <div class="bg-indigo-50/50 p-4 rounded-xl border border-indigo-100 mt-2 space-y-3">
+                <label class="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" bind:checked={is_series} class="w-4 h-4 text-indigo-600 rounded border-indigo-300 focus:ring-indigo-500" disabled={isLoading} />
+                    <span class="text-sm font-semibold text-indigo-900">Wöchentlicher Serientermin</span>
+                </label>
+                {#if is_series}
+                    <div class="pt-3 border-t border-indigo-100 animate-enter">
+                        <label for="app-series-end" class="block text-xs font-semibold text-indigo-800 mb-1.5">Wiederholen bis (Enddatum) *</label>
+                        <input id="app-series-end" type="date" bind:value={seriesEndDate} class="orga-input-clear py-2.5 text-sm bg-white border-indigo-200" disabled={isLoading} required />
+                        <p class="text-[10px] text-indigo-600 mt-2 leading-relaxed">Es wird ab dem Startdatum jede Woche ein eigener Termin angelegt. So können Termine später einzeln abgerechnet, bearbeitet oder verschoben werden.</p>
+                    </div>
+                {/if}
+            </div>
+            {/if}
 
             <!-- Klient & Mitarbeiter -->
             {#if !is_blocked}

@@ -26,7 +26,8 @@
         km_rate: 0.3,
         tax_rate: "0",
         default_template: "",
-        caregiver: ""
+        caregiver: "",
+        company: ""
     });
 
     // Signatur-Status
@@ -69,7 +70,8 @@
                 km_rate: client.km_rate ?? 0.3,
                 tax_rate: client.tax_rate != null ? client.tax_rate.toString() : "0",
                 default_template: client.default_template || "",
-                caregiver: client.caregiver || ""
+                caregiver: client.caregiver || "",
+                company: Array.isArray(client.company) ? (client.company[0] || "") : (client.company || "")
             };
             
             if (client.sign) {
@@ -238,7 +240,15 @@
                     <div><label for="edit-firstname" class="block text-sm font-semibold text-neutral-700 mb-1.5">Vorname</label><input id="edit-firstname" type="text" bind:value={formData.name_first} class="orga-input-clear" required disabled={isLoading} /></div>
                     <div><label for="edit-lastname" class="block text-sm font-semibold text-neutral-700 mb-1.5">Nachname</label><input id="edit-lastname" type="text" bind:value={formData.name_last} class="orga-input-clear" required disabled={isLoading} /></div>
                     <div><label for="edit-birthdate" class="block text-sm font-semibold text-neutral-700 mb-1.5">Geburtsdatum</label><input id="edit-birthdate" type="date" bind:value={formData.birthdate} class="orga-input-clear" disabled={isLoading} /></div>
-                    <div class="hidden md:block"></div>
+                    <div>
+                        <label for="edit-company" class="block text-sm font-semibold text-neutral-700 mb-1.5">Zuständige Firma</label>
+                        <select id="edit-company" bind:value={formData.company} class="orga-input-clear cursor-pointer" disabled={isLoading}>
+                            <option value="">Keine Firma zugewiesen</option>
+                            {#each orgaStore.company?.data || [] as comp}
+                                <option value={comp.id}>{comp.name || comp.city}</option>
+                            {/each}
+                        </select>
+                    </div>
                     <div><label for="edit-email" class="block text-sm font-semibold text-neutral-700 mb-1.5">E-Mail</label><input id="edit-email" type="email" bind:value={formData.email} class="orga-input-clear" disabled={isLoading} /></div>
                     <div><label for="edit-phone" class="block text-sm font-semibold text-neutral-700 mb-1.5">Telefon</label><input id="edit-phone" type="text" bind:value={formData.phone} class="orga-input-clear" disabled={isLoading} /></div>
                 </div>
@@ -246,7 +256,14 @@
             
             <!-- Adresse -->
             <div class="pt-6 border-t border-neutral-100">
-                <h3 class="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-3">Adresse</h3>
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-xs font-bold text-neutral-400 uppercase tracking-wider">Adresse</h3>
+                    {#if formData.street || formData.city}
+                        <a href="https://www.google.com/maps/search/?api=1&query={encodeURIComponent(`${formData.street || ''} ${formData.housenr || ''}, ${formData.zip || ''} ${formData.city || ''}`)}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1.5 text-[10px] font-bold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded transition-colors border border-blue-200 shadow-sm">
+                            <span>🗺️</span> Auf Karte prüfen
+                        </a>
+                    {/if}
+                </div>
                 <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div class="md:col-span-2"><label for="edit-street" class="block text-sm font-semibold text-neutral-700 mb-1.5">Straße</label><input id="edit-street" type="text" bind:value={formData.street} class="orga-input-clear" disabled={isLoading} /></div>
                     <div><label for="edit-housenr" class="block text-sm font-semibold text-neutral-700 mb-1.5">Hausnr.</label><input id="edit-housenr" type="text" bind:value={formData.housenr} class="orga-input-clear" disabled={isLoading} /></div>
@@ -301,7 +318,7 @@
                     
                 {#if existingSignatureUrl && !deleteExistingSignature}
                     <div class="bg-white border border-neutral-200 rounded-xl p-6 text-center shadow-sm">
-                        <img src={existingSignatureUrl} alt="Hinterlegte Unterschrift" class="max-h-24 object-contain mx-auto mix-blend-multiply mb-4" />
+                        <img src={existingSignatureUrl} alt="Hinterlegte Unterschrift" class="max-h-24 object-contain mx-auto bg-white rounded-lg p-2 mb-4 safe-signature" />
                         <button type="button" onclick={() => deleteExistingSignature = true} class="bg-red-50 text-red-600 hover:bg-red-500 hover:text-white font-bold py-2 px-4 rounded-lg transition-colors text-sm">
                             Entfernen & Neu anlegen
                         </button>
@@ -336,3 +353,9 @@
         </form>
     </div>
 </dialog>
+
+<style>
+    :global(.theme-negative) .safe-signature {
+        filter: invert(1) hue-rotate(180deg);
+    }
+</style>

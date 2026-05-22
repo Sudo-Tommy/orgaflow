@@ -254,9 +254,13 @@
             }
             await updateAppointmentStore();
             toastStore.success("Audio-Datei hochgeladen.");
-        } catch (err) {
+        } catch (err: any) {
             console.error(err);
-            toastStore.error("Fehler beim Hochladen.");
+            if (err?.status === 413 || err?.message?.includes('413')) {
+                toastStore.error("Datei zu groß! Der Webserver (z.B. NGINX) blockiert Uploads über 1MB.");
+            } else {
+                toastStore.error("Fehler beim Hochladen der Audio-Datei.");
+            }
         } finally {
             isReportSaving = false;
             input.value = '';
@@ -323,7 +327,48 @@
 
     async function deleteAppointment() {
         if (!appointment || !(await confirmStore.ask("Möchten Sie diesen Termin wirklich löschen?", "Termin löschen?", "Löschen", "Abbrechen", true))) return;
-        try { await pb.collection('appointments').delete(appointment.id); close(); toastStore.info("Termin gelöscht."); } catch (err) { toastStore.error("Fehler beim Löschen."); }
+        
+        let deleteFutureSeries = false;
+        if (appointment.is_series && appointment.series_id) {
+            deleteFutureSeries = await confirmStore.ask("Dies ist ein Serientermin. Wollen Sie zusätzlich ALLE zukünftigen Termine dieser Serie löschen?", "Komplette Serie löschen?", "Ja, Serie löschen", "Nein, nur diesen", true);
+        }
+
+        try {
+            if (deleteFutureSeries) {
+                const appDate = new Date(appointment.appointment || new Date());
+                appDate.setHours(0,0,0,0);
+                const futureApps = await pb.collection('appointments').getFullList({
+                    filter: `series_id = '${appointment.series_id}' && appointment >= '${appDate.toISOString()}'`,
+                    requestKey: null
+                });
+                
+                const promises = [];
+                for (const a of futureApps) {
+                    if (a.time_record) {
+                        for (const trId of a.time_record) promises.push(pb.collection('time_records').delete(trId).catch(()=>{}));
+                    }
+                    promises.push(pb.collection('appointments').delete(a.id));
+                }
+
+                const chunkSize = 20;
+                for (let i = 0; i < promises.length; i += chunkSize) {
+                    await Promise.all(promises.slice(i, i + chunkSize));
+                }
+                
+                if (orgaStore.appointments) {
+                    const deletedIds = futureApps.map((a:any) => a.id);
+                    orgaStore.appointments.data = orgaStore.appointments.data.filter((a:any) => !deletedIds.includes(a.id));
+                }
+                toastStore.info(`Komplette Terminserie gelöscht (${futureApps.length} Termine).`);
+                close();
+            } else {
+                await pb.collection('appointments').delete(appointment.id); 
+                close(); 
+                toastStore.info("Termin gelöscht."); 
+            }
+        } catch (err) { 
+            toastStore.error("Fehler beim Löschen."); 
+        }
     }
 </script>
 
@@ -336,6 +381,7 @@
                 <div class="min-w-0">
                     <h2 class="text-lg sm:text-xl font-bold text-neutral-900 flex items-center gap-2 truncate">
                         Termin-Details {#if appointment?.is_private}<span class="px-2 py-0.5 text-[10px] font-bold rounded-full bg-rose-100 text-rose-700 shrink-0">Privat</span>{/if}
+                        {#if appointment?.is_series}<span class="px-2 py-0.5 text-[10px] font-bold rounded-full bg-indigo-100 text-indigo-700 shrink-0">🔁 Serie</span>{/if}
                         {#if appointment?.settled}<span class="px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-100 text-emerald-700 shrink-0">✓ Abgerechnet</span>{/if}
                     </h2>
                     <p class="text-[10px] sm:text-xs text-neutral-500 font-medium truncate">
@@ -366,11 +412,25 @@
                          <div class="orga-card-white p-5 relative overflow-hidden group">
                              <div class="absolute top-0 right-0 w-24 h-24 bg-emerald-50 rounded-full blur-2xl -mr-8 -mt-8 z-0"></div>
                              <h3 class="text-sm font-bold text-neutral-900 mb-3 border-b border-neutral-100 pb-2 relative z-10">Zugeordneter Klient</h3>
-                             <div class="flex items-center gap-3 relative z-10">
-                                 <div class="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 font-bold flex items-center justify-center text-sm shadow-inner">{(client.name_first?.charAt(0) || '')}{(client.name_last?.charAt(0) || '')}</div>
-                                 <div>
-                                     <p class="text-sm font-bold text-neutral-900 leading-tight">{client.name_first} {client.name_last}</p>
-                                     <button type="button" onclick={() => clientDetailModal?.open(client.id)} class="text-indigo-600 hover:text-indigo-800 text-xs font-semibold transition-colors cursor-pointer">Klienten-Akte öffnen &rarr;</button>
+                             <div class="relative z-10">
+                                 <div class="flex items-center gap-3 mb-4">
+                                     <div class="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 font-bold flex items-center justify-center text-sm shadow-inner shrink-0">{(client.name_first?.charAt(0) || '')}{(client.name_last?.charAt(0) || '')}</div>
+                                     <div class="min-w-0">
+                                         <p class="text-sm font-bold text-neutral-900 leading-tight truncate">{client.name_first} {client.name_last}</p>
+                                         {#if fullClient?.street || fullClient?.city}
+                                             <p class="text-xs text-neutral-600 mt-0.5 truncate">{fullClient.street || ''} {fullClient.housenr || ''}, {fullClient.zip || ''} {fullClient.city || ''}</p>
+                                         {/if}
+                                     </div>
+                                 </div>
+                                 <div class="flex flex-col gap-2">
+                                     <button type="button" onclick={() => clientDetailModal?.open(client.id)} class="w-full flex justify-center items-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold py-2.5 px-4 rounded-xl transition-colors text-xs border border-emerald-200 shadow-sm active:scale-95">
+                                         📂 Klienten-Akte öffnen
+                                     </button>
+                                     {#if fullClient?.street || fullClient?.city}
+                                         <a href="https://www.google.com/maps/search/?api=1&query={encodeURIComponent(`${fullClient.name_first} ${fullClient.name_last}, ${fullClient.street || ''} ${fullClient.housenr || ''}, ${fullClient.zip || ''} ${fullClient.city || ''}`)}" target="_blank" rel="noopener noreferrer" class="w-full flex justify-center items-center gap-2 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold py-2.5 px-4 rounded-xl transition-colors text-xs border border-blue-200 shadow-sm active:scale-95">
+                                             🗺️ Navigation zum Klienten
+                                         </a>
+                                     {/if}
                                  </div>
                              </div>
                          </div>

@@ -87,7 +87,7 @@
         <div class="flex items-center justify-between mb-4"><span class="block text-sm font-semibold text-neutral-900">Unterschrift hinterlegen</span>{#if !existingSignUrl || deleteSign}<div class="flex bg-neutral-200/60 p-1 rounded-lg"><button type="button" onclick={() => signatureMode = 'draw'} class="px-3 py-1 text-xs font-bold rounded-md transition-colors {signatureMode === 'draw' ? 'bg-white shadow-sm text-indigo-600' : 'text-neutral-500 hover:text-neutral-700'}">Zeichnen</button><button type="button" onclick={() => signatureMode = 'upload'} class="px-3 py-1 text-xs font-bold rounded-md transition-colors {signatureMode === 'upload' ? 'bg-white shadow-sm text-indigo-600' : 'text-neutral-500 hover:text-neutral-700'}">Hochladen</button></div>{/if}</div>
 
         {#if existingSignUrl && !deleteSign}
-            <div class="bg-white border border-neutral-200 rounded-xl p-6 text-center shadow-sm"><img src={existingSignUrl} alt="Hinterlegte Unterschrift" class="max-h-24 object-contain mx-auto mix-blend-multiply mb-4" /><button type="button" onclick={() => { deleteSign = true; signFile = null; }} class="bg-red-50 text-red-600 hover:bg-red-500 hover:text-white font-bold py-2 px-4 rounded-lg transition-colors text-sm">Entfernen & Neu anlegen</button></div>
+            <div class="bg-white border border-neutral-200 rounded-xl p-6 text-center shadow-sm"><img src={existingSignUrl} alt="Hinterlegte Unterschrift" class="max-h-24 object-contain mx-auto bg-white rounded-lg p-2 mb-4 safe-signature" /><button type="button" onclick={() => { deleteSign = true; signFile = null; }} class="bg-red-50 text-red-600 hover:bg-red-500 hover:text-white font-bold py-2 px-4 rounded-lg transition-colors text-sm">Entfernen & Neu anlegen</button></div>
         {:else if signatureMode === 'draw'}
             <div class="relative bg-white border-2 border-dashed border-neutral-200 rounded-xl overflow-hidden touch-none"><canvas bind:this={canvas} width="600" height="200" class="w-full h-40 cursor-crosshair" onmousedown={startDrawing} onmousemove={draw} onmouseup={stopDrawing} onmouseleave={stopDrawing} ontouchstart={startDrawing} ontouchmove={draw} ontouchend={stopDrawing}></canvas><button type="button" onclick={clearSignature} class="absolute top-2 right-2 px-2 py-1 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 text-xs font-semibold rounded-md transition-colors">Leeren</button>{#if !hasDrawnSignature}<div class="absolute inset-0 pointer-events-none flex items-center justify-center text-neutral-300 font-medium text-sm">Hier unterschreiben</div>{/if}</div>
         {:else}
@@ -99,3 +99,9 @@
         </div>
     </form>
 </div>
+
+<style>
+    :global(.theme-negative) .safe-signature {
+        filter: invert(1) hue-rotate(180deg);
+    }
+</style>

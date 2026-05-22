@@ -1,3 +1,5 @@
+import { orgaStore } from "$lib/stores/orgaStore.svelte";
+
 export function useClientFilter(clientsProvider: () => any[]) {
     let searchQuery = $state("");
     let statusFilter = $state("all");
@@ -17,7 +19,12 @@ export function useClientFilter(clientsProvider: () => any[]) {
             
             let matchCompany = true;
             if (companyFilter !== 'all') {
-                matchCompany = client?.company === companyFilter || (Array.isArray(client?.company) && client.company.includes(companyFilter));
+                const clientHasCompany = client?.company === companyFilter || (Array.isArray(client?.company) && client.company.includes(companyFilter));
+                
+                const selectedComp = orgaStore.company?.data?.find((c: any) => c.id === companyFilter);
+                const companyHasClient = selectedComp && Array.isArray(selectedComp.clients) && selectedComp.clients.includes(client.id);
+                
+                matchCompany = !!(clientHasCompany || companyHasClient);
             }
             
             return matchQuery && matchStatus && matchCompany;
