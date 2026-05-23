@@ -266,6 +266,8 @@ export function createEmailService() {
         const result = await response.json();
         
         // Gesendete E-Mail in der Datenbank speichern, damit sie im Ordner "Gesendet" auftaucht
+        const companyId = authData?.company ? (Array.isArray(authData.company) ? authData.company[0] : authData.company) : null;
+        
         await pb.collection('mailbox_messages').create({
             folder: "Sent",
             message_id: result.messageId || "sent-" + Date.now(),
@@ -275,7 +277,9 @@ export function createEmailService() {
             date: new Date().toISOString(),
             body_text: input.body,
             body_html: input.body_html || input.body.replace(/\n/g, '<br>'),
-            is_read: true
+            is_read: true,
+            send_by: authData?.id || null,
+            company: companyId
         });
         
         return { success: true, messageId: result.messageId };

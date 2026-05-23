@@ -111,43 +111,65 @@
             let compStreet = 'Dreyhauptstraße 2';
             let compCity = '06108 Halle (Saale)';
             let compWeb = 'www.ihre-seniorenassistenz.com';
+            let compLogo = '';
+            let companyId: string | null = null;
             if (user && user.company) {
-                const cId = Array.isArray(user.company) ? user.company[0] : user.company;
-                const comp = orgaStore.company?.data?.find((c: any) => c.id === cId);
+                companyId = Array.isArray(user.company) ? user.company[0] : user.company;
+                const comp = orgaStore.company?.data?.find((c: any) => c.id === companyId);
                 if (comp) {
                     compName = comp.name || compName;
                     compStreet = `${comp.street || ''} ${comp.housenr || ''}`.trim() || compStreet;
                     compCity = `${comp.zip || ''} ${comp.city || ''}`.trim() || compCity;
                     compWeb = comp.website || compWeb;
+                    if (comp.logo) {
+                        const logoFilename = Array.isArray(comp.logo) ? comp.logo[0] : comp.logo;
+                        const logoUrl = (pb.files as any).getUrl ? (pb.files as any).getUrl(comp, logoFilename) : (pb.files as any).getURL(comp, logoFilename);
+                        compLogo = logoUrl.startsWith('http') ? logoUrl.replace(/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?/, 'https://www.ihre-seniorenassistenz.com') : `https://www.ihre-seniorenassistenz.com${logoUrl}`;
+                    }
                 }
             }
 
             // 2. Wunderschöne HTML-Mail (Header, Body, Footer) zusammenbauen
             const htmlEmail = `
-                <div style="font-family: 'Segoe UI', Arial, sans-serif; color: #374151; max-width: 650px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
-                    <div style="background-color: #fdf8f6; padding: 25px 30px; border-bottom: 3px solid #c66a4d;">
-                        <h1 style="color: #954028; margin: 0; font-size: 24px; letter-spacing: -0.5px;">${compName}</h1>
-                        <p style="color: #c66a4d; margin: 4px 0 0 0; font-size: 14px; font-weight: 500;">Alltagshilfe • Betreuung • Organisation</p>
+                <div style="font-family: 'Segoe UI', Helvetica, Arial, sans-serif; color: #374151; max-width: 650px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);">
+                    <div style="background-color: #fdf8f6; padding: 30px; border-bottom: 3px solid #c66a4d;">
+                        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                            <tr>
+                                <td valign="middle">
+                                    <h1 style="color: #954028; margin: 0; font-size: 24px; letter-spacing: -0.5px; font-weight: 800;">${compName}</h1>
+                                    <p style="color: #c66a4d; margin: 4px 0 0 0; font-size: 14px; font-weight: 600;">Alltagshilfe • Betreuung • Organisation</p>
+                                </td>
+                                ${compLogo ? `<td valign="middle" align="right" style="width: 100px;"><img src="${compLogo}" alt="Logo" style="max-height: 60px; max-width: 100px; object-fit: contain; border-radius: 6px;" /></td>` : ''}
+                            </tr>
+                        </table>
                     </div>
-                    <div style="padding: 30px; font-size: 15px; line-height: 1.6; color: #1f2937; background-color: #ffffff;">
+                    <div style="padding: 35px 30px; font-size: 15px; line-height: 1.7; color: #1f2937; background-color: #ffffff;">
                         ${message.replace(/\n/g, '<br>')}
                     </div>
-                    <div style="background-color: #f8fafc; padding: 25px 30px; border-top: 1px solid #e5e7eb;">
-                        <table width="100%" cellpadding="0" cellspacing="0" style="font-size: 13px; color: #4b5563;">
+                    <div style="background-color: #f8fafc; padding: 30px; border-top: 1px solid #e5e7eb;">
+                        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size: 14px; color: #4b5563;">
                             <tr>
-                                <td style="padding-bottom: 15px;">
+                                <td valign="top" style="padding-bottom: 20px;">
                                     <strong style="color: #111827; font-size: 16px;">${userName}</strong><br>
-                                    <span style="color: #c66a4d;">Ihre Ansprechperson</span>
+                                    <span style="color: #c66a4d; font-weight: 600; font-size: 13px;">Ihre Ansprechperson</span>
                                 </td>
                             </tr>
                             <tr>
-                                <td style="line-height: 1.6;">
-                                    <strong>${compName}</strong><br>
-                                    ${compStreet}<br>
-                                    ${compCity}<br><br>
-                                    📞 <a href="tel:${userPhone}" style="color: #c66a4d; text-decoration: none;">${userPhone}</a><br>
-                                    ✉️ <a href="mailto:${userEmail}" style="color: #c66a4d; text-decoration: none;">${userEmail}</a><br>
-                                    🌐 <a href="${compWeb.startsWith('http') ? compWeb : 'https://' + compWeb}" style="color: #c66a4d; text-decoration: none;">${compWeb}</a>
+                                <td valign="top">
+                                    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size: 13px; color: #4b5563; line-height: 1.6;">
+                                        <tr>
+                                            <td width="50%" valign="top" style="padding-right: 15px; border-right: 1px solid #e5e7eb;">
+                                                <strong style="color: #374151; font-size: 14px;">${compName}</strong><br>
+                                                ${compStreet}<br>
+                                                ${compCity}
+                                            </td>
+                                            <td width="50%" valign="top" style="padding-left: 20px;">
+                                                <div style="margin-bottom: 4px;">📞 <a href="tel:${userPhone}" style="color: #c66a4d; text-decoration: none; font-weight: 500;">${userPhone}</a></div>
+                                                <div style="margin-bottom: 4px;">✉️ <a href="mailto:${userEmail}" style="color: #c66a4d; text-decoration: none; font-weight: 500;">${userEmail}</a></div>
+                                                <div>🌐 <a href="${compWeb.startsWith('http') ? compWeb : 'https://' + compWeb}" style="color: #c66a4d; text-decoration: none; font-weight: 500;">${compWeb.replace(/^https?:\/\//, '')}</a></div>
+                                            </td>
+                                        </tr>
+                                    </table>
                                 </td>
                             </tr>
                         </table>
@@ -182,7 +204,8 @@
                     if (bcc) fullTo += `, BCC: ${bcc}`;
                     
                     await pb.collection('mailbox_messages').create({
-                        user: pb.authStore.model.id,
+                        send_by: pb.authStore.model.id,
+                        company: companyId,
                         folder: 'Sent',
                         from_address: `${userName} <${userEmail}>`,
                         to_address: fullTo,

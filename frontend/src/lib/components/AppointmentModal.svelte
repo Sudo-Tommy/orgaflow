@@ -288,7 +288,6 @@
         if (!editId || !is_series || !series_id) return;
         
         if (!(await confirmStore.ask("Möchten Sie diesen und ALLE zukünftigen Termine dieser Serie wirklich löschen?", "Komplette Serie löschen?", "Ja, Serie löschen", "Abbrechen", true))) return;
-
         isLoading = true;
         try {
             if (series_id && appDate) {

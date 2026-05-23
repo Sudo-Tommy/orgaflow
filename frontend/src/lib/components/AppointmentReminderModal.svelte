@@ -21,6 +21,8 @@
     let appTime = $state("");
     let appDesc = $state("");
     let appLocation = $state("");
+    let appReport = $state("");
+    let includeReport = $state(false);
 
     let availableContacts = $state<any[]>([]);
     let showContactDropdown = $state(false);
@@ -92,10 +94,11 @@
         
         const isClientOnly = selectedContactRefs.length > 0 ? selectedContactRefs.every(c => c.isClient) : (client?.expand?.caregiver ? false : true);
         const clientName = `${client?.name_first || ''} ${client?.name_last || ''}`.trim();
+        const isPast = appointment?.appointment && new Date(appointment.appointment) < new Date();
         
-        const baseText = isClientOnly 
-            ? `hiermit möchten wir Sie an unseren gemeinsamen Termin am ${appDate} um ${appTime} erinnern.`
-            : `hiermit möchten wir Sie an unseren Termin mit ${clientName} am ${appDate} um ${appTime} erinnern.`;
+        const baseText = isPast
+            ? (isClientOnly ? `hiermit erhalten Sie eine Nachricht zu unserem gemeinsamen Termin vom ${appDate}.` : `hiermit erhalten Sie eine Nachricht zu unserem Termin mit ${clientName} vom ${appDate}.`)
+            : (isClientOnly ? `hiermit möchten wir Sie an unseren gemeinsamen Termin am ${appDate} um ${appTime} erinnern.` : `hiermit möchten wir Sie an unseren Termin mit ${clientName} am ${appDate} um ${appTime} erinnern.`);
             
         message = `${newSalutation}\n\n${baseText}\n\nIhre Termine können Sie auch jederzeit im Klienten-Portal einsehen:\n👉 https://www.ihre-seniorenassistenz.com/portal\n\nWir freuen uns auf Sie!`;
     }
@@ -114,7 +117,8 @@
         cc = "";
         bcc = "";
         showCcBcc = false;
-        subject = `Terminerinnerung: ${dateStr}`;
+        const isPast = app?.appointment && new Date(app.appointment) < new Date();
+        subject = isPast ? `Nachricht zu Ihrem Termin am ${dateStr}` : `Terminerinnerung: ${dateStr}`;
         
         appDate = dateStr;
         appTime = timeStr !== 'Unbekannt' ? `${timeStr} Uhr` : timeStr;
@@ -131,6 +135,8 @@
             locationStr = app.location_address;
         }
         appLocation = locationStr;
+        appReport = app?.report || "";
+        includeReport = !!appReport;
 
         availableContacts = buildAvailableContacts();
         selectedContactRefs = [];
@@ -210,6 +216,7 @@
                 let compStreet = 'Dreyhauptstraße 2';
                 let compCity = '06108 Halle (Saale)';
                 let compWeb = 'www.ihre-seniorenassistenz.com';
+                let compLogo = '';
                 const compSource = assignedUser || sendingUser;
                 if (compSource && compSource.company) {
                     const cId = Array.isArray(compSource.company) ? compSource.company[0] : compSource.company;
@@ -219,7 +226,25 @@
                         compStreet = `${comp.street || ''} ${comp.housenr || ''}`.trim() || compStreet;
                         compCity = `${comp.zip || ''} ${comp.city || ''}`.trim() || compCity;
                         compWeb = comp.website || compWeb;
+                        if (comp.logo) {
+                            compLogo = pb.files.getUrl(comp, comp.logo);
+                        }
                     }
+                }
+
+                let reportHtml = '';
+                let reportText = '';
+
+                if (method === 'email' && includeReport && appReport) {
+                    reportHtml = `
+                        <div style="background-color: #f8fafc; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 25px 0;">
+                            <h3 style="margin-top: 0; color: #111827; font-size: 16px; margin-bottom: 12px;">Besuchsbericht:</h3>
+                            <div style="font-size: 14px; color: #4b5563; line-height: 1.6;">
+                                ${appReport.replace(/\n/g, '<br>')}
+                            </div>
+                        </div>
+                    `;
+                    reportText = `\n\n--- BESUCHSBERICHT ---\n${appReport}\n`;
                 }
 
                 let futureAppsHtml = '';
@@ -256,15 +281,22 @@
                     }
                 }
 
-                const textEmail = `${message.trim()}\n${futureAppsText}\n--\n${finalUserName}\n${compName}\n${compStreet}, ${compCity}\nTelefon: ${finalUserPhone}\nE-Mail: ${finalUserEmail}\nWeb: ${compWeb}`;
+                const textEmail = `${message.trim()}\n${reportText}\n${futureAppsText}\n--\n${finalUserName}\n${compName}\n${compStreet}, ${compCity}\nTelefon: ${finalUserPhone}\nE-Mail: ${finalUserEmail}\nWeb: ${compWeb}`;
 
                 const htmlEmail = `
-                    <div style="font-family: 'Segoe UI', Arial, sans-serif; color: #374151; max-width: 650px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
-                        <div style="background-color: #fdf8f6; padding: 25px 30px; border-bottom: 3px solid #c66a4d;">
-                            <h1 style="color: #954028; margin: 0; font-size: 24px; letter-spacing: -0.5px;">${compName}</h1>
-                            <p style="color: #c66a4d; margin: 4px 0 0 0; font-size: 14px; font-weight: 500;">Alltagshilfe • Betreuung • Organisation</p>
+                    <div style="font-family: 'Segoe UI', Helvetica, Arial, sans-serif; color: #374151; max-width: 650px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);">
+                        <div style="background-color: #fdf8f6; padding: 30px; border-bottom: 3px solid #c66a4d;">
+                            <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                                <tr>
+                                    <td valign="middle">
+                                        <h1 style="color: #954028; margin: 0; font-size: 24px; letter-spacing: -0.5px; font-weight: 800;">${compName}</h1>
+                                        <p style="color: #c66a4d; margin: 4px 0 0 0; font-size: 14px; font-weight: 600;">Alltagshilfe • Betreuung • Organisation</p>
+                                    </td>
+                                    ${compLogo ? `<td valign="middle" align="right" style="width: 100px;"><img src="${compLogo}" alt="Logo" style="max-height: 60px; max-width: 100px; object-fit: contain; border-radius: 6px;" /></td>` : ''}
+                                </tr>
+                            </table>
                         </div>
-                        <div style="padding: 30px; font-size: 15px; line-height: 1.6; color: #1f2937; background-color: #ffffff;">
+                        <div style="padding: 35px 30px; font-size: 15px; line-height: 1.7; color: #1f2937; background-color: #ffffff;">
                             ${message.trim().replace(/\n/g, '<br>').replace(/(?:<br>|\s)*(?:👉\s*)?(?:&lt;|<)?\s*https?:\/\/(?:www\.)?ihre-seniorenassistenz\.com\/portal\/?\s*(?:&gt;|>)?/gi, '<br><table role="presentation" border="0" cellpadding="0" cellspacing="0" style="margin: 15px 0;"><tr><td align="center" bgcolor="#c66a4d" style="border-radius: 8px;"><a href="https://www.ihre-seniorenassistenz.com/portal" style="display: inline-block; padding: 12px 24px; color: #ffffff; text-decoration: none; font-weight: bold; font-family: Arial, sans-serif; font-size: 15px;">Zum Klienten-Portal</a></td></tr></table><br>')}
                             
                             <div style="background-color: #f8fafc; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 25px 0;">
@@ -287,24 +319,33 @@
                                     </tr>
                                 </table>
                             </div>
+                            ${reportHtml}
                             ${futureAppsHtml}
                         </div>
-                        <div style="background-color: #f8fafc; padding: 25px 30px; border-top: 1px solid #e5e7eb;">
-                            <table width="100%" cellpadding="0" cellspacing="0" style="font-size: 13px; color: #4b5563;">
+                        <div style="background-color: #f8fafc; padding: 30px; border-top: 1px solid #e5e7eb;">
+                            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size: 14px; color: #4b5563;">
                                 <tr>
-                                    <td style="padding-bottom: 15px;">
+                                    <td valign="top" style="padding-bottom: 20px;">
                                         <strong style="color: #111827; font-size: 16px;">${finalUserName}</strong><br>
-                                        <span style="color: #c66a4d;">Ihre Ansprechperson</span>
+                                        <span style="color: #c66a4d; font-weight: 600; font-size: 13px;">Ihre Ansprechperson</span>
                                     </td>
                                 </tr>
                                 <tr>
-                                    <td style="line-height: 1.6;">
-                                        <strong>${compName}</strong><br>
-                                        ${compStreet}<br>
-                                        ${compCity}<br><br>
-                                        📞 <a href="tel:${finalUserPhone}" style="color: #c66a4d; text-decoration: none;">${finalUserPhone}</a><br>
-                                        ✉️ <a href="mailto:${finalUserEmail}" style="color: #c66a4d; text-decoration: none;">${finalUserEmail}</a><br>
-                                        🌐 <a href="${compWeb.startsWith('http') ? compWeb : 'https://' + compWeb}" style="color: #c66a4d; text-decoration: none;">${compWeb}</a>
+                                    <td valign="top">
+                                        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size: 13px; color: #4b5563; line-height: 1.6;">
+                                            <tr>
+                                                <td width="50%" valign="top" style="padding-right: 15px; border-right: 1px solid #e5e7eb;">
+                                                    <strong style="color: #374151; font-size: 14px;">${compName}</strong><br>
+                                                    ${compStreet}<br>
+                                                    ${compCity}
+                                                </td>
+                                                <td width="50%" valign="top" style="padding-left: 20px;">
+                                                    <div style="margin-bottom: 4px;">📞 <a href="tel:${finalUserPhone}" style="color: #c66a4d; text-decoration: none; font-weight: 500;">${finalUserPhone}</a></div>
+                                                    <div style="margin-bottom: 4px;">✉️ <a href="mailto:${finalUserEmail}" style="color: #c66a4d; text-decoration: none; font-weight: 500;">${finalUserEmail}</a></div>
+                                                    <div>🌐 <a href="${compWeb.startsWith('http') ? compWeb : 'https://' + compWeb}" style="color: #c66a4d; text-decoration: none; font-weight: 500;">${compWeb.replace(/^https?:\/\//, '')}</a></div>
+                                                </td>
+                                            </tr>
+                                        </table>
                                     </td>
                                 </tr>
                             </table>
@@ -341,7 +382,7 @@
                 }
             } catch (e) { console.warn("E-Mail konnte nicht im Postfach gespeichert werden", e); }
 
-                toastStore.success("Erinnerung per E-Mail versendet!");
+                toastStore.success("Nachricht per E-Mail versendet!");
                 close();
             } else if (method === 'whatsapp') {
                 // Säubert die Telefonnummer für WhatsApp (entfernt Leerzeichen, etc.) und erzwingt Vorwahl
@@ -369,8 +410,8 @@
             <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
         </button>
         
-        <h2 class="text-xl sm:text-2xl font-bold text-neutral-900 mb-2 flex items-center gap-2"><span>⏰</span> Termin-Erinnerung</h2>
-        <p class="text-sm text-neutral-500 mb-6">Senden Sie eine kurze Erinnerung an den Klienten.</p>
+        <h2 class="text-xl sm:text-2xl font-bold text-neutral-900 mb-2 flex items-center gap-2"><span>✉️</span> Nachricht / Termin-Erinnerung</h2>
+        <p class="text-sm text-neutral-500 mb-6">Senden Sie eine Benachrichtigung zum Termin an den Klienten.</p>
 
         <form onsubmit={handleSend} class="space-y-4">
             <!-- Toggle E-Mail vs WhatsApp -->
@@ -453,6 +494,23 @@
                 <label for="rem-message" class="block text-sm font-semibold text-neutral-700 mb-1.5">Nachricht</label>
                 <textarea id="rem-message" bind:value={message} rows="6" class="orga-input-clear py-3 sm:py-2.5 text-sm resize-none custom-scrollbar" required disabled={isSending}></textarea>
             </div>
+
+            {#if appReport}
+                <div class="pt-4 mt-2 border-t border-neutral-100">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="text-sm font-bold text-neutral-900 flex items-center gap-2"><span>📝</span> Besuchsbericht anhängen</h3>
+                        <label class="flex items-center gap-2 text-sm font-semibold text-neutral-700 cursor-pointer">
+                            <input type="checkbox" bind:checked={includeReport} class="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500" disabled={isSending} />
+                            Anhängen
+                        </label>
+                    </div>
+                    {#if includeReport}
+                        <div class="p-3 bg-white border border-neutral-200 rounded-xl max-h-40 overflow-y-auto custom-scrollbar text-sm text-neutral-700 whitespace-pre-wrap">
+                            {appReport}
+                        </div>
+                    {/if}
+                </div>
+            {/if}
 
             {#if method === 'email' && futureAppointments.length > 0}
                 <div class="pt-4 mt-2 border-t border-neutral-100">
