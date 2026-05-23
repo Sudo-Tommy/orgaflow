@@ -222,12 +222,12 @@
                         {#if fileName.match(/\.(webm|mp3|wav|ogg|m4a)$/i)}
                             <div class="mb-2 p-1 bg-black/5 rounded-xl border border-black/10 min-w-50">
                                 <!-- svelte-ignore a11y_media_has_caption -->
-                                <audio controls src={pb.files.getUrl(msg, fileName)} class="w-full max-w-60 h-10"></audio>
+                            <audio controls src={pb.files.getURL(msg, fileName)} class="w-full max-w-60 h-10"></audio>
                             </div>
                         {:else}
                             <div class="mb-2 p-2 bg-black/5 rounded-xl border border-black/10 flex items-center gap-2">
                                 <span class="text-xl">📎</span>
-                                <a href={pb.files.getUrl(msg, fileName)} target="_blank" class="text-sm font-bold text-blue-600 hover:underline truncate">Anhang ansehen</a>
+                            <a href={pb.files.getURL(msg, fileName)} target="_blank" class="text-sm font-bold text-blue-600 hover:underline truncate">Anhang ansehen</a>
                             </div>
                         {/if}
                     {/if}

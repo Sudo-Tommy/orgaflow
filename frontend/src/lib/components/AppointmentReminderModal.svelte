@@ -217,17 +217,26 @@
                 let compCity = '06108 Halle (Saale)';
                 let compWeb = 'www.ihre-seniorenassistenz.com';
                 let compLogo = '';
+                let companyId: string | null = null;
                 const compSource = assignedUser || sendingUser;
                 if (compSource && compSource.company) {
-                    const cId = Array.isArray(compSource.company) ? compSource.company[0] : compSource.company;
-                    const comp = orgaStore.company?.data?.find((c: any) => c.id === cId);
+                    companyId = Array.isArray(compSource.company) ? compSource.company[0] : compSource.company;
+                    const comp = orgaStore.company?.data?.find((c: any) => c.id === companyId);
                     if (comp) {
                         compName = comp.name || compName;
                         compStreet = `${comp.street || ''} ${comp.housenr || ''}`.trim() || compStreet;
                         compCity = `${comp.zip || ''} ${comp.city || ''}`.trim() || compCity;
                         compWeb = comp.website || compWeb;
                         if (comp.logo) {
-                            compLogo = pb.files.getUrl(comp, comp.logo);
+                            const logoFilename = Array.isArray(comp.logo) ? comp.logo[0] : comp.logo;
+                            const rawUrl = (pb.files as any).getUrl ? (pb.files as any).getUrl(comp, logoFilename) : (pb.files as any).getURL(comp, logoFilename);
+                            try {
+                                const parsedUrl = new URL(rawUrl, 'https://ihre-seniorenassistenz.com');
+                                if (parsedUrl.hostname === 'localhost' || parsedUrl.hostname === '127.0.0.1') { parsedUrl.protocol = 'https:'; parsedUrl.hostname = 'ihre-seniorenassistenz.com'; parsedUrl.port = ''; }
+                                compLogo = parsedUrl.toString();
+                            } catch (e) {
+                                compLogo = rawUrl;
+                            }
                         }
                     }
                 }
@@ -292,7 +301,7 @@
                                         <h1 style="color: #954028; margin: 0; font-size: 24px; letter-spacing: -0.5px; font-weight: 800;">${compName}</h1>
                                         <p style="color: #c66a4d; margin: 4px 0 0 0; font-size: 14px; font-weight: 600;">Alltagshilfe • Betreuung • Organisation</p>
                                     </td>
-                                    ${compLogo ? `<td valign="middle" align="right" style="width: 100px;"><img src="${compLogo}" alt="Logo" style="max-height: 60px; max-width: 100px; object-fit: contain; border-radius: 6px;" /></td>` : ''}
+                                ${compLogo ? `<td valign="middle" align="right" style="width: 100px;"><img src="${compLogo}" alt="Logo" width="100" style="max-height: 60px; max-width: 100px; object-fit: contain; border-radius: 6px;" /></td>` : ''}
                                 </tr>
                             </table>
                         </div>
@@ -369,7 +378,8 @@
                     if (bcc) fullTo += `, BCC: ${bcc}`;
                     
                     await pb.collection('mailbox_messages').create({
-                        user: pb.authStore.model.id,
+                        send_by: pb.authStore.model.id,
+                        company: companyId,
                         folder: 'Sent',
                         from_address: `${finalUserName} <${finalUserEmail}>`,
                         to_address: fullTo,

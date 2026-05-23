@@ -15,7 +15,7 @@
 
     let currentUser = $state(pb.authStore.record || pb.authStore.model);
     
-    const checkIsSuperuser = (u: any) => pb.authStore.isSuperuser || (pb.authStore as any).isAdmin || u?.collectionName === '_superusers';
+    const checkIsSuperuser = (u: any) => pb.authStore.isSuperuser || u?.collectionName === '_superusers';
     let isSuperAdmin = $derived(checkIsSuperuser(currentUser) || currentUser?.role === 'superadmin' || currentUser?.role === 'admin');
     let isGodMode = $derived(checkIsSuperuser(currentUser) || currentUser?.role === 'superadmin');
     

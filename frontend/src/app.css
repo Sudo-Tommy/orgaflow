@@ -127,6 +127,13 @@
         user-select: auto !important;
         touch-action: auto !important;
     }
+
+    /* Verhindert den automatischen Zoom auf iOS beim Fokussieren von Inputs */
+    @media screen and (max-width: 768px) {
+        input, textarea, select, [contenteditable="true"], .orga-input-clear {
+            font-size: 16px !important;
+        }
+    }
 }
 
 /* 4. Custom Utilities für softe Animationen */

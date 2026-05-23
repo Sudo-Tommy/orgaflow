@@ -24,6 +24,13 @@
     let time = $state("");
     let preferredContact = $state<"phone" | "email" | "mail">("phone");
 
+    let isValidContact = $derived.by(() => {
+        if (preferredContact === 'email') return email.trim().length >= 5 && email.includes('@');
+        if (preferredContact === 'phone') return phone.trim().length >= 6;
+        if (preferredContact === 'mail') return street.trim().length >= 3 && zip_city.trim().length >= 5;
+        return false;
+    });
+
     // Calendar State
     let currentDate = $state(new Date());
     let selectedDate = $state<Date | null>(null);
@@ -146,10 +153,12 @@
 
     function nextMonth() {
         currentDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1);
+        selectedDate = null;
     }
     
     function prevMonth() {
         currentDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1);
+        selectedDate = null;
     }
 
     async function handleSubmit(e: Event) {
@@ -321,25 +330,33 @@ Adresse: ${preferredContact === 'mail' ? `${street}, ${zip_city}` : '-'}`;
                                 {/each}
                             </div>
                             
-                            <div class="mt-6 border-t border-amber-200/50 pt-4">
-                                <label for="req-time" class="block text-sm font-bold text-brand-900 mb-2">Uhrzeit (optional)</label>
-                                <input id="req-time" type="time" bind:value={time} class="orga-input-clear bg-white text-sm shadow-sm" disabled={isLoading} />
-                                {#if selectedDate}
-                                    {@const selDateStr = new Date(selectedDate!.getTime() - selectedDate!.getTimezoneOffset() * 60000).toISOString().split('T')[0]}
-                                    {@const selTimes = occupiedTimesByDate[selDateStr] || []}
+                            <!-- Neue Tages-Detailübersicht -->
+                            {#if selectedDate}
+                                {@const selDateStr = new Date(selectedDate.getTime() - selectedDate.getTimezoneOffset() * 60000).toISOString().split('T')[0]}
+                                {@const selTimes = occupiedTimesByDate[selDateStr] || []}
+                                <div class="mt-6 border-t border-amber-200/50 pt-5 animate-enter">
+                                    <h4 class="font-bold text-brand-900 mb-3 flex items-center gap-2">
+                                        <span>📅</span> Tagesübersicht: {selectedDate.toLocaleDateString('de-DE', { day: '2-digit', month: 'long', year: 'numeric' })}
+                                    </h4>
+                                    
                                     {#if selTimes.length > 0}
-                                        <div class="mt-3 p-2.5 bg-rose-50 border border-rose-100 rounded-lg text-xs text-rose-700 leading-tight shadow-sm flex items-start gap-2">
-                                            <span class="mt-0.5">⚠️</span>
-                                            <div>
-                                                <span class="font-bold block mb-0.5">Hinweis zu diesem Tag:</span>
-                                                Folgende Zeiten sind bereits vergeben: <strong class="line-through decoration-rose-500 opacity-80">{selTimes.join(' Uhr, ')} Uhr</strong>
+                                        <div class="bg-rose-50/50 border border-rose-100 rounded-xl p-4 shadow-sm">
+                                            <p class="text-xs font-bold text-rose-800 mb-3">Bereits vergebene Zeiten:</p>
+                                            <div class="flex flex-wrap gap-2">
+                                                {#each selTimes as t}
+                                                    <span class="text-xs font-bold bg-white text-rose-600 border border-rose-200 px-2.5 py-1.5 rounded-lg shadow-sm line-through opacity-70">{t} Uhr</span>
+                                                {/each}
                                             </div>
+                                            <p class="text-[10px] text-rose-600 mt-4 font-medium flex items-start gap-1.5 leading-tight"><span class="text-base leading-none">💡</span>Bitte wählen Sie nach Möglichkeit eine Wunsch-Uhrzeit außerhalb dieser Sperrzeiten. Aus Datenschutzgründen zeigen wir nur die gebuchten Zeiten an.</p>
+                                        </div>
+                                    {:else}
+                                        <div class="bg-emerald-50 border border-emerald-100 rounded-xl p-4 shadow-sm flex items-center gap-3">
+                                            <span class="text-2xl">✨</span>
+                                            <div><p class="text-sm font-bold text-emerald-800">Noch keine Termine an diesem Tag!</p><p class="text-xs text-emerald-600 mt-0.5 font-medium">Buchen Sie jetzt völlig frei Ihren Wunschtermin.</p></div>
                                         </div>
                                     {/if}
-                                {/if}
-                            </div>
-
-                            <div class="mt-4 p-3 bg-white rounded-xl border border-amber-100 text-xs text-neutral-600 flex gap-2 items-start shadow-sm"><span class="text-base leading-none">💡</span><p>Aus Datenschutzgründen zeigen wir hier nur gebuchte Zeiten an. Wir prüfen Ihren Terminwunsch umgehend.</p></div>
+                                </div>
+                            {/if}
                         </div>
                     </div>
 
@@ -353,12 +370,24 @@ Adresse: ${preferredContact === 'mail' ? `${street}, ${zip_city}` : '-'}`;
                                 <div><label for="req-name" class="block text-sm font-semibold text-neutral-700 mb-1.5">Ihr Vor- und Nachname *</label><input id="req-name" type="text" bind:value={sender_name} class="orga-input-clear bg-neutral-50" placeholder="Max Mustermann" required disabled={isLoading} /></div>
                                 
                                 <div>
+                                    <label for="req-time" class="block text-sm font-semibold text-neutral-700 mb-1.5">Wunsch-Uhrzeit (optional)</label>
+                                    <input id="req-time" type="time" bind:value={time} class="orga-input-clear bg-neutral-50" disabled={isLoading} />
+                                    {#if selectedDate && time}
+                                        {@const selDateStr = new Date(selectedDate.getTime() - selectedDate.getTimezoneOffset() * 60000).toISOString().split('T')[0]}
+                                        {@const selTimes = occupiedTimesByDate[selDateStr] || []}
+                                        {#if selTimes.includes(time)}
+                                            <p class="text-[10px] sm:text-xs text-rose-600 font-bold mt-1.5 leading-tight flex items-start sm:items-center gap-1"><span>⚠️</span> <span>Diese Uhrzeit ist bereits vergeben.</span></p>
+                                        {/if}
+                                    {/if}
+                                </div>
+
+                                <div>
                                     <!-- svelte-ignore a11y_label_has_associated_control -->
                                     <label class="block text-sm font-semibold text-neutral-700 mb-1.5">Gewünschter Kontaktweg *</label>
-                                    <div class="flex gap-2 p-1 bg-neutral-100 rounded-lg">
-                                        <button type="button" onclick={() => preferredContact = 'phone'} class="flex-1 py-2 text-sm font-bold rounded-md transition-colors {preferredContact === 'phone' ? 'bg-white shadow-sm text-brand-600' : 'text-neutral-500 hover:text-neutral-700'}">📞 Telefon</button>
-                                        <button type="button" onclick={() => preferredContact = 'email'} class="flex-1 py-2 text-sm font-bold rounded-md transition-colors {preferredContact === 'email' ? 'bg-white shadow-sm text-brand-600' : 'text-neutral-500 hover:text-neutral-700'}">✉️ E-Mail</button>
-                                        <button type="button" onclick={() => preferredContact = 'mail'} class="flex-1 py-2 text-sm font-bold rounded-md transition-colors {preferredContact === 'mail' ? 'bg-white shadow-sm text-brand-600' : 'text-neutral-500 hover:text-neutral-700'}">📮 Brief</button>
+                                    <div class="flex flex-col sm:flex-row gap-2 p-1 bg-neutral-100 rounded-lg">
+                                        <button type="button" onclick={() => preferredContact = 'phone'} class="flex-1 py-2 text-xs sm:text-sm font-bold rounded-md transition-colors {preferredContact === 'phone' ? 'bg-white shadow-sm text-brand-600' : 'text-neutral-500 hover:text-neutral-700'}">📞 Telefon</button>
+                                        <button type="button" onclick={() => preferredContact = 'email'} class="flex-1 py-2 text-xs sm:text-sm font-bold rounded-md transition-colors {preferredContact === 'email' ? 'bg-white shadow-sm text-brand-600' : 'text-neutral-500 hover:text-neutral-700'}">✉️ E-Mail</button>
+                                        <button type="button" onclick={() => preferredContact = 'mail'} class="flex-1 py-2 text-xs sm:text-sm font-bold rounded-md transition-colors {preferredContact === 'mail' ? 'bg-white shadow-sm text-brand-600' : 'text-neutral-500 hover:text-neutral-700'}">📮 Brief</button>
                                     </div>
                                 </div>
                                 
@@ -382,8 +411,8 @@ Adresse: ${preferredContact === 'mail' ? `${street}, ${zip_city}` : '-'}`;
                             </div>
 
                             <div class="pt-6 mt-6 border-t border-neutral-100 shrink-0">
-                                <button type="submit" class="orga-button-primary w-full text-base py-3.5 shadow-brand-600/30 hover:shadow-brand-600/50" disabled={isLoading}>{isLoading ? "Anfrage wird sicher übertragen..." : "Termin unverbindlich anfragen"}</button>
-                                <p class="text-center text-xs text-neutral-400 mt-3 flex items-center justify-center gap-1.5"><span>🔒</span> Ihre Daten werden verschlüsselt übertragen und streng vertraulich behandelt.</p>
+                                <button type="submit" class="orga-button-primary w-full text-base py-3.5 shadow-brand-600/30 hover:shadow-brand-600/50" disabled={isLoading || !selectedDate || !sender_name.trim() || !isValidContact}>{isLoading ? "Anfrage wird sicher übertragen..." : "Termin unverbindlich anfragen"}</button>
+                                <p class="text-center text-[10px] sm:text-xs text-neutral-400 mt-3 flex items-start sm:items-center justify-center gap-1.5"><span class="mt-0.5 sm:mt-0">🔒</span> <span class="text-left sm:text-center">Ihre Daten werden verschlüsselt übertragen und streng vertraulich behandelt.</span></p>
                             </div>
                         </div>
                     </div>

@@ -1086,41 +1086,6 @@
       {
         "help": "",
         "hidden": false,
-        "id": "bool99999999",
-        "name": "settled",
-        "presentable": false,
-        "required": false,
-        "system": false,
-        "type": "bool"
-      },
-      {
-        "help": "",
-        "hidden": false,
-        "id": "bool1784253682",
-        "name": "is_series",
-        "presentable": false,
-        "required": false,
-        "system": false,
-        "type": "bool"
-      },
-      {
-        "autogeneratePattern": "",
-        "help": "Eindeutige ID zur Gruppierung von Serienterminen",
-        "hidden": false,
-        "id": "text_series_id_1",
-        "max": 0,
-        "min": 0,
-        "name": "series_id",
-        "pattern": "",
-        "presentable": false,
-        "primaryKey": false,
-        "required": false,
-        "system": false,
-        "type": "text"
-      },
-      {
-        "help": "",
-        "hidden": false,
         "id": "gxbsgg5f",
         "max": "",
         "min": "",
@@ -1274,6 +1239,41 @@
         "required": false,
         "system": false,
         "type": "relation"
+      },
+      {
+        "help": "",
+        "hidden": false,
+        "id": "bool3812815362",
+        "name": "settled",
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "bool"
+      },
+      {
+        "help": "",
+        "hidden": false,
+        "id": "bool1784253682",
+        "name": "is_series",
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "bool"
+      },
+      {
+        "autogeneratePattern": "",
+        "help": "",
+        "hidden": false,
+        "id": "text1383608732",
+        "max": 0,
+        "min": 0,
+        "name": "series_id",
+        "pattern": "",
+        "presentable": false,
+        "primaryKey": false,
+        "required": false,
+        "system": false,
+        "type": "text"
       },
       {
         "hidden": false,
@@ -1740,6 +1740,20 @@
         "maxSelect": 0,
         "minSelect": 0,
         "name": "caregiver",
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "relation"
+      },
+      {
+        "cascadeDelete": false,
+        "collectionId": "00vkipv5adisx5g",
+        "help": "",
+        "hidden": false,
+        "id": "relation1337919823",
+        "maxSelect": 0,
+        "minSelect": 0,
+        "name": "company",
         "presentable": false,
         "required": false,
         "system": false,
@@ -2408,6 +2422,18 @@
         "type": "text"
       },
       {
+        "help": "",
+        "hidden": false,
+        "id": "date2464439331",
+        "max": "",
+        "min": "",
+        "name": "birthdate",
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "date"
+      },
+      {
         "exceptDomains": null,
         "help": "",
         "hidden": false,
@@ -2789,19 +2815,17 @@
         "type": "text"
       },
       {
-        "autogeneratePattern": "",
         "help": "",
         "hidden": false,
         "id": "number3367870285",
-        "max": 0,
-        "min": 0,
+        "max": null,
+        "min": null,
         "name": "sum",
-        "pattern": "",
+        "onlyInt": false,
         "presentable": false,
-        "primaryKey": false,
         "required": false,
         "system": false,
-        "type": "text"
+        "type": "number"
       },
       {
         "hidden": false,
@@ -2963,7 +2987,7 @@
         "id": "text3086494621",
         "max": 0,
         "min": 0,
-        "name": "billing_address_extra",
+        "name": "addition",
         "pattern": "",
         "presentable": false,
         "primaryKey": false,
@@ -3755,6 +3779,152 @@
         "type": "relation"
       },
       {
+        "cascadeDelete": false,
+        "collectionId": "_pb_users_auth_",
+        "help": "",
+        "hidden": false,
+        "id": "relation2472643433",
+        "maxSelect": 0,
+        "minSelect": 0,
+        "name": "send_by",
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "relation"
+      },
+      {
+        "cascadeDelete": false,
+        "collectionId": "00vkipv5adisx5g",
+        "help": "",
+        "hidden": false,
+        "id": "relation1337919823",
+        "maxSelect": 0,
+        "minSelect": 0,
+        "name": "company",
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "relation"
+      },
+      {
+        "hidden": false,
+        "id": "autodate2990389176",
+        "name": "created",
+        "onCreate": true,
+        "onUpdate": false,
+        "presentable": false,
+        "system": false,
+        "type": "autodate"
+      },
+      {
+        "hidden": false,
+        "id": "autodate3332085495",
+        "name": "updated",
+        "onCreate": true,
+        "onUpdate": true,
+        "presentable": false,
+        "system": false,
+        "type": "autodate"
+      }
+    ],
+    "indexes": [],
+    "system": false
+  },
+  {
+    "id": "pbc_1809339801",
+    "listRule": "",
+    "viewRule": "",
+    "createRule": "",
+    "updateRule": "",
+    "deleteRule": "",
+    "name": "otp_codes",
+    "type": "base",
+    "fields": [
+      {
+        "autogeneratePattern": "[a-z0-9]{15}",
+        "help": "",
+        "hidden": false,
+        "id": "text3208210256",
+        "max": 15,
+        "min": 15,
+        "name": "id",
+        "pattern": "^[a-z0-9]+$",
+        "presentable": false,
+        "primaryKey": true,
+        "required": true,
+        "system": true,
+        "type": "text"
+      },
+      {
+        "exceptDomains": null,
+        "help": "",
+        "hidden": false,
+        "id": "email3885137012",
+        "name": "email",
+        "onlyDomains": null,
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "email"
+      },
+      {
+        "autogeneratePattern": "",
+        "help": "",
+        "hidden": false,
+        "id": "text1997877400",
+        "max": 0,
+        "min": 0,
+        "name": "code",
+        "pattern": "",
+        "presentable": false,
+        "primaryKey": false,
+        "required": false,
+        "system": false,
+        "type": "text"
+      },
+      {
+        "help": "",
+        "hidden": false,
+        "id": "date2593941644",
+        "max": "",
+        "min": "",
+        "name": "expires",
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "date"
+      },
+      {
+        "autogeneratePattern": "",
+        "help": "",
+        "hidden": false,
+        "id": "text2809058197",
+        "max": 0,
+        "min": 0,
+        "name": "user_id",
+        "pattern": "",
+        "presentable": false,
+        "primaryKey": false,
+        "required": false,
+        "system": false,
+        "type": "text"
+      },
+      {
+        "help": "",
+        "hidden": false,
+        "id": "select4133428192",
+        "maxSelect": 0,
+        "name": "user_type",
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "select",
+        "values": [
+          "client",
+          "contact"
+        ]
+      },
+      {
         "hidden": false,
         "id": "autodate2990389176",
         "name": "created",
@@ -4256,20 +4426,6 @@
         "type": "relation"
       },
       {
-        "cascadeDelete": false,
-        "collectionId": "00vkipv5adisx5g",
-        "help": "",
-        "hidden": false,
-        "id": "relation_company_client",
-        "maxSelect": 1,
-        "minSelect": 0,
-        "name": "company",
-        "presentable": false,
-        "required": false,
-        "system": false,
-        "type": "relation"
-      },
-      {
         "hidden": false,
         "id": "autodate2990389176",
         "name": "created",
@@ -4593,7 +4749,7 @@
         "autogeneratePattern": "",
         "help": "",
         "hidden": false,
-        "id": "number2526027604",
+        "id": "text2526027604",
         "max": 0,
         "min": 0,
         "name": "number",
@@ -4621,7 +4777,7 @@
         "help": "",
         "hidden": false,
         "id": "text999008199",
-        "max": 0,
+        "max": 50000,
         "min": 0,
         "name": "text",
         "pattern": "",
@@ -4630,6 +4786,17 @@
         "required": false,
         "system": false,
         "type": "text"
+      },
+      {
+        "help": "",
+        "hidden": false,
+        "id": "json3074823948",
+        "maxSize": 0,
+        "name": "read_by",
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "json"
       },
       {
         "hidden": false,

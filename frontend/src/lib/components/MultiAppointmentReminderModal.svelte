@@ -193,7 +193,7 @@
                         compWeb = comp.website || compWeb;
                         if (comp.logo) {
                             const logoFilename = Array.isArray(comp.logo) ? comp.logo[0] : comp.logo;
-                            const logoUrl = (pb.files as any).getUrl ? (pb.files as any).getUrl(comp, logoFilename) : (pb.files as any).getURL(comp, logoFilename);
+                            const logoUrl = pb.files.getURL(comp, logoFilename);
                             compLogo = logoUrl.startsWith('http') ? logoUrl.replace(/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?/, 'https://www.ihre-seniorenassistenz.com') : `https://www.ihre-seniorenassistenz.com${logoUrl}`;
                         }
                     }
@@ -228,7 +228,7 @@
                                         <h1 style="color: #954028; margin: 0; font-size: 24px; letter-spacing: -0.5px; font-weight: 800;">${compName}</h1>
                                         <p style="color: #c66a4d; margin: 4px 0 0 0; font-size: 14px; font-weight: 600;">Alltagshilfe • Betreuung • Organisation</p>
                                     </td>
-                                    ${compLogo ? `<td valign="middle" align="right" style="width: 100px;"><img src="${compLogo}" alt="Logo" style="max-height: 60px; max-width: 100px; object-fit: contain; border-radius: 6px;" /></td>` : ''}
+                                    ${compLogo ? `<td valign="middle" align="right" style="width: 100px;"><img src="${compLogo}" alt="Logo" width="100" style="max-height: 60px; max-width: 100px; object-fit: contain; border-radius: 6px;" /></td>` : ''}
                                 </tr>
                             </table>
                         </div>
