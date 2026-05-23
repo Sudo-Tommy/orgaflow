@@ -325,47 +325,49 @@
         } catch (err) { console.error(err); toastStore.error("Fehler beim Löschen der Leistung."); } finally { isTaskLoading = false; }
     }
 
-    async function deleteAppointment() {
-        if (!appointment || !(await confirmStore.ask("Möchten Sie diesen Termin wirklich löschen?", "Termin löschen?", "Löschen", "Abbrechen", true))) return;
-        
-        let deleteFutureSeries = false;
-        if (appointment.is_series && appointment.series_id) {
-            deleteFutureSeries = await confirmStore.ask("Dies ist ein Serientermin. Wollen Sie zusätzlich ALLE zukünftigen Termine dieser Serie löschen?", "Komplette Serie löschen?", "Ja, Serie löschen", "Nein, nur diesen", true);
-        }
+    async function deleteSeries() {
+        if (!appointment || !appointment.is_series || !appointment.series_id) return;
+        if (!(await confirmStore.ask("Möchten Sie diesen und ALLE zukünftigen Termine dieser Serie wirklich löschen?", "Komplette Serie löschen?", "Ja, Serie löschen", "Abbrechen", true))) return;
 
         try {
-            if (deleteFutureSeries) {
-                const appDate = new Date(appointment.appointment || new Date());
-                appDate.setHours(0,0,0,0);
-                const futureApps = await pb.collection('appointments').getFullList({
-                    filter: `series_id = '${appointment.series_id}' && appointment >= '${appDate.toISOString()}'`,
-                    requestKey: null
-                });
-                
-                const promises = [];
-                for (const a of futureApps) {
-                    if (a.time_record) {
-                        for (const trId of a.time_record) promises.push(pb.collection('time_records').delete(trId).catch(()=>{}));
-                    }
-                    promises.push(pb.collection('appointments').delete(a.id));
+            const appDate = new Date(appointment.appointment || new Date());
+            appDate.setHours(0,0,0,0);
+            const futureApps = await pb.collection('appointments').getFullList({
+                filter: `series_id = '${appointment.series_id}' && appointment >= '${appDate.toISOString()}'`,
+                requestKey: null
+            });
+            
+            const promises = [];
+            for (const a of futureApps) {
+                if (a.time_record) {
+                    for (const trId of a.time_record) promises.push(pb.collection('time_records').delete(trId).catch(()=>{}));
                 }
-
-                const chunkSize = 20;
-                for (let i = 0; i < promises.length; i += chunkSize) {
-                    await Promise.all(promises.slice(i, i + chunkSize));
-                }
-                
-                if (orgaStore.appointments) {
-                    const deletedIds = futureApps.map((a:any) => a.id);
-                    orgaStore.appointments.data = orgaStore.appointments.data.filter((a:any) => !deletedIds.includes(a.id));
-                }
-                toastStore.info(`Komplette Terminserie gelöscht (${futureApps.length} Termine).`);
-                close();
-            } else {
-                await pb.collection('appointments').delete(appointment.id); 
-                close(); 
-                toastStore.info("Termin gelöscht."); 
+                promises.push(pb.collection('appointments').delete(a.id));
             }
+
+            const chunkSize = 20;
+            for (let i = 0; i < promises.length; i += chunkSize) {
+                await Promise.all(promises.slice(i, i + chunkSize));
+            }
+            
+            if (orgaStore.appointments) {
+                const deletedIds = futureApps.map((a:any) => a.id);
+                orgaStore.appointments.data = orgaStore.appointments.data.filter((a:any) => !deletedIds.includes(a.id));
+            }
+            toastStore.info(`Komplette Terminserie gelöscht (${futureApps.length} Termine).`);
+            close();
+        } catch (err) {
+            toastStore.error("Fehler beim Löschen der Serie.");
+        }
+    }
+
+    async function deleteAppointment() {
+        if (!appointment || !(await confirmStore.ask(appointment.is_series ? "Möchten Sie nur diesen einzelnen Termin löschen?" : "Möchten Sie diesen Termin wirklich löschen?", "Termin löschen?", "Löschen", "Abbrechen", true))) return;
+
+        try {
+            await pb.collection('appointments').delete(appointment.id); 
+            close(); 
+            toastStore.info("Termin gelöscht."); 
         } catch (err) { 
             toastStore.error("Fehler beim Löschen."); 
         }
@@ -392,9 +394,15 @@
             </div>
             <div class="flex items-center gap-1 sm:gap-2 shrink-0 self-end sm:self-auto">
                 {#if appointment}
+                    {#if appointment.is_series && appointment.series_id}
+                        <button onclick={deleteSeries} class="p-1.5 sm:p-2 text-rose-500 hover:text-white hover:bg-rose-600 rounded-lg transition-colors bg-rose-50 flex items-center gap-1.5 shadow-sm border border-rose-100 hover:border-rose-600" title="Serie löschen (Dieser & alle zukünftigen)">
+                            <svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                            <span class="text-[10px] sm:text-xs font-bold hidden md:block">Serie löschen</span>
+                        </button>
+                    {/if}
                     <button onclick={() => reminderModal?.open(appointment, fullClient)} class="p-1.5 sm:p-2 text-neutral-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors bg-neutral-100 sm:bg-transparent" title="Termin-Erinnerung senden"><svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg></button>
                     <button onclick={() => editModal?.open(appointment)} class="p-1.5 sm:p-2 text-neutral-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors bg-neutral-100 sm:bg-transparent" title="Termin bearbeiten"><svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg></button>
-                    <button onclick={deleteAppointment} class="p-1.5 sm:p-2 text-neutral-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors bg-neutral-100 sm:bg-transparent" title="Termin löschen"><svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
+                    <button onclick={deleteAppointment} class="p-1.5 sm:p-2 text-neutral-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors bg-neutral-100 sm:bg-transparent" title="Einzelnen Termin löschen"><svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
                 {/if}
                 <div class="w-px h-6 bg-neutral-200 mx-0 sm:mx-1 hidden sm:block"></div>
                 <button aria-label="Schließen" onclick={close} class="absolute top-4 right-4 sm:relative sm:top-0 sm:right-0 w-8 h-8 sm:w-8 sm:h-8 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-colors shadow-sm sm:shadow-none"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>

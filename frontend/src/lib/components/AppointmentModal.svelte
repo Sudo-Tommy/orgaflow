@@ -284,19 +284,14 @@
         }
     }
     
-    async function deleteAppointment() {
-        if (!editId) return;
+    async function deleteSeries() {
+        if (!editId || !is_series || !series_id) return;
         
-        if (!(await confirmStore.ask("Möchten Sie diesen Termin wirklich löschen?", "Termin löschen?", "Löschen", "Abbrechen", true))) return;
-
-        let deleteFutureSeries = false;
-        if (is_series && series_id) {
-            deleteFutureSeries = await confirmStore.ask("Dies ist ein Serientermin. Wollen Sie zusätzlich ALLE zukünftigen Termine dieser Serie löschen?", "Komplette Serie löschen?", "Ja, Serie löschen", "Nein, nur diesen", true);
-        }
+        if (!(await confirmStore.ask("Möchten Sie diesen und ALLE zukünftigen Termine dieser Serie wirklich löschen?", "Komplette Serie löschen?", "Ja, Serie löschen", "Abbrechen", true))) return;
 
         isLoading = true;
         try {
-            if (deleteFutureSeries && series_id && appDate) {
+            if (series_id && appDate) {
                 const localDateStr = `${appDate}T00:00:00`;
                 const futureApps = await pb.collection('appointments').getFullList({
                     filter: `series_id = '${series_id}' && appointment >= '${new Date(localDateStr).toISOString()}'`,
@@ -321,11 +316,25 @@
                     orgaStore.appointments.data = orgaStore.appointments.data.filter((a:any) => !deletedIds.includes(a.id));
                 }
                 toastStore.info(`Komplette Terminserie gelöscht (${futureApps.length} Termine).`);
-            } else {
-                await pb.collection('appointments').delete(editId);
-                if (orgaStore.appointments) orgaStore.appointments.data = orgaStore.appointments.data.filter((a:any) => a.id !== editId);
-                toastStore.info("Termin gelöscht.");
             }
+            close();
+        } catch (err) {
+            errorMsg = "Fehler beim Löschen der Serie.";
+        } finally {
+            isLoading = false;
+        }
+    }
+
+    async function deleteAppointment() {
+        if (!editId) return;
+        
+        if (!(await confirmStore.ask(is_series ? "Möchten Sie nur diesen einzelnen Termin löschen?" : "Möchten Sie diesen Termin wirklich löschen?", "Termin löschen?", "Löschen", "Abbrechen", true))) return;
+
+        isLoading = true;
+        try {
+            await pb.collection('appointments').delete(editId);
+            if (orgaStore.appointments) orgaStore.appointments.data = orgaStore.appointments.data.filter((a:any) => a.id !== editId);
+            toastStore.info("Termin gelöscht.");
             close();
         } catch (err) {
             errorMsg = "Fehler beim Löschen.";
@@ -495,7 +504,12 @@
             
             <div class="pt-4 flex flex-col-reverse sm:flex-row justify-between gap-3 border-t border-neutral-100 mt-6">
                 {#if editId}
-                    <button type="button" onclick={deleteAppointment} class="orga-button-ghost text-rose-600 hover:text-rose-700 hover:bg-rose-50 w-full sm:w-auto py-3 sm:py-2.5" disabled={isLoading}>Termin löschen</button>
+                    <div class="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+                        <button type="button" onclick={deleteAppointment} class="orga-button-ghost text-rose-600 hover:text-rose-700 hover:bg-rose-50 w-full sm:w-auto py-3 sm:py-2.5" disabled={isLoading}>Termin löschen</button>
+                        {#if is_series && series_id}
+                            <button type="button" onclick={deleteSeries} class="orga-button-ghost text-rose-600 hover:text-rose-700 hover:bg-rose-50 border-rose-200 w-full sm:w-auto py-3 sm:py-2.5" disabled={isLoading}>Serie löschen</button>
+                        {/if}
+                    </div>
                 {:else}
                     <div class="hidden sm:block"></div>
                 {/if}

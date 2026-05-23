@@ -61,7 +61,8 @@
         const handleSync = (e: any) => { selectedCompanyId = e.detail; };
         window.addEventListener('global-company-changed', handleSync);
 
-        pb.collection('appointments').subscribe('*', async (e) => {
+        // Eigene Referenz für den Callback, damit beim Unsubscribe nicht die globale Verbindung getrennt wird!
+        const realtimeCallback = async (e: any) => {
             if (orgaStore.appointments) {
                 if (e.action === 'delete') {
                     orgaStore.appointments.data = orgaStore.appointments.data.filter((a: any) => a.id !== e.record.id);
@@ -76,7 +77,9 @@
                     } catch (err) {}
                 }
             }
-        }).catch(() => {});
+        };
+        
+        pb.collection('appointments').subscribe('*', realtimeCallback);
 
         if (isSuperAdmin) {
             pb.collection('users').getFullList({ requestKey: null }).then(res => {
@@ -105,7 +108,8 @@
 
     // Filtert die Termine basierend auf dem gewählten Klienten
     let filteredAppointments = $derived.by(() => {
-        let list = appointments;
+        // Svelte 5 Reaktivität: Direkt an den Live-Store binden, falls vorhanden, sonst Fallback auf Props
+        let list = orgaStore.appointments?.data || appointments;
 
         let filterCompId = selectedCompanyId;
         if (!isGodMode && myCompId) {
