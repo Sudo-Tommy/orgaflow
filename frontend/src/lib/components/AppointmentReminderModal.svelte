@@ -23,6 +23,7 @@
     let appLocation = $state("");
     let appReport = $state("");
     let includeReport = $state(false);
+    let generatedBody = $state<string | null>(null);
 
     let availableContacts = $state<any[]>([]);
     let showContactDropdown = $state(false);
@@ -30,6 +31,8 @@
     let futureAppointments = $state<any[]>([]);
     let selectedFutureAppIds = $state<string[]>([]);
     let includeFutureApps = $state(false);
+
+    let isGenerating = $state(false);
 
     function buildAvailableContacts() {
         let list: any[] = [];
@@ -100,7 +103,11 @@
             ? (isClientOnly ? `hiermit erhalten Sie eine Nachricht zu unserem gemeinsamen Termin vom ${appDate}.` : `hiermit erhalten Sie eine Nachricht zu unserem Termin mit ${clientName} vom ${appDate}.`)
             : (isClientOnly ? `hiermit möchten wir Sie an unseren gemeinsamen Termin am ${appDate} um ${appTime} erinnern.` : `hiermit möchten wir Sie an unseren Termin mit ${clientName} am ${appDate} um ${appTime} erinnern.`);
             
-        message = `${newSalutation}\n\n${baseText}\n\nIhre Termine können Sie auch jederzeit im Klienten-Portal einsehen:\n👉 https://www.ihre-seniorenassistenz.com/portal\n\nWir freuen uns auf Sie!`;
+        if (generatedBody) {
+            message = `${newSalutation}\n\n${generatedBody}`;
+        } else {
+            message = `${newSalutation}\n\n${baseText}\n\nIhre Termine können Sie auch jederzeit im Klienten-Portal einsehen:\n👉 https://www.ihre-seniorenassistenz.com/portal\n\nWir freuen uns auf Sie!`;
+        }
     }
 
     export function open(app: any, cl: any) {
@@ -186,6 +193,78 @@
             if (matched) selectedContactRefs = [matched];
         }
         updateMessage();
+    }
+
+    async function generateAiMessage() {
+        isGenerating = true;
+        generatedBody = null;
+        try {
+            const isClientOnly = selectedContactRefs.length > 0 ? selectedContactRefs.every(c => c.isClient) : (client?.expand?.caregiver ? false : true);
+            const clientNameStr = client ? `${client.name_first || ''} ${client.name_last || ''}`.trim() : 'unserem Klienten';
+            
+            const recipientContext = isClientOnly 
+                ? "Die Nachricht richtet sich direkt an den Klienten selbst (z.B. 'an unseren gemeinsamen Termin zur Begleitung bei...')."
+                : `Die Nachricht richtet sich an einen Betreuer oder Angehörigen. Erwähne den Termin in Bezug auf den Klienten (z.B. 'an unseren gemeinsamen Termin zur Begleitung unserer Klientin Frau/Herr ${client?.name_last || clientNameStr} bei...').`;
+
+            const internalNotes = appointment?.internal_notes || appointment?.notes || "";
+            const internalNotesContext = internalNotes ? `\nInterne Notizen: ${internalNotes}` : "";
+
+            const prompt = `Du bist ein professioneller Assistent für eine Seniorenassistenz. Formuliere eine prägnante Terminerinnerung.
+
+Kontext des Termins:
+Datum: ${appDate}
+Uhrzeit (Beginn des Termins): ${appTime}
+Anliegen: ${appDesc}
+Ort des Termins (NICHT der Treffpunkt): ${appLocation || 'Beim Klienten zu Hause'}${internalNotesContext}
+
+Empfänger-Kontext:
+${recipientContext}
+Wichtige Regel zum Treffpunkt: Sofern in den internen Notizen nicht ausdrücklich ein anderer Treffpunkt vereinbart wurde, treffen wir uns IMMER beim Klienten zu Hause.
+
+Anweisungen an dich:
+1. Erinnere freundlich an den Termin am ${appDate} um ${appTime} Uhr.
+2. Berechne eine logische und absolut fehlerfreie Ankunftszeit (Treffpunktzeit) bei der Klientin / dem Klienten. Beachte zwingend diese Reihenfolge:
+   - WICHTIGSTE REGEL (PRIORITÄT 1): Wenn in den internen Notizen eine Abholzeit, ein Taxi oder ein Fahrdienst mit einer bestimmten Uhrzeit erwähnt wird (z.B. "Taxi 07:15"), MUSST du deine Ankunft logischerweise VOR diese Abholzeit legen (ca. 15-30 Minuten VOR dem Taxi), damit du rechtzeitig vor Ort bist, um die Abfahrt zu begleiten! Beziehe dich bei der Berechnung dann NICHT mehr auf den Terminbeginn, sondern NUR auf die Taxi-/Abfahrtszeit.
+   - Regel A: Wenn im Kontext ein Rollstuhl erwähnt wird (hoher Vorbereitungsaufwand), setze die Ankunftszeit 1 Stunde VOR der Termin-Uhrzeit an.
+   - Regel B: Wenn der Pflegedienst den Klienten vorbereitet (startklar macht), genügt ein kurzer Puffer von 15 Minuten vorab.
+   - Regel C: In allen anderen Standardfällen (ohne Taxi/Fahrdienst) plane einen entspannten Vorbereitungspuffer von 30 Minuten VOR dem eigentlichen Termin ein.
+   Erwähne diese berechnete Ankunftszeit freundlich und konkret im Einleitungstext (z.B. "Um ausreichend Zeit für die Vorbereitung zu haben, werde ich bereits um [berechnete Uhrzeit] Uhr bei Ihnen sein.").
+3. Erstelle eine Sektion "Kleine Checkliste vorab:" mit 3-5 relevanten, sehr spezifischen Hinweisen für den Klienten oder Pflegedienst. Überlege tiefgreifend, was bei diesem konkreten Anliegen fachlich, körperlich oder organisatorisch wichtig ist (z.B. bei Podologie keine Thrombosestrümpfe; bei körperlichen Untersuchungen wie MRT, EKG oder Mammografie zweiteilige, leicht an- und auszuziehende Kleidung wählen; an notwendige Hilfsmittel wie Rollator denken; bei längeren Wartezeiten ein Getränk einpacken). Beziehe auch zwingend alle Informationen aus den internen Notizen mit ein.
+4. Formatiere die Checkliste AUSSCHLIESSLICH exakt in diesem Format (mit Leerzeichen, eckigen Klammern und Bindestrich):
+Kleine Checkliste vorab:
+   [ ] - Liegt die Versichertenkarte bereit?
+   [ ] - [Dein spezifischer Hinweis 1]
+   [ ] - [Dein spezifischer Hinweis 2]
+5. Verwende absolut KEINERLEI Sonderzeichen wie *, _, # oder • (außer dem "   [ ] - " in der Checkliste). Der gesamte Text muss reiner, unformatierter Text sein.
+6. Vermeide redundante, offensichtliche Floskeln, außer der zwingend zu nennenden berechneten Ankunftszeit. Halte den Text stattdessen kurz und informativ.
+7. Füge nach der Checkliste in einem neuen Absatz diesen Satz hinzu: "Ihre Termine können Sie auch jederzeit im Klienten-Portal einsehen: https://www.ihre-seniorenassistenz.com/portal"
+8. Schließe ab mit:\n"Mit freundlichen Grüßen\nIhre Seniorenassistenz"
+
+WICHTIG: Beginne NICHT mit einer Anrede ("Sehr geehrte..."), da diese schon vorhanden ist. Beginne direkt mit dem ersten Satz, kleingeschrieben (z.B. "gerne möchte ich...").`;
+
+            const microserviceUrl = import.meta.env.DEV ? 'http://localhost:3000' : '';
+            const res = await fetch(`${microserviceUrl}/api/emails/ai/transcribe`, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${pb.authStore.token}`
+                },
+                body: JSON.stringify({
+                    prompt: prompt,
+                    inputText: "Generiere die Nachricht basierend auf dem Prompt."
+                })
+            });
+
+            const data = await res.json();
+            if (!res.ok || data.error) throw new Error(data.error || "Server-Fehler bei der KI-Anfrage.");
+
+            generatedBody = data.text;
+            updateMessage();
+        } catch (err: any) {
+            toastStore.error(err.message || "KI-Vorschlag konnte nicht generiert werden.");
+        } finally {
+            isGenerating = false;
+        }
     }
 
     async function handleSend(e: Event) {
@@ -501,8 +580,17 @@
             {/if}
 
             <div>
-                <label for="rem-message" class="block text-sm font-semibold text-neutral-700 mb-1.5">Nachricht</label>
-                <textarea id="rem-message" bind:value={message} rows="6" class="orga-input-clear py-3 sm:py-2.5 text-sm resize-none custom-scrollbar" required disabled={isSending}></textarea>
+                <div class="flex items-center justify-between mb-1.5">
+                    <label for="rem-message" class="block text-sm font-semibold text-neutral-700">Nachricht</label>
+                    <button type="button" onclick={generateAiMessage} disabled={isSending || isGenerating} class="text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-3 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-colors shadow-sm disabled:opacity-50">
+                        {#if isGenerating}
+                            <div class="w-3 h-3 border-2 border-indigo-200 border-t-indigo-700 rounded-full animate-spin"></div> KI schreibt...
+                        {:else}
+                            <span>✨</span> KI-Vorschlag
+                        {/if}
+                    </button>
+                </div>
+                <textarea id="rem-message" bind:value={message} rows="8" class="orga-input-clear py-3 sm:py-2.5 text-sm resize-none custom-scrollbar" required disabled={isSending || isGenerating}></textarea>
             </div>
 
             {#if appReport}

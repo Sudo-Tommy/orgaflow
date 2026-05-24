@@ -381,6 +381,25 @@ async function sendPdfViaEmail() {
             }
         } catch (e) { console.warn("E-Mail konnte nicht im Postfach gespeichert werden", e); }
 
+        try {
+            if (service.isInvoice && service.generatedInvoiceId) {
+                let newStatus: any = 'Eingereicht';
+                try {
+                    await pb.collection('invoices').update(service.generatedInvoiceId, { status: newStatus }, { requestKey: null });
+                } catch (fallbackErr) {
+                    // Fallback, falls 'Eingereicht' in der Datenbank als Status nicht existiert
+                    newStatus = 'Offen';
+                    await pb.collection('invoices').update(service.generatedInvoiceId, { status: newStatus }, { requestKey: null });
+                }
+                if (orgaStore.invoices) {
+                    const idx = orgaStore.invoices.data.findIndex((i: any) => i.id === service.generatedInvoiceId);
+                    if (idx !== -1) {
+                        orgaStore.invoices.data[idx] = { ...orgaStore.invoices.data[idx], status: newStatus };
+                    }
+                }
+            }
+        } catch (e) { console.warn("Status der Rechnung konnte nicht aktualisiert werden", e); }
+
         emailSuccessMsg = "E-Mail wurde erfolgreich mit Anhang versendet!";
     } catch (err: any) {
         console.error(err);
@@ -520,12 +539,20 @@ async function sendPdfViaEmail() {
         </div>
     </div>
 
-    <div class="pt-4 flex flex-col-reverse sm:flex-row justify-between gap-3 mt-4 border-t border-neutral-100">
-        <button type="button" onclick={onDownload} class="orga-button-ghost w-full sm:w-auto py-3 sm:py-2.5 px-6" disabled={isEmailSending}>Manuell herunterladen</button>
-        <div class="flex flex-col-reverse sm:flex-row gap-3 w-full sm:w-auto">
-            <button type="button" onclick={() => { onClose(); service.reset(); }} class="orga-button-ghost w-full sm:w-auto py-3 sm:py-2.5 px-6" disabled={isEmailSending}>Schließen</button>
-            <button type="button" onclick={sendPdfViaEmail} class="orga-button-primary shadow-indigo-600/30 w-full sm:w-auto py-3 sm:py-2.5 px-6" disabled={isEmailSending || !emailTo}>
-                {isEmailSending ? 'Wird gesendet...' : 'E-Mail senden ✉️'}
+        <div class="p-4 sm:p-6 border-t border-neutral-100 bg-white/95 backdrop-blur-md flex flex-wrap sm:flex-nowrap justify-between items-center gap-2 sm:gap-4 shrink-0 sticky bottom-0 z-20 pb-[max(env(safe-area-inset-bottom,0px),1rem)]">
+            <button type="button" onclick={onDownload} aria-label="Herunterladen" class="orga-button-ghost w-full sm:w-auto py-3 sm:py-2.5 px-4 sm:px-6 active:scale-95 text-xs sm:text-sm flex justify-center items-center gap-1.5" disabled={isEmailSending}>
+                <span class="sm:hidden text-lg">💾</span>
+                <span class="hidden sm:inline">Manuell herunterladen</span>
+            </button>
+            <div class="flex flex-row gap-2 sm:gap-3 w-full sm:w-auto mt-2 sm:mt-0">
+                <button type="button" onclick={() => { onClose(); service.reset(); }} aria-label="Schließen" class="orga-button-ghost flex-1 sm:flex-none py-3 sm:py-2.5 px-4 sm:px-6 active:scale-95 text-xs sm:text-sm flex justify-center items-center gap-1.5" disabled={isEmailSending}>
+                    <span class="sm:hidden text-lg">❌</span>
+                    <span class="hidden sm:inline">Schließen</span>
+                </button>
+                <button type="button" onclick={sendPdfViaEmail} aria-label="E-Mail senden" class="orga-button-primary shadow-indigo-600/30 flex-1 sm:flex-none py-3 sm:py-2.5 px-4 sm:px-6 active:scale-95 text-xs sm:text-sm flex justify-center items-center gap-1.5" disabled={isEmailSending || !emailTo}>
+                    {#if isEmailSending}<div class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>{/if}
+                    <span class="sm:hidden text-lg">{isEmailSending ? '' : '📤'}</span>
+                    <span class="hidden sm:inline">{isEmailSending ? 'Sendet...' : 'E-Mail senden ✉️'}</span>
             </button>
         </div>
     </div>

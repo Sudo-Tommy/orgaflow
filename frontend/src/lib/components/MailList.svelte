@@ -8,6 +8,7 @@
     totalPages: number;
     isLoading: boolean;
     folderName: string;
+    isMobileDetailOpen?: boolean;
     onEmailSelect: (id: string) => void;
     onPageChange: (page: number) => void;
     onToggleMenu: () => void;
@@ -21,6 +22,7 @@
     totalPages, 
     isLoading, 
     folderName,
+    isMobileDetailOpen = false,
     onEmailSelect,
     onPageChange,
     onToggleMenu,
@@ -41,30 +43,21 @@
     return date.toLocaleDateString('de-DE');
   }
 
-  function truncateText(text: string, length: number = 50) {
-    return text.length > length ? text.substring(0, length) + '...' : text;
-  }
 </script>
 
-<div class="h-full flex flex-col">
+<div class="h-full flex flex-col relative overflow-hidden">
   <!-- Header -->
   <div class="p-3 sm:p-4 border-b border-neutral-100 shrink-0 flex items-center justify-between gap-3 bg-white sticky top-0 z-10">
     <div class="flex items-center gap-3 min-w-0">
-        <button class="md:hidden p-2 -ml-2 text-neutral-500 hover:text-indigo-600 hover:bg-neutral-50 rounded-lg transition-colors" onclick={onToggleMenu} aria-label="Menü öffnen">
-          <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" /></svg>
-        </button>
         <div class="flex-1 min-w-0">
           <h2 class="text-lg font-bold text-neutral-900 truncate">{folderName}</h2>
           <p class="text-xs font-semibold text-neutral-500">{emails.length} E-Mail{emails.length !== 1 ? 's' : ''}</p>
         </div>
     </div>
-    <button class="md:hidden orga-button-primary py-1.5 px-3 text-xs shadow-indigo-600/20 shrink-0 flex items-center gap-1.5" onclick={onComposeClick}>
-      <span class="text-sm leading-none">✏️</span> Neu
-    </button>
   </div>
 
   <!-- Email list -->
-  <div class="flex-1 overflow-y-auto">
+  <div class="flex-1 overflow-y-auto pb-24">
     {#if isLoading}
       <div class="p-4 text-center text-sm text-neutral-500">Lädt...</div>
     {:else if emails.length === 0}
@@ -98,7 +91,8 @@
                 <p class={`text-sm truncate mt-0.5 ${email.is_read ? 'text-neutral-500' : 'text-neutral-800 font-semibold'}`}>
                   {email.subject || '(Kein Betreff)'}
                 </p>
-                <p class="text-xs text-neutral-400 truncate mt-1">{truncateText(email.body_text || email.body_html || '', 60)}</p>
+                <!-- UX-Optimierung: CSS Line-Clamp statt JS Truncate für flüssigeren Umbruch auf Mobile (break-words korrigiert) -->
+                <p class="text-xs text-neutral-400 line-clamp-2 mt-1 whitespace-normal wrap-break-word leading-relaxed">{email.body_text?.replace(/<[^>]*>?/gm, '') || email.body_html?.replace(/<[^>]*>?/gm, '') || ''}</p>
               </div>
             </div>
           </button>
@@ -109,7 +103,8 @@
 
   <!-- Pagination -->
   {#if totalPages > 1}
-    <div class="border-t border-neutral-100 bg-neutral-50/50 p-3 flex items-center justify-between shrink-0">
+    <!-- Auf Desktop als Leiste behalten -->
+    <div class="hidden md:flex border-t border-neutral-100 bg-neutral-50/50 p-3 items-center justify-between shrink-0">
       <button
         onclick={() => onPageChange(currentPage - 1)}
         disabled={currentPage === 1}
@@ -126,6 +121,30 @@
         aria-label="Nächste Seite"
       >
         <span class="text-sm">▶️</span>
+      </button>
+    </div>
+  {/if}
+
+  <!-- Mobile Left-Thumb Actions (Pagination FABs) -->
+  {#if totalPages > 1 && !isMobileDetailOpen}
+  <div class="md:hidden absolute bottom-6 left-4 flex flex-col gap-3 z-40 pb-[env(safe-area-inset-bottom,0px)]">
+    <button class="w-14 h-14 bg-white text-neutral-700 border border-neutral-200 rounded-full shadow-lg flex items-center justify-center text-xl hover:text-indigo-600 active:scale-95 transition-transform disabled:opacity-50" onclick={() => onPageChange(currentPage - 1)} disabled={currentPage === 1} aria-label="Vorherige Seite" title="Vorherige Seite">
+      ◀️
+    </button>
+    <button class="w-14 h-14 bg-white text-neutral-700 border border-neutral-200 rounded-full shadow-lg flex items-center justify-center text-xl hover:text-indigo-600 active:scale-95 transition-transform disabled:opacity-50" onclick={() => onPageChange(currentPage + 1)} disabled={currentPage === totalPages} aria-label="Nächste Seite" title="Nächste Seite">
+      ▶️
+    </button>
+  </div>
+  {/if}
+
+  <!-- Mobile Right-Thumb Actions (Menu & Compose FABs) -->
+  {#if !isMobileDetailOpen}
+    <div class="md:hidden absolute bottom-6 right-4 flex flex-col gap-3 z-40 pb-[env(safe-area-inset-bottom,0px)]">
+      <button class="w-14 h-14 bg-white text-neutral-700 border border-neutral-200 rounded-full shadow-lg flex items-center justify-center text-xl hover:text-indigo-600 active:scale-95 transition-transform" onclick={onToggleMenu} aria-label="Ordner" title="Ordner wechseln">
+        📁
+      </button>
+      <button class="w-14 h-14 bg-indigo-600 text-white rounded-full shadow-lg shadow-indigo-600/40 flex items-center justify-center text-xl hover:bg-indigo-700 active:scale-95 transition-transform" onclick={onComposeClick} aria-label="Neue E-Mail" title="Neue E-Mail verfassen">
+        ✏️
       </button>
     </div>
   {/if}

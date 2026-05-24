@@ -231,11 +231,14 @@
 </script>
 
 <dialog bind:this={dialog} class="p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-full max-w-md mx-auto my-auto rounded-3xl" onclick={(e) => { if (e.target === dialog) close(); }}>
-    <div class="bg-white rounded-3xl p-6 md:p-8 w-full relative max-h-[90vh] overflow-y-auto custom-scrollbar">
-        <button aria-label="Schließen" onclick={close} class="absolute top-5 right-5 w-8 h-8 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-colors"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
+    <div class="bg-white sm:rounded-3xl w-full h-dvh sm:h-auto sm:max-h-[90dvh] flex flex-col relative overflow-hidden shadow-2xl">
+        <div class="p-6 md:p-8 shrink-0 relative border-b border-neutral-100">
+            <button aria-label="Schließen" onclick={close} class="absolute top-6 right-6 w-10 h-10 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-colors z-10 active:scale-95"><svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
         <h2 class="text-xl font-bold text-neutral-900 mb-2 flex items-center gap-2"><span>🔔</span> Benachrichtigungen</h2>
         <p class="text-sm text-neutral-500 mb-6">Passen Sie an, worüber dieses Gerät Sie informieren darf.</p>
+        </div>
         
+        <div class="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-8 bg-neutral-50/30">
         {#if !isSupported}
             <div class="bg-rose-50 border border-rose-100 p-4 rounded-xl text-rose-700 text-sm font-medium mb-6">Ihr aktueller Browser unterstützt keine Push-Benachrichtigungen. (Nutzen Sie Safari auf iOS ab Version 16.4 oder Google Chrome).</div>
         {:else}
@@ -288,6 +291,13 @@
                 </div>
             {/if}
         {/if}
-        <div class="flex justify-end pt-4 border-t border-neutral-100 mt-6"><button type="button" onclick={close} class="orga-button-primary w-full sm:w-auto py-3 sm:py-2.5 px-6">Speichern & Schließen</button></div>
+        </div>
+
+        <div class="border-t border-neutral-100 p-4 sm:p-6 md:p-8 bg-white/95 backdrop-blur-md flex flex-row gap-2 sm:gap-3 shrink-0 justify-end sticky bottom-0 z-20 pb-[max(env(safe-area-inset-bottom,0px),1rem)]">
+            <button type="button" onclick={close} aria-label="Speichern und Schließen" class="orga-button-primary shadow-indigo-600/20 flex-1 sm:flex-none py-3 sm:py-2.5 px-4 sm:px-6 active:scale-95 text-xs sm:text-sm flex justify-center items-center gap-1.5">
+                <span class="sm:hidden text-lg">💾</span>
+                <span class="hidden sm:inline">Speichern & Schließen</span>
+            </button>
+        </div>
     </div>
 </dialog>

@@ -131,9 +131,9 @@
     {/if}
 
     <!-- Rendering des Inhalts -->
-    <div class="w-full h-full overflow-hidden" style="color: {field.style.color}; font-size: {field.style.fontSize}px; font-weight: {field.style.fontWeight}; text-align: {field.style.textAlign}; padding: {field.style.padding}px;">
+    <div class="w-full h-full overflow-hidden flex flex-col" style="color: {field.style.color}; font-size: {field.style.fontSize}px; font-weight: {field.style.fontWeight}; text-align: {field.style.textAlign}; padding: {field.style.padding}px; justify-content: {field.style.verticalAlign === 'middle' ? 'center' : field.style.verticalAlign === 'bottom' ? 'flex-end' : 'flex-start'};">
         {#if field.type === 'text'}
-            {@html field.content.replace(/\n/g, '<br/>')}
+            <div style="width: 100%;">{@html field.content.replace(/\n/g, '<br/>')}</div>
         {:else if field.type === 'logo'}
             {#if userCompany?.logo}
                 <div class="w-full h-full flex items-center justify-center bg-transparent">
@@ -146,43 +146,43 @@
             {/if}
         {:else if field.type === 'table'}
             <div class="w-full h-full border border-neutral-300 bg-white">
-                <div class="flex border-b border-neutral-300 font-bold" style="background-color: {field.tableConfig?.headerBackgroundColor || '#f4f4f5'}; color: {field.tableConfig?.headerTextColor || '#000'}">
-                    {#each field.tableConfig?.columns || [] as col}<div class="p-1 border-r border-neutral-300 last:border-0" style="width: {col.width}%; text-align: {col.align};">{col.name}</div>{/each}
+                <div class="flex items-center border-b border-neutral-300 font-bold" style="background-color: {field.tableConfig?.headerBackgroundColor || '#f4f4f5'}; color: {field.tableConfig?.headerTextColor || '#000'}; font-size: {field.tableConfig?.fontSize ? field.tableConfig.fontSize + 'px' : 'inherit'};">
+                    {#each field.tableConfig?.columns || [] as col}<div class="border-r border-neutral-300 last:border-0" style="padding: {field.tableConfig?.cellPadding ?? 6}px 4px; width: {col.width}%; text-align: {field.tableConfig?.headerTextAlign || col.align};">{col.name}</div>{/each}
                 </div>
                 <!-- Dummy Data Preview -->
-                <div class="flex-1 overflow-hidden flex flex-col text-neutral-600 text-xs">
+                <div class="flex-1 overflow-hidden flex flex-col text-neutral-600" style="font-size: {field.tableConfig?.fontSize ? field.tableConfig.fontSize + 'px' : '12px'};">
                     {#if field.tableConfig?.includeTimeRecords !== false}
-                        <div class="flex border-b border-neutral-100">
+                        <div class="flex border-b border-neutral-100" style="align-items: {field.tableConfig?.rowVerticalAlign === 'middle' ? 'center' : field.tableConfig?.rowVerticalAlign === 'bottom' ? 'flex-end' : 'flex-start'};">
                             {#each field.tableConfig?.columns || [] as col}
-                                <div class="p-1 border-r border-neutral-100 last:border-0 truncate" style="width: {col.width}%; text-align: {col.align};">{col.type === 'pos' ? '1' : col.type === 'date' ? '12.05.2026' : col.type === 'duration' ? '2.00 h' : col.type === 'title' ? (field.tableConfig.staticDescription || 'Betreuung: Alltagshilfe') : col.type === 'price' ? '40,00 €' : '80,00 €'}</div>
+                                <div class="border-r border-neutral-100 last:border-0 truncate" style="padding: {field.tableConfig?.cellPadding ?? 6}px 4px; width: {col.width}%; text-align: {col.align};">{col.type === 'pos' ? '1' : col.type === 'date' ? '12.05.2026' : col.type === 'duration' ? '2.00 h' : col.type === 'title' ? (field.tableConfig.staticDescription || 'Betreuung: Alltagshilfe') : col.type === 'price' ? '40,00 €' : '80,00 €'}</div>
                             {/each}
                         </div>
                     {/if}
                     {#if field.tableConfig?.includeDriveLumpSum !== false}
-                        <div class="flex border-b border-neutral-100">
+                        <div class="flex border-b border-neutral-100" style="align-items: {field.tableConfig?.rowVerticalAlign === 'middle' ? 'center' : field.tableConfig?.rowVerticalAlign === 'bottom' ? 'flex-end' : 'flex-start'};">
                             {#each field.tableConfig?.columns || [] as col}
-                                <div class="p-1 border-r border-neutral-100 last:border-0 truncate" style="width: {col.width}%; text-align: {col.align};">{col.type === 'pos' ? '2' : col.type === 'date' ? '12.05.2026' : col.type === 'duration' ? '1' : col.type === 'title' ? (field.tableConfig.staticDescription || 'Anfahrt') : col.type === 'price' ? '5,00 €' : '5,00 €'}</div>
+                                <div class="border-r border-neutral-100 last:border-0 truncate" style="padding: {field.tableConfig?.cellPadding ?? 6}px 4px; width: {col.width}%; text-align: {col.align};">{col.type === 'pos' ? '2' : col.type === 'date' ? '12.05.2026' : col.type === 'duration' ? '1' : col.type === 'title' ? (field.tableConfig.staticDescription || 'Anfahrt') : col.type === 'price' ? '5,00 €' : '5,00 €'}</div>
                             {/each}
                         </div>
                     {/if}
                     {#if field.tableConfig?.includeDriveKm !== false}
-                        <div class="flex border-b border-neutral-100">
+                        <div class="flex border-b border-neutral-100" style="align-items: {field.tableConfig?.rowVerticalAlign === 'middle' ? 'center' : field.tableConfig?.rowVerticalAlign === 'bottom' ? 'flex-end' : 'flex-start'};">
                             {#each field.tableConfig?.columns || [] as col}
-                                <div class="p-1 border-r border-neutral-100 last:border-0 truncate" style="width: {col.width}%; text-align: {col.align};">{col.type === 'pos' ? '3' : col.type === 'date' ? '12.05.2026' : col.type === 'duration' ? '15 km' : col.type === 'title' ? (field.tableConfig.staticDescription || 'Fahrtkosten (15 km)') : col.type === 'price' ? '0,30 €' : '4,50 €'}</div>
+                                <div class="border-r border-neutral-100 last:border-0 truncate" style="padding: {field.tableConfig?.cellPadding ?? 6}px 4px; width: {col.width}%; text-align: {col.align};">{col.type === 'pos' ? '3' : col.type === 'date' ? '12.05.2026' : col.type === 'duration' ? '15 km' : col.type === 'title' ? (field.tableConfig.staticDescription || 'Fahrtkosten (15 km)') : col.type === 'price' ? '0,30 €' : '4,50 €'}</div>
                             {/each}
                         </div>
                     {/if}
                     {#if field.tableConfig?.includeExpenditures !== false}
-                        <div class="flex border-b border-neutral-100">
+                        <div class="flex border-b border-neutral-100" style="align-items: {field.tableConfig?.rowVerticalAlign === 'middle' ? 'center' : field.tableConfig?.rowVerticalAlign === 'bottom' ? 'flex-end' : 'flex-start'};">
                             {#each field.tableConfig?.columns || [] as col}
-                                <div class="p-1 border-r border-neutral-100 last:border-0 truncate" style="width: {col.width}%; text-align: {col.align};">{col.type === 'pos' ? '4' : col.type === 'date' ? '12.05.2026' : col.type === 'duration' ? '1' : col.type === 'title' ? (field.tableConfig.staticDescription || 'Auslage: Apothekeneinkauf') : col.type === 'price' ? '14,50 €' : '14,50 €'}</div>
+                                <div class="border-r border-neutral-100 last:border-0 truncate" style="padding: {field.tableConfig?.cellPadding ?? 6}px 4px; width: {col.width}%; text-align: {col.align};">{col.type === 'pos' ? '4' : col.type === 'date' ? '12.05.2026' : col.type === 'duration' ? '1' : col.type === 'title' ? (field.tableConfig.staticDescription || 'Auslage: Apothekeneinkauf') : col.type === 'price' ? '14,50 €' : '14,50 €'}</div>
                             {/each}
                         </div>
                     {/if}
                 </div>
                 <!-- Dummy Footer -->
                 {#if field.tableConfig?.includeTotalNetto !== false || field.tableConfig?.includeTotalTax !== false || field.tableConfig?.includeTotalBrutto !== false}
-                    <div class="p-2 border-t-2 flex flex-col items-end text-xs" style="border-top-color: {field.tableConfig?.headerBackgroundColor || '#ccc'};">
+                    <div class="p-2 border-t-2 flex flex-col {field.tableConfig?.footerTextAlign === 'left' ? 'items-start' : field.tableConfig?.footerTextAlign === 'center' ? 'items-center' : 'items-end'}" style="border-top-color: {field.tableConfig?.headerBackgroundColor || '#ccc'}; font-size: {field.tableConfig?.fontSize ? field.tableConfig.fontSize + 'px' : '12px'};">
                         <div class="w-48">
                             {#if field.tableConfig?.includeTotalNetto !== false}
                                 <div class="flex justify-between mb-1"><span>Netto:</span> <span>104,00 €</span></div>
@@ -191,7 +191,7 @@
                                 <div class="flex justify-between mb-1"><span>MwSt (0%):</span> <span>0,00 €</span></div>
                             {/if}
                             {#if field.tableConfig?.includeTotalBrutto !== false}
-                                <div class="flex justify-between font-bold text-[13px]"><span>Gesamt:</span> <span>104,00 €</span></div>
+                                <div class="flex justify-between font-bold" style="font-size: {field.tableConfig?.fontSize ? (field.tableConfig.fontSize + 1) + 'px' : '13px'};"><span>Gesamt:</span> <span>104,00 €</span></div>
                             {/if}
                         </div>
                     </div>

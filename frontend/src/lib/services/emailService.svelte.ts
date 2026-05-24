@@ -44,6 +44,7 @@ export interface EmailFilter {
   isRead?: boolean;
   fromAddress?: string;
   search?: string;
+  userEmail?: string;
 }
 
 function fileToBase64(file: File): Promise<string> {
@@ -113,6 +114,11 @@ export function createEmailService() {
 
         let filterStr = `folder = "${filter.folder}"`;
         
+        // Filtert konsequent nach der E-Mail des Nutzers (außer der Superadmin wählt "Alle")
+        if (filter.userEmail && filter.userEmail !== "all") {
+          filterStr += ` && (to_address ~ "${filter.userEmail}" || from_address ~ "${filter.userEmail}")`;
+        }
+
         if (filter.isRead !== undefined) {
           filterStr += ` && is_read = ${filter.isRead}`;
         }
@@ -139,7 +145,7 @@ export function createEmailService() {
     },
 
     // Search emails
-    async searchEmails(query: string, folder: string): Promise<MailboxMessage[]> {
+    async searchEmails(query: string, folder: string, userEmail?: string): Promise<MailboxMessage[]> {
       isLoading = true;
       error = null;
       try {
@@ -148,7 +154,10 @@ export function createEmailService() {
           throw new Error('User not authenticated');
         }
 
-      const filterStr = `folder = "${folder}" && (subject ~ "${query}" || body_text ~ "${query}" || from_address ~ "${query}")`;
+      let filterStr = `folder = "${folder}" && (subject ~ "${query}" || body_text ~ "${query}" || from_address ~ "${query}")`;
+      if (userEmail && userEmail !== "all") {
+          filterStr += ` && (to_address ~ "${userEmail}" || from_address ~ "${userEmail}")`;
+      }
 
         const records = await pb.collection('mailbox_messages').getFullList<MailboxMessage>({
           filter: filterStr,
@@ -211,10 +220,10 @@ export function createEmailService() {
           
           // Wenn sich der Status geändert hat, Glöckchen-Badge aktualisieren!
           if (wasRead !== isRead) {
-              getMailboxService().loadFolders();
+              getMailboxService().loadFolders(pb.authStore.model?.email);
           }
         } else {
-          getMailboxService().loadFolders();
+          getMailboxService().loadFolders(pb.authStore.model?.email);
         }
 
         return updated;

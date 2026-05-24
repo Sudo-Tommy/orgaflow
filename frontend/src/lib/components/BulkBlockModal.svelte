@@ -10,6 +10,7 @@
     let startDate = $state("");
     let endDate = $state("");
     let description = $state("Wochenende / Geschlossen");
+    let is_visible = $state(true);
     let days = $state([false, false, false, false, false, true, true]); // Mo-So (Standard: Sa, So)
     const dayNames = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 
@@ -66,6 +67,7 @@
                         appointment: current.toISOString(),
                         description: `[BLOCK] ${description.trim() || 'Gesperrt'}`,
                         is_private: false,
+                        is_visible: is_visible,
                         user: pb.authStore.model?.id,
                         client: []
                     }, { requestKey: null }));
@@ -133,9 +135,17 @@
                 </div>
             </div>
 
-            <div>
-                <label for="bulk-desc" class="block text-sm font-semibold text-neutral-700 mb-1.5">Beschreibung / Grund</label>
-                <input id="bulk-desc" type="text" bind:value={description} class="orga-input-clear py-3 sm:py-2.5" placeholder="z.B. Wochenende / Urlaub" disabled={isLoading} required />
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label for="bulk-desc" class="block text-sm font-semibold text-neutral-700 mb-1.5">Beschreibung / Grund</label>
+                    <input id="bulk-desc" type="text" bind:value={description} class="orga-input-clear py-3 sm:py-2.5" placeholder="z.B. Wochenende / Urlaub" disabled={isLoading} required />
+                </div>
+                <div class="flex flex-col justify-end">
+                    <label class="flex items-center gap-3 cursor-pointer p-3 sm:p-2.5 w-full border border-neutral-200 rounded-xl hover:bg-neutral-50 transition-colors h-12 sm:h-10.5 mt-1.5 sm:mt-0">
+                        <input type="checkbox" bind:checked={is_visible} class="w-4 h-4 text-sky-600 rounded focus:ring-sky-500 border-neutral-300" disabled={isLoading} />
+                        <span class="text-sm font-bold text-neutral-700">Im Portal öffentlich sichtbar 👁️</span>
+                    </label>
+                </div>
             </div>
 
             <div class="mt-4 p-3.5 bg-rose-50 rounded-xl border border-rose-100 text-xs text-rose-700 flex gap-2.5 items-start shadow-sm">

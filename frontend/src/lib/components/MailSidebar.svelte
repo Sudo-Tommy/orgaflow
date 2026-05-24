@@ -10,6 +10,10 @@
     onComposeClick: () => void;
     isLoading: boolean;
     onCloseMenu?: () => void;
+    isSuperAdmin?: boolean;
+    users?: any[];
+    selectedUserEmail?: string;
+    onUserChange?: (email: string) => void;
   }
 
   let { 
@@ -20,7 +24,11 @@
     onConfigClick, 
     onComposeClick,
     isLoading,
-    onCloseMenu
+    onCloseMenu,
+    isSuperAdmin = false,
+    users = [],
+    selectedUserEmail = '',
+    onUserChange
   } = $props();
 </script>
 
@@ -31,24 +39,41 @@
       <h2 class="font-bold text-lg text-neutral-900">Postfach</h2>
       <button aria-label="Menü schließen" onclick={onCloseMenu} class="p-2 -mr-2 text-neutral-500 hover:bg-neutral-100 rounded-lg transition-colors"><svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
     </div>
-    <div class="flex gap-2 mb-2 md:mb-4">
+
+    <!-- Superadmin Dropdown zum Wechseln der Postfächer -->
+    {#if isSuperAdmin && users && users.length > 0}
+      <div class="mb-4">
+        <label for="mail-user-filter" class="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">Postfach für Nutzer:</label>
+        <select id="mail-user-filter" value={selectedUserEmail} onchange={(e) => onUserChange?.(e.currentTarget.value)} class="w-full bg-neutral-50 border border-neutral-200 text-sm font-semibold text-neutral-700 rounded-lg px-2 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 cursor-pointer">
+            <option value="all">Alle E-Mails (Firma)</option>
+            {#each users as u}
+                {#if u.email}<option value={u.email}>{u.name_first} {u.name_last}</option>{/if}
+            {/each}
+        </select>
+      </div>
+    {/if}
+
+    <div class="flex flex-col gap-2 mb-2 md:mb-4">
+       <!-- UX-Optimierung: "Neue Mail" Button auf Mobile ausblenden (FAB in MailList übernimmt das) -->
+      <div class="hidden md:flex gap-2 mb-2">
+        <button
+          onclick={onComposeClick}
+          disabled={isLoading}
+          class="orga-button-primary w-full shadow-indigo-600/20 py-2.5 px-4"
+        >
+          <span class="text-lg">✏️</span>
+          <span class="text-sm font-medium">Neue Mail</span>
+        </button>
+      </div>
+
       <button
-        onclick={onComposeClick}
-        disabled={isLoading}
-        class="orga-button-primary w-full shadow-indigo-600/20 py-2.5 px-4"
+        onclick={onConfigClick}
+        class="w-full px-3 py-2.5 text-sm font-semibold text-neutral-600 hover:text-indigo-700 hover:bg-indigo-50/50 rounded-lg flex items-center gap-2 transition-colors"
       >
-        <span class="text-lg">✏️</span>
-        <span class="text-sm font-medium">Neue Mail</span>
+        <span class="text-base">⚙️</span>
+        Einstellungen
       </button>
     </div>
-
-    <button
-      onclick={onConfigClick}
-      class="w-full px-3 py-2.5 text-sm font-semibold text-neutral-600 hover:text-indigo-700 hover:bg-indigo-50/50 rounded-lg flex items-center gap-2 transition-colors"
-    >
-      <span class="text-base">⚙️</span>
-      Einstellungen
-    </button>
   </div>
 
   <!-- Unread count -->

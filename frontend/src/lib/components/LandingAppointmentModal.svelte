@@ -84,6 +84,9 @@
             
             // Frontend-Filterung: Trennt Standorte messerscharf anhand der Firma des zugewiesenen Mitarbeiters
             const filteredRes = res.filter((r: any) => {
+                // Blendet alle Termine und Sperren aus, die nicht ausdrücklich als öffentlich sichtbar markiert wurden
+                if (r.is_visible !== true) return false;
+
                 let c = r.company;
                 if (!c) return false;
                 
@@ -144,6 +147,28 @@
     export function open() {
         successMsg = "";
         errorMsg = "";
+        
+        // Auto-Fill für eingeloggte Portal-Nutzer (Klienten, Kontakte, Mitarbeiter)
+        const model = pb.authStore.model;
+        if (model && !sender_name) {
+            sender_name = `${model.name_first || ''} ${model.name_last || ''}`.trim();
+            email = model.email || "";
+            phone = model.phone || model.handy || model.tel || "";
+            street = `${model.street || ''} ${model.housenr || ''}`.trim();
+            const zip = model.zip || '';
+            const city = model.city || '';
+            zip_city = `${zip} ${city}`.trim();
+
+            if (email) preferredContact = 'email';
+            else if (phone) preferredContact = 'phone';
+            else if (street && zip_city) preferredContact = 'mail';
+            
+            if (model.company) {
+                const cId = Array.isArray(model.company) ? model.company[0] : model.company;
+                if (cId && companies.some(c => c.id === cId)) company_id = cId;
+            }
+        }
+
         dialog?.showModal();
     }
 
@@ -238,8 +263,11 @@ Adresse: ${preferredContact === 'mail' ? `${street}, ${zip_city}` : '-'}`;
 
             successMsg = "Vielen Dank! Ihre Anfrage wurde erfolgreich übermittelt. Wir melden uns in Kürze.";
             
-            // Reset
-            sender_name = ""; email = ""; phone = ""; street = ""; zip_city = ""; request_text = ""; time = ""; selectedDate = null; preferredContact = "phone";
+            // Reset (Kontaktdaten nur leeren, wenn man nicht eingeloggt ist)
+            request_text = ""; time = ""; selectedDate = null;
+            if (!pb.authStore.model) {
+                sender_name = ""; email = ""; phone = ""; street = ""; zip_city = ""; preferredContact = "phone";
+            }
         } catch (err: any) {
             console.error(err);
             errorMsg = "Es gab einen Fehler beim Senden. Bitte rufen Sie uns direkt an.";

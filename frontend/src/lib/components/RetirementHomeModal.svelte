@@ -13,6 +13,7 @@
     let phone = $state("");
     let email = $state("");
     let contacts = $state<string[]>([]);
+    let initialDataHash = $state("");
 
     export function open(record?: any) {
         if (record) {
@@ -29,11 +30,19 @@
             contacts = [];
         }
         errorMsg = "";
+        initialDataHash = JSON.stringify({ name, phone, email, contacts });
         dialog?.showModal();
     }
 
     export function close() {
         dialog?.close();
+    }
+
+    export async function attemptClose() {
+        if (JSON.stringify({ name, phone, email, contacts }) !== initialDataHash) {
+            if (!(await confirmStore.ask("Sie haben ungespeicherte Änderungen. Möchten Sie wirklich abbrechen?", "Änderungen verwerfen?", "Verwerfen", "Abbrechen", true))) return;
+        }
+        close();
     }
 
     function toggleContact(id: string) {
@@ -84,9 +93,9 @@
     }
 </script>
 
-<dialog bind:this={dialog} class="p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-full max-w-lg mx-auto my-auto rounded-3xl" onclick={(e) => { if (e.target === dialog) close(); }}>
+<dialog bind:this={dialog} class="p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-full max-w-lg mx-auto my-auto rounded-3xl" onclick={(e) => { if (e.target === dialog) attemptClose(); }}>
     <div class="bg-white rounded-3xl p-6 md:p-8 w-full max-h-[90vh] overflow-y-auto custom-scrollbar relative">
-        <button aria-label="Schließen" title="Schließen" onclick={close} class="absolute top-5 right-5 w-10 h-10 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-colors">
+        <button aria-label="Schließen" title="Schließen" onclick={attemptClose} class="absolute top-5 right-5 w-10 h-10 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-colors">
             <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
         </button>
         <h2 class="text-2xl font-bold text-neutral-900 mb-6">{editId ? 'Pflegeheim bearbeiten' : 'Neues Pflegeheim anlegen'}</h2>
@@ -116,7 +125,7 @@
                     <div class="hidden sm:block"></div>
                 {/if}
                 <div class="flex flex-col-reverse sm:flex-row gap-3 w-full sm:w-auto">
-                    <button type="button" onclick={close} class="orga-button-ghost w-full sm:w-auto py-3 sm:py-2.5" disabled={isLoading}>Abbrechen</button>
+                    <button type="button" onclick={attemptClose} class="orga-button-ghost w-full sm:w-auto py-3 sm:py-2.5" disabled={isLoading}>Abbrechen</button>
                     <button type="submit" class="orga-button-primary w-full sm:w-auto py-3 sm:py-2.5" disabled={isLoading}>{isLoading ? "Speichert..." : "Speichern"}</button>
                 </div>
             </div>

@@ -1,6 +1,7 @@
 <script lang="ts">
     import { pb } from "$lib/services/pocketbase";
     import { orgaStore } from "$lib/stores/orgaStore.svelte";
+    import { confirmStore } from "$lib/services/confirmService.svelte";
 
     let { appointment } = $props<{ appointment: any }>();
     
@@ -12,6 +13,7 @@
     let editId = $state<string | null>(null);
     let titel = $state("");
     let sum = $state<number | "">("");
+    let initialDataHash = $state("");
 
     export function open(record?: any) {
         if (record) {
@@ -24,11 +26,19 @@
             sum = "";
         }
         errorMsg = "";
+        initialDataHash = JSON.stringify({ titel, sum });
         dialog?.showModal();
     }
 
     export function close() {
         dialog?.close();
+    }
+
+    export async function attemptClose() {
+        if (JSON.stringify({ titel, sum }) !== initialDataHash) {
+            if (!(await confirmStore.ask("Sie haben ungespeicherte Änderungen. Möchten Sie wirklich abbrechen?", "Änderungen verwerfen?", "Verwerfen", "Abbrechen", true))) return;
+        }
+        close();
     }
 
     async function onSubmit(e: Event) {
@@ -81,9 +91,9 @@
     }
 </script>
 
-<dialog bind:this={dialog} class="p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-full max-w-sm mx-auto my-auto rounded-3xl" onclick={(e) => { if (e.target === dialog) close(); }}>
+<dialog bind:this={dialog} class="p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-full max-w-sm mx-auto my-auto rounded-3xl" onclick={(e) => { if (e.target === dialog) attemptClose(); }}>
     <div class="bg-white rounded-3xl p-6 md:p-8 w-full relative">
-        <button aria-label="Schließen" title="Schließen" onclick={close} class="absolute top-5 right-5 w-10 h-10 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-colors">
+        <button aria-label="Schließen" title="Schließen" onclick={attemptClose} class="absolute top-5 right-5 w-10 h-10 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-colors">
             <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
         </button>
         <h2 class="text-2xl font-bold text-neutral-900 mb-6">{editId ? 'Ausgabe bearbeiten' : 'Ausgabe hinzufügen'}</h2>
@@ -92,7 +102,7 @@
             <div><label for="exp-titel" class="block text-sm font-semibold text-neutral-700 mb-1.5">Titel / Zweck</label><input id="exp-titel" type="text" bind:value={titel} class="orga-input-clear" placeholder="z.B. Apothekeneinkauf" required disabled={isLoading} /></div>
             <div><label for="exp-sum" class="block text-sm font-semibold text-neutral-700 mb-1.5">Betrag in €</label><input id="exp-sum" type="number" step="0.01" bind:value={sum} class="orga-input-clear" placeholder="z.B. 14.50" required disabled={isLoading} /></div>
             <div class="pt-4 flex flex-col-reverse sm:flex-row justify-end gap-3 border-t border-neutral-100 mt-6">
-                <button type="button" onclick={close} class="orga-button-ghost w-full sm:w-auto py-3 sm:py-2.5" disabled={isLoading}>Abbrechen</button>
+                <button type="button" onclick={attemptClose} class="orga-button-ghost w-full sm:w-auto py-3 sm:py-2.5" disabled={isLoading}>Abbrechen</button>
                 <button type="submit" class="orga-button-primary w-full sm:w-auto py-3 sm:py-2.5" disabled={isLoading}>{isLoading ? "Speichert..." : (editId ? "Änderungen speichern" : "Hinzufügen")}</button>
             </div>
         </form>

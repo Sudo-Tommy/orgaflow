@@ -1,6 +1,7 @@
 <script lang="ts">
     import { toastStore } from '$lib/services/toastService.svelte';
     import { pb } from '$lib/services/pocketbase';
+  import { confirmStore } from '$lib/services/confirmService.svelte';
 
     let { onSave, onUpdate } = $props<{
         onSave: (payload: FormData) => Promise<void>;
@@ -25,6 +26,7 @@
     let installment_current = $state<number | "">("");
     let installment_total_count = $state<number | "">("");
     let installment_total_amount = $state<number | "">("");
+    let initialDataHash = $state("");
 
     // KI-Scanner
     let isScanningReceipt = $state(false);
@@ -70,11 +72,19 @@
         }
         receiptFile = null;
         errorMsg = '';
+        initialDataHash = JSON.stringify({ type, title, amount, category, date, notes, is_installment, installment_current, installment_total_count, installment_total_amount });
         dialog?.showModal();
     }
 
     function close() {
         dialog?.close();
+    }
+
+    export async function attemptClose() {
+        if (JSON.stringify({ type, title, amount, category, date, notes, is_installment, installment_current, installment_total_count, installment_total_amount }) !== initialDataHash) {
+            if (!(await confirmStore.ask("Sie haben ungespeicherte Änderungen. Möchten Sie wirklich abbrechen?", "Änderungen verwerfen?", "Verwerfen", "Abbrechen", true))) return;
+        }
+        close();
     }
 
     async function handleReceiptScan(e: Event) {
@@ -187,9 +197,9 @@
     }
 </script>
 
-<dialog bind:this={dialog} class="p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-full max-w-md mx-auto my-auto rounded-3xl" onclick={(e) => { if (e.target === dialog) close(); }}>
+<dialog bind:this={dialog} class="p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-full max-w-md mx-auto my-auto rounded-3xl" onclick={(e) => { if (e.target === dialog) attemptClose(); }}>
     <div class="bg-white rounded-3xl p-6 md:p-8 w-full relative max-h-[90vh] overflow-y-auto custom-scrollbar">
-        <button aria-label="Schließen" title="Schließen" onclick={close} class="absolute top-5 right-5 w-10 h-10 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-colors">✕</button>
+        <button aria-label="Schließen" title="Schließen" onclick={attemptClose} class="absolute top-5 right-5 w-10 h-10 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-colors">✕</button>
         
         <div class="flex items-center justify-between mb-6 pr-12">
             <h2 class="text-2xl font-bold text-neutral-900">{editId ? 'Buchung bearbeiten' : 'Neue Buchung'}</h2>
@@ -198,7 +208,7 @@
                 {#if isScanningReceipt}
                     <div class="w-3 h-3 border-2 border-indigo-200 border-t-indigo-700 rounded-full animate-spin"></div> Scannt...
                 {:else}
-                    <span>📸</span> KI-Scan
+                    <span>✨</span> KI-Scan
                 {/if}
             </button>
         </div>
@@ -251,7 +261,7 @@
             {/if}
 
             <div class="pt-4 flex flex-col-reverse sm:flex-row justify-end gap-3 border-t border-neutral-100 mt-6">
-                <button type="button" onclick={close} class="orga-button-ghost w-full sm:w-auto py-3 px-6" disabled={isLoading || isScanningReceipt}>Abbrechen</button>
+                <button type="button" onclick={attemptClose} class="orga-button-ghost w-full sm:w-auto py-3 px-6" disabled={isLoading || isScanningReceipt}>Abbrechen</button>
                 <button type="submit" class="orga-button-primary w-full sm:w-auto py-3 px-6" disabled={isScanningReceipt || isLoading}>{isLoading ? 'Speichert...' : 'Speichern'}</button>
             </div>
         </form>

@@ -21,6 +21,7 @@
     let city = $state("");
     let notes = $state("");
     let birthdate = $state("");
+    let currentRecord = $state<any>(null);
 
     // Signatur-Status
     let signatureMode = $state<"draw" | "upload">("draw");
@@ -30,6 +31,7 @@
     let hasDrawnSignature = $state(false);
     let existingSignatureUrl = $state("");
     let deleteExistingSignature = $state(false);
+    let initialDataHash = $state("");
 
     function toYMD(val: string) {
         if (!val) return "";
@@ -54,6 +56,7 @@
 
     export function open(record?: any) {
         if (record) {
+            currentRecord = record;
             editId = record.id;
             isEditing = false;
             salutation = record.salutation || "Keine Angabe";
@@ -78,6 +81,7 @@
                 existingSignatureUrl = "";
             }
         } else {
+            currentRecord = null;
             editId = null;
             isEditing = true;
             salutation = "Keine Angabe";
@@ -99,6 +103,7 @@
         uploadedFile = null;
         deleteExistingSignature = false;
         errorMsg = "";
+        initialDataHash = JSON.stringify({ salutation, company_name, name_first, name_last, email, phone, street, housenr, zip, city, notes, birthdate, hasDrawnSignature, deleteExistingSignature });
         dialog?.showModal();
 
         if (isEditing && !editId) {
@@ -108,6 +113,13 @@
 
     export function close() {
         dialog?.close();
+    }
+
+    export async function attemptClose() {
+        if (JSON.stringify({ salutation, company_name, name_first, name_last, email, phone, street, housenr, zip, city, notes, birthdate, hasDrawnSignature, deleteExistingSignature }) !== initialDataHash) {
+            if (!(await confirmStore.ask("Sie haben ungespeicherte Änderungen. Möchten Sie wirklich abbrechen?", "Änderungen verwerfen?", "Verwerfen", "Abbrechen", true))) return;
+        }
+        close();
     }
     
     function startEdit() {
@@ -214,7 +226,7 @@
     }
 </script>
 
-<dialog bind:this={dialog} class="p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-full max-w-2xl mx-auto my-auto rounded-3xl" onclick={(e) => { if (e.target === dialog) close(); }}>
+<dialog bind:this={dialog} class="p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-full max-w-2xl mx-auto my-auto rounded-3xl" onclick={(e) => { if (e.target === dialog) attemptClose(); }}>
     <div class="bg-neutral-50 rounded-3xl w-full max-h-[90vh] flex flex-col relative overflow-hidden shadow-2xl">
         <!-- Header -->
         <div class="bg-white px-6 py-5 border-b border-neutral-200 flex items-center justify-between shrink-0 sticky top-0 z-20 gap-3">
@@ -234,7 +246,7 @@
                     </button>
                     <div class="w-px h-6 bg-neutral-200 hidden sm:block"></div>
                 {/if}
-                <button aria-label="Schließen" onclick={close} class="w-8 h-8 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-colors">
+                <button aria-label="Schließen" onclick={attemptClose} class="w-8 h-8 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-colors">
                     <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
                 </button>
             </div>
@@ -401,7 +413,7 @@
                             <div class="hidden sm:block"></div>
                         {/if}
                         <div class="flex flex-col-reverse sm:flex-row gap-3 w-full sm:w-auto">
-                            <button type="button" onclick={() => { if (!editId) { close(); } else { isEditing = false; } }} class="orga-button-ghost w-full sm:w-auto py-3 sm:py-2.5" disabled={isLoading}>Abbrechen</button>
+                            <button type="button" onclick={async () => { if (JSON.stringify({ salutation, company_name, name_first, name_last, email, phone, street, housenr, zip, city, notes, birthdate, hasDrawnSignature, deleteExistingSignature }) !== initialDataHash) { if (!(await confirmStore.ask("Sie haben ungespeicherte Änderungen. Möchten Sie wirklich abbrechen?", "Änderungen verwerfen?", "Verwerfen", "Abbrechen", true))) return; } if (!editId) { close(); } else { isEditing = false; open(currentRecord); } }} class="orga-button-ghost w-full sm:w-auto py-3 sm:py-2.5" disabled={isLoading}>Abbrechen</button>
                             <button type="submit" class="orga-button-primary w-full sm:w-auto py-3 sm:py-2.5" disabled={isLoading}>{isLoading ? "Speichert..." : "Speichern"}</button>
                         </div>
                     </div>

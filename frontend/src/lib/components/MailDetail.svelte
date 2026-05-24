@@ -54,9 +54,6 @@
     <!-- Header -->
     <div class="border-b border-neutral-100 p-4 sm:p-6 bg-white shrink-0">
       <div class="flex items-start gap-3 mb-2">
-        <button class="md:hidden p-1.5 -ml-1.5 mt-0.5 text-neutral-400 hover:text-indigo-600 rounded-lg transition-colors" onclick={onBack} aria-label="Zurück">
-          <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg>
-        </button>
         <div class="flex-1 min-w-0">
           <h2 class="text-xl sm:text-2xl font-bold text-neutral-900 mb-2 leading-tight">{email.subject || '(Kein Betreff)'}</h2>
           <div class="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 text-sm text-neutral-600">
@@ -81,27 +78,29 @@
     </div>
 
     <!-- Footer with actions -->
-    <div class="border-t border-neutral-100 p-3 sm:p-4 bg-neutral-50/50 flex flex-wrap gap-2 shrink-0 justify-around sm:justify-start">
+    <div class="border-t border-neutral-100 p-3 sm:p-4 bg-white/95 backdrop-blur-md flex flex-wrap gap-2 shrink-0 justify-between sm:justify-start sticky bottom-0 z-10 pb-[max(env(safe-area-inset-bottom,0px),0.75rem)]">
       <button
-        onclick={onReply}
-        class="orga-button-ghost py-2.5 px-5 text-sm bg-white border border-neutral-200 shadow-sm flex items-center gap-2 text-neutral-700 hover:text-indigo-600 hover:border-indigo-200"
+        onclick={onBack}
+        aria-label="Zurück zur Übersicht"
+        class="md:hidden flex-1 orga-button-ghost py-3 px-3 text-xs font-bold bg-white border border-neutral-200 shadow-sm flex items-center justify-center gap-1.5 text-neutral-700 hover:text-indigo-600 hover:border-indigo-200 active:scale-95"
       >
-        <span class="text-lg leading-none">↩️</span>
-        Antworten
+      <span class="text-xl leading-none">◀️</span>
       </button>
       <button
         onclick={onReply}
-        class="orga-button-ghost py-2.5 px-5 text-sm bg-white border border-neutral-200 shadow-sm flex items-center gap-2 text-neutral-700 hover:text-indigo-600 hover:border-indigo-200"
+        aria-label="Antworten"
+        class="flex-1 sm:flex-none orga-button-ghost py-3 sm:py-2.5 px-3 text-xs font-bold bg-white border border-neutral-200 shadow-sm flex items-center justify-center gap-1.5 text-neutral-700 hover:text-indigo-600 hover:border-indigo-200 active:scale-95"      
       >
-        <span class="text-lg leading-none">↪️</span>
-        Weiterleiten
+        <span class="text-xl sm:text-lg leading-none">↩️</span>
+        <span class="hidden sm:inline">Antworten</span>
       </button>
       <button
         onclick={onDelete}
-        class="orga-button-ghost py-2.5 px-5 text-sm bg-white border border-neutral-200 shadow-sm flex items-center gap-2 text-rose-600 hover:text-rose-700 hover:border-rose-200 hover:bg-rose-50"
+        aria-label="Nachricht löschen"
+        class="flex-1 sm:flex-none orga-button-ghost py-3 sm:py-2.5 px-3 text-xs font-bold bg-white border border-neutral-200 shadow-sm flex items-center justify-center gap-1.5 text-rose-600 hover:text-rose-700 hover:border-rose-200 hover:bg-rose-50 active:scale-95"
       >
-        <span class="text-lg leading-none">🗑️</span>
-        Löschen
+        <span class="text-xl sm:text-lg leading-none">🗑️</span>
+        <span class="hidden sm:inline">Löschen</span>
       </button>
     </div>
   {/if}

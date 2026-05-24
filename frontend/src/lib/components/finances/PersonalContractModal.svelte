@@ -1,6 +1,7 @@
 <script lang="ts">
     import { toastStore } from '$lib/services/toastService.svelte';
     import { pb } from '$lib/services/pocketbase';
+  import { confirmStore } from '$lib/services/confirmService.svelte';
 
     let { onSave, onUpdate } = $props<{
         onSave: (payload: FormData) => Promise<void>;
@@ -18,6 +19,7 @@
     let interval = $state<'monthly' | 'quarterly' | 'yearly'>('monthly');
     let next_due_date = $state("");
     let notes = $state("");
+    let initialDataHash = $state("");
     let documentFile = $state<File | null>(null);
 
     // KI-Scanner
@@ -44,11 +46,19 @@
         }
         documentFile = null;
         errorMsg = '';
+        initialDataHash = JSON.stringify({ title, partner, amount, interval, next_due_date, notes });
         dialog?.showModal();
     }
 
     function close() {
         dialog?.close();
+    }
+
+    export async function attemptClose() {
+        if (JSON.stringify({ title, partner, amount, interval, next_due_date, notes }) !== initialDataHash) {
+            if (!(await confirmStore.ask("Sie haben ungespeicherte Änderungen. Möchten Sie wirklich abbrechen?", "Änderungen verwerfen?", "Verwerfen", "Abbrechen", true))) return;
+        }
+        close();
     }
 
     async function handleDocScan(e: Event) {
@@ -149,9 +159,9 @@
     }
 </script>
 
-<dialog bind:this={dialog} class="p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-full max-w-md mx-auto my-auto rounded-3xl" onclick={(e) => { if (e.target === dialog) close(); }}>
+<dialog bind:this={dialog} class="p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-full max-w-md mx-auto my-auto rounded-3xl" onclick={(e) => { if (e.target === dialog) attemptClose(); }}>
     <div class="bg-white rounded-3xl p-6 md:p-8 w-full max-h-[90vh] overflow-y-auto custom-scrollbar relative">
-        <button aria-label="Schließen" title="Schließen" onclick={close} class="absolute top-5 right-5 w-10 h-10 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-colors z-10">✕</button>
+        <button aria-label="Schließen" title="Schließen" onclick={attemptClose} class="absolute top-5 right-5 w-10 h-10 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-colors z-10">✕</button>
         
         <div class="flex items-center justify-between mb-6 pr-12">
             <h2 class="text-2xl font-bold text-neutral-900">{editId ? 'Vertrag bearbeiten' : 'Neuer Vertrag'}</h2>
@@ -160,7 +170,7 @@
                 {#if isScanningDoc}
                     <div class="w-3 h-3 border-2 border-indigo-200 border-t-indigo-700 rounded-full animate-spin"></div> Scannt...
                 {:else}
-                    <span>📸</span> KI-Scan
+                    <span>✨</span> KI-Scan
                 {/if}
             </button>
         </div>
@@ -198,7 +208,7 @@
             {/if}
 
             <div class="pt-4 flex flex-col-reverse sm:flex-row justify-end gap-3 border-t border-neutral-100 mt-6">
-                <button type="button" onclick={close} class="orga-button-ghost w-full sm:w-auto py-3 px-6" disabled={isScanningDoc || isLoading}>Abbrechen</button>
+                <button type="button" onclick={attemptClose} class="orga-button-ghost w-full sm:w-auto py-3 px-6" disabled={isScanningDoc || isLoading}>Abbrechen</button>
                 <button type="submit" class="orga-button-primary w-full sm:w-auto py-3 px-6" disabled={isScanningDoc || isLoading}>{isLoading ? 'Speichert...' : 'Speichern'}</button>
             </div>
         </form>

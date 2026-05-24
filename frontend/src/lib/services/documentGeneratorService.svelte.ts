@@ -20,6 +20,7 @@ export function useDocumentGenerator() {
     let taxRate = $state("0");
 
     let manualInvoiceNr = $state("");
+    let generatedInvoiceId = $state<string | null>(null);
     
     function getLocalDate() {
         const d = new Date();
@@ -481,6 +482,7 @@ export function useDocumentGenerator() {
         taxRate = "0";
         manualInvoiceNr = getNextInvoiceNumber();
         manualIssueDate = getLocalDate();
+        generatedInvoiceId = null;
     }
 
     return {
@@ -497,6 +499,7 @@ export function useDocumentGenerator() {
         get taxRate() { return taxRate; }, set taxRate(v) { taxRate = v; },
         get manualInvoiceNr() { return manualInvoiceNr; }, set manualInvoiceNr(v) { manualInvoiceNr = v; },
         get manualIssueDate() { return manualIssueDate; }, set manualIssueDate(v) { manualIssueDate = v; },
+        get generatedInvoiceId() { return generatedInvoiceId; }, set generatedInvoiceId(v) { generatedInvoiceId = v; },
         get template() { return template; },
         get availableTemplates() { return availableTemplates; },
         get timesheetTemplate() { return timesheetTemplate; },

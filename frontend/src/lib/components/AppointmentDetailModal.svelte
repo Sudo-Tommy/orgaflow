@@ -59,7 +59,6 @@
     let isReportSaving = $state(false);
     // svelte-ignore non_reactive_update
     let audioInput: HTMLInputElement;
-    let activeNoteTab = $state<'family' | 'internal'>('internal');
 
     let isTimeLoading = $state(false);
 
@@ -385,6 +384,7 @@
                         Termin-Details {#if appointment?.is_private}<span class="px-2 py-0.5 text-[10px] font-bold rounded-full bg-rose-100 text-rose-700 shrink-0">Privat</span>{/if}
                         {#if appointment?.is_series}<span class="px-2 py-0.5 text-[10px] font-bold rounded-full bg-indigo-100 text-indigo-700 shrink-0">🔁 Serie</span>{/if}
                         {#if appointment?.settled}<span class="px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-100 text-emerald-700 shrink-0">✓ Abgerechnet</span>{/if}
+                        {#if appointment?.is_visible}<span class="px-2 py-0.5 text-[10px] font-bold rounded-full bg-sky-100 text-sky-700 shrink-0">👁️ Öffentlich</span>{/if}
                     </h2>
                     <p class="text-[10px] sm:text-xs text-neutral-500 font-medium truncate">
                         {appointment?.appointment ? new Date(appointment.appointment as string).toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' }) : ''} 
@@ -400,7 +400,7 @@
                             <span class="text-[10px] sm:text-xs font-bold hidden md:block">Serie löschen</span>
                         </button>
                     {/if}
-                    <button onclick={() => reminderModal?.open(appointment, fullClient)} class="p-1.5 sm:p-2 text-neutral-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors bg-neutral-100 sm:bg-transparent" title="Nachricht / Erinnerung senden"><svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2-2v10a2 2 0 002 2z" /></svg></button>
+                    <button onclick={() => reminderModal?.open(appointment, fullClient)} class="p-1.5 sm:p-2 text-neutral-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors bg-neutral-100 sm:bg-transparent" title="Nachricht / Erinnerung senden"><svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg></button>
                     <button onclick={() => editModal?.open(appointment)} class="p-1.5 sm:p-2 text-neutral-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors bg-neutral-100 sm:bg-transparent" title="Termin bearbeiten"><svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg></button>
                     <button onclick={deleteAppointment} class="p-1.5 sm:p-2 text-neutral-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors bg-neutral-100 sm:bg-transparent" title="Einzelnen Termin löschen"><svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
                 {/if}
@@ -430,6 +430,14 @@
                                          {/if}
                                      </div>
                                  </div>
+                                 
+                                 {#if fullClient?.notes || client?.notes}
+                                     <div class="bg-amber-50 border border-amber-200 px-3 py-2.5 rounded-xl shadow-sm mb-4">
+                                         <p class="text-[10px] font-bold text-amber-700 uppercase tracking-wider mb-1">Notizen zum Klienten</p>
+                                         <p class="text-xs text-amber-900 font-medium leading-relaxed whitespace-pre-wrap">{fullClient?.notes || client?.notes}</p>
+                                     </div>
+                                 {/if}
+                                 
                                  <div class="flex flex-col gap-2">
                                      <button type="button" onclick={() => clientDetailModal?.open(client.id)} class="w-full flex justify-center items-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold py-2.5 px-4 rounded-xl transition-colors text-xs border border-emerald-200 shadow-sm active:scale-95">
                                          📂 Klienten-Akte öffnen
@@ -503,7 +511,7 @@
 
                     <div class="lg:col-span-2 space-y-6">
                         <div class="orga-card-white p-5">
-                            <div class="flex items-center justify-between mb-4 border-b border-neutral-100 pb-2"><h3 class="text-sm font-bold text-neutral-900 flex items-center gap-2"><span class="text-indigo-600">⏱️</span> Zeiterfassung</h3><button onclick={() => timeModal?.open()} class="text-xs font-bold text-indigo-600 hover:text-indigo-800 transition-colors">+ Manuell</button></div>
+                            <div class="flex items-center justify-between mb-4 border-b border-neutral-100 pb-2"><h3 class="text-sm font-bold text-neutral-900 flex items-center gap-2"><span class="text-indigo-600">⏱️</span> Zeiterfassung</h3><button onclick={() => timeModal?.open()} class="orga-button-primary py-1.5 px-3 text-xs shadow-indigo-600/20">+ Manuell eintragen</button></div>
                             
                             {#if runningTimeRecord}
                                 <div class="mb-5 bg-emerald-50 p-4 rounded-xl border border-emerald-200 shadow-sm flex items-center justify-between animate-pulse"><div><p class="text-sm font-bold text-emerald-800">Zeiterfassung läuft...</p><p class="text-xs text-emerald-600">Gestartet um {new Date(runningTimeRecord.start).toLocaleTimeString('de-DE', {hour:'2-digit', minute:'2-digit'})} Uhr</p></div><button type="button" onclick={() => stopTracking(runningTimeRecord.id)} disabled={isTimeLoading} class="orga-button-primary bg-rose-600 hover:bg-rose-700 shadow-rose-600/20 py-2 px-4 text-sm">Stopp</button></div>
@@ -542,14 +550,14 @@
                         </div>
 
                         <div class="orga-card-white p-5">
-                            <div class="flex items-center justify-between mb-4 border-b border-neutral-100 pb-2"><h3 class="text-sm font-bold text-neutral-900 flex items-center gap-2"><span class="text-emerald-500">🚗</span> Fahrten</h3><button onclick={() => driveModal?.open()} class="text-xs font-bold text-emerald-600 hover:text-emerald-800 transition-colors">+ Hinzufügen</button></div>
+                            <div class="flex items-center justify-between mb-4 border-b border-neutral-100 pb-2"><h3 class="text-sm font-bold text-neutral-900 flex items-center gap-2"><span class="text-emerald-500">🚗</span> Fahrten</h3><button onclick={() => driveModal?.open()} class="orga-button-primary bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20 py-1.5 px-3 text-xs">+ Hinzufügen</button></div>
                             {#if driveRecords.length === 0}<p class="text-center text-xs text-neutral-400 italic py-2">Keine Fahrten hinterlegt.</p>{:else}<div class="space-y-2 mb-3">{#each driveRecords as drive}<div class="flex items-center justify-between p-3 rounded-lg border border-neutral-100 bg-neutral-50 hover:border-emerald-200 transition-colors group"><div><p class="text-sm font-bold text-neutral-900 flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> {drive.type || 'Fahrt'}</p>{#if drive.lump_sum}<p class="text-xs text-neutral-500 pl-3.5">Pauschale: {drive.lump_sum} €</p>{/if}</div><div class="text-right flex items-center gap-3"><p class="text-emerald-700 font-bold text-sm">{drive.km || 0} km</p><div class="flex gap-2 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity"><button onclick={() => driveModal?.open(drive)} class="text-xs text-neutral-400 hover:text-emerald-600 font-semibold" title="Bearbeiten">✎</button><button onclick={() => deleteDrive(drive.id)} class="text-xs text-rose-500 hover:text-rose-700 font-semibold" title="Löschen">✕</button></div></div></div>{/each}</div>
                                 <div class="bg-emerald-50 rounded-lg p-3 flex justify-between items-center"><p class="text-xs font-bold text-emerald-900">Gesamte Strecke</p><p class="text-sm font-bold text-emerald-700">{totalKm} km</p></div>
                             {/if}
                         </div>
 
                         <div class="orga-card-white p-5">
-                            <div class="flex items-center justify-between mb-4 border-b border-neutral-100 pb-2"><h3 class="text-sm font-bold text-neutral-900 flex items-center gap-2"><span class="text-rose-500">💶</span> Sonderausgaben</h3><button onclick={() => expenditureModal?.open()} class="text-xs font-bold text-rose-600 hover:text-rose-800 transition-colors">+ Hinzufügen</button></div>
+                            <div class="flex items-center justify-between mb-4 border-b border-neutral-100 pb-2"><h3 class="text-sm font-bold text-neutral-900 flex items-center gap-2"><span class="text-rose-500">💶</span> Sonderausgaben</h3><button onclick={() => expenditureModal?.open()} class="orga-button-primary bg-rose-600 hover:bg-rose-700 shadow-rose-600/20 py-1.5 px-3 text-xs">+ Hinzufügen</button></div>
                             {#if expenditures.length === 0}<p class="text-center text-xs text-neutral-400 italic py-2">Keine Ausgaben hinterlegt.</p>{:else}
                                 <div class="space-y-2 mb-3">{#each expenditures as exp}<div class="flex items-center justify-between p-3 rounded-lg border border-neutral-100 bg-neutral-50 hover:border-rose-200 transition-colors group"><p class="text-sm font-bold text-neutral-900 flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span> {exp.titel || 'Ausgabe'}</p><div class="text-right flex items-center gap-3"><p class="text-rose-700 font-bold text-sm">{exp.sum ? exp.sum.toFixed(2).replace('.', ',') : '0,00'} €</p><div class="flex gap-2 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity"><button onclick={() => expenditureModal?.open(exp)} class="text-xs text-neutral-400 hover:text-rose-600 font-semibold" title="Bearbeiten">✎</button><button onclick={() => deleteExpenditure(exp.id)} class="text-xs text-rose-500 hover:text-rose-700 font-semibold" title="Löschen">✕</button></div></div></div>{/each}</div>
                                 <div class="bg-rose-50 rounded-lg p-3 flex justify-between items-center"><p class="text-xs font-bold text-rose-900">Gesamtsumme</p><p class="text-sm font-bold text-rose-700">{totalExpenditure.toFixed(2).replace('.', ',')} €</p></div>
@@ -560,29 +568,30 @@
                         <div class="orga-card-white p-5">
                             <div class="flex items-center justify-between mb-4 border-b border-neutral-100 pb-2">
                                 <h3 class="text-sm font-bold text-neutral-900 flex items-center gap-2">
-                                <span class="text-indigo-600">📝</span> Bericht & Notizen
+                                <span class="text-indigo-600">📝</span> Besuchsbericht & Notizen
                                 </h3>
                             <div class="flex items-center gap-2">
                                 <input type="file" accept="audio/*,.m4a,audio/mp4,audio/x-m4a,video/mp4" multiple class="hidden" bind:this={audioInput} onchange={uploadAudio} />
                                 <button onclick={() => audioInput.click()} class="text-xs font-bold text-neutral-600 hover:text-indigo-600 bg-neutral-100 hover:bg-neutral-200 px-2 sm:px-3 py-1.5 rounded-lg transition-colors shadow-sm" title="Audio-Datei hochladen">
                                     📎 Audio
                                 </button>
-                                <button onclick={() => aiModal?.open(activeNoteTab, appointment, fullClient)} class="text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2 sm:px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors shadow-sm">
+                                <button onclick={() => aiModal?.open('family', appointment, fullClient)} class="text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2 sm:px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors shadow-sm">
                                     <span>🤖</span> Gemini
                                 </button>
                             </div>
                             </div>
-                            <div class="flex flex-col gap-3">
-                            <div class="flex bg-neutral-100 p-1 rounded-lg border border-neutral-200 shadow-inner shrink-0">
-                                <button onclick={() => activeNoteTab = 'internal'} class="flex-1 px-3 py-2 text-xs font-bold rounded-md transition-colors {activeNoteTab === 'internal' ? 'bg-white shadow-sm text-indigo-600' : 'text-neutral-500 hover:text-neutral-700'}">🔒 Intern (Team)</button>
-                                <button onclick={() => activeNoteTab = 'family'} class="flex-1 px-3 py-2 text-xs font-bold rounded-md transition-colors {activeNoteTab === 'family' ? 'bg-white shadow-sm text-indigo-600' : 'text-neutral-500 hover:text-neutral-700'}">📝 Bericht</button>
-                            </div>
+                            <div class="flex flex-col gap-5">
                             
-                            {#if activeNoteTab === 'internal'}
-                                <textarea bind:value={notes} class="orga-input-clear resize-y min-h-30 text-sm" placeholder="Interne Notizen, Todo's, Auffälligkeiten für das Team..." disabled={isReportSaving}></textarea>
-                            {:else}
+                            <div class="bg-amber-50/50 border border-amber-200 rounded-xl p-3 sm:p-4 shadow-sm relative overflow-hidden group">
+                                <div class="absolute top-0 right-0 w-16 h-16 bg-amber-100 rounded-full blur-xl -mr-4 -mt-4 z-0 pointer-events-none"></div>
+                                <h4 class="text-xs font-bold text-amber-900 uppercase tracking-wider mb-2 flex items-center gap-1.5 relative z-10"><span>🔒</span> Interne Notizen (Team)</h4>
+                                <textarea bind:value={notes} class="orga-input-clear resize-y min-h-20 text-xs sm:text-sm bg-white/60 focus:bg-white border-amber-200 relative z-10" placeholder="Interne Infos, Todo's, Auffälligkeiten für das Team..." disabled={isReportSaving}></textarea>
+                            </div>
+
+                            <div>
+                                <h4 class="text-xs font-bold text-neutral-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><span>📄</span> Offizieller Besuchsbericht</h4>
                                 <textarea bind:value={report} class="orga-input-clear resize-y min-h-30 text-sm" placeholder="Ausführlicher Bericht für Angehörige / Pflegekasse..." disabled={isReportSaving}></textarea>
-                            {/if}
+                            </div>
                             
                             {#if appointment?.voice_records && appointment.voice_records.length > 0}
                                 <div class="bg-indigo-50/50 rounded-xl p-3 border border-indigo-100 mt-1">

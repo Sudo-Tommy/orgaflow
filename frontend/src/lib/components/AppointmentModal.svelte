@@ -21,6 +21,7 @@
     let is_blocked = $state(false);
     let settled = $state(false);
     let is_series = $state(false);
+    let is_visible = $state(false);
     let seriesEndDate = $state("");
     let series_id = $state("");
     let selectedClientId = $state("");
@@ -31,6 +32,7 @@
     let isSuperAdmin = $state(pb.authStore.isSuperuser || pb.authStore.model?.role === 'superadmin' || pb.authStore.model?.role === 'admin');
     let users = $state<any[]>([]);
     let selectedUserId = $state("");
+    let initialDataHash = $state("");
 
     function getLocalDateString(date: Date) {
         const pad = (n: number) => n.toString().padStart(2, '0');
@@ -71,6 +73,7 @@
             is_private = data.is_private || false;
             settled = data.settled || false;
             is_series = data.is_series || false;
+            is_visible = data.is_visible || false;
             series_id = data.series_id || "";
             
             let cId = "";
@@ -97,6 +100,7 @@
             is_private = false;
             settled = false;
             is_series = false;
+            is_visible = false;
             seriesEndDate = "";
             series_id = "";
             is_blocked = data?.is_blocked || false;
@@ -106,11 +110,28 @@
             selectedTasks = [];
         }
         errorMsg = "";
+        initialDataHash = JSON.stringify({
+            appDate, appStartTime, appEndTime, description, location_address,
+            is_private, settled, is_series, is_visible, seriesEndDate,
+            is_blocked, selectedClientId, selectedUserId, internalNotes, selectedTasks, selectedContactId
+        });
         dialog?.showModal();
     }
 
     export function close() {
         dialog?.close();
+    }
+
+    export async function attemptClose() {
+        const currentHash = JSON.stringify({
+            appDate, appStartTime, appEndTime, description, location_address,
+            is_private, settled, is_series, is_visible, seriesEndDate,
+            is_blocked, selectedClientId, selectedUserId, internalNotes, selectedTasks, selectedContactId
+        });
+        if (currentHash !== initialDataHash) {
+            if (!(await confirmStore.ask("Sie haben ungespeicherte Änderungen. Möchten Sie wirklich abbrechen?", "Änderungen verwerfen?", "Verwerfen", "Abbrechen", true))) return;
+        }
+        close();
     }
 
     function onContactSelect() {
@@ -182,6 +203,7 @@
                 is_private,
                 settled,
                 is_series,
+                is_visible,
                 series_id: safeSeriesId,
                 user: selectedUserId || pb.authStore.model?.id,
                 client: selectedClientId ? [selectedClientId] : [],
@@ -343,9 +365,9 @@
     }
 </script>
 
-<dialog bind:this={dialog} class="p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-full max-w-xl mx-auto my-auto rounded-3xl" onclick={(e) => { if (e.target === dialog) close(); }}>
+<dialog bind:this={dialog} class="p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-full max-w-xl mx-auto my-auto rounded-3xl" onclick={(e) => { if (e.target === dialog) attemptClose(); }}>
     <div class="bg-white rounded-3xl p-6 md:p-8 w-full max-h-[90vh] overflow-y-auto custom-scrollbar relative">
-        <button aria-label="Schließen" title="Schließen" onclick={close} class="absolute top-5 right-5 w-10 h-10 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-colors">
+        <button aria-label="Schließen" title="Schließen" onclick={attemptClose} class="absolute top-5 right-5 w-10 h-10 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-colors">
             <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
         </button>
         <h2 class="text-2xl font-bold text-neutral-900 mb-6">{editId ? 'Termin bearbeiten' : 'Neuen Termin anlegen'}</h2>
@@ -465,8 +487,8 @@
             </div>
             {/if}
 
-            <!-- Toggles (Privat / Blocked / Settled) -->
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 border-t border-neutral-100">
+            <!-- Toggles (Privat / Blocked / Settled / Visible) -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-neutral-100">
                 <button type="button" onclick={() => is_private = !is_private} class="flex items-center justify-between w-full p-4 border-2 rounded-xl cursor-pointer transition-all {is_private ? 'border-indigo-500 bg-indigo-50/50' : 'border-neutral-200 bg-white hover:border-indigo-200'} {isLoading ? 'opacity-50 pointer-events-none' : ''}">
                     <div class="flex items-center gap-3">
                         <div class="w-8 h-8 rounded-full flex items-center justify-center transition-colors {is_private ? 'bg-indigo-100 text-indigo-600' : 'bg-neutral-100 text-neutral-500'}">
@@ -499,6 +521,19 @@
                         </div>                        
                     </div>
                 </button>
+
+                {#if isSuperAdmin}
+                <button type="button" onclick={() => is_visible = !is_visible} class="flex items-center justify-between w-full p-4 border-2 rounded-xl cursor-pointer transition-all {is_visible ? 'border-sky-500 bg-sky-50/50' : 'border-neutral-200 bg-white hover:border-sky-200'} {isLoading ? 'opacity-50 pointer-events-none' : ''}">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-full flex items-center justify-center transition-colors {is_visible ? 'bg-sky-100 text-sky-600' : 'bg-neutral-100 text-neutral-500'}">
+                            <span class="text-base">{is_visible ? '👁️' : '🙈'}</span>
+                        </div>
+                        <div class="text-left">
+                            <p class="text-sm font-bold {is_visible ? 'text-sky-900' : 'text-neutral-900'}">Öffentlich sichtbar</p>
+                        </div>                        
+                    </div>
+                </button>
+                {/if}
             </div>
             
             <div class="pt-4 flex flex-col-reverse sm:flex-row justify-between gap-3 border-t border-neutral-100 mt-6">
@@ -513,7 +548,7 @@
                     <div class="hidden sm:block"></div>
                 {/if}
                 <div class="flex flex-col-reverse sm:flex-row gap-3 w-full sm:w-auto">
-                    <button type="button" onclick={close} class="orga-button-ghost w-full sm:w-auto py-3 sm:py-2.5" disabled={isLoading}>Abbrechen</button>
+                    <button type="button" onclick={attemptClose} class="orga-button-ghost w-full sm:w-auto py-3 sm:py-2.5" disabled={isLoading}>Abbrechen</button>
                     <button type="submit" class="orga-button-primary w-full sm:w-auto py-3 sm:py-2.5" disabled={isLoading}>{isLoading ? "Speichert..." : "Speichern"}</button>
                 </div>
             </div>

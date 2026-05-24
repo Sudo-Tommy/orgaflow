@@ -17,6 +17,7 @@ export interface CanvasField {
         fontWeight: string;
         padding: number;
         textAlign: string;
+        verticalAlign?: string;
     };
     tableConfig?: any;
 }
@@ -60,7 +61,7 @@ export function useEditor(initialDocId: string | null) {
             content: type === 'text' ? "Neuer Text" : (type === 'logo' ? "Firmenlogo" : ""),
             x: 100, y: 100, w: type === 'table' ? 600 : 200, h: type === 'table' ? 200 : 60,
             createdAt: Date.now(),
-            style: { backgroundColor: "transparent", color: "#000000", fontSize: 12, fontWeight: "normal", padding: 0, textAlign: "left" }
+            style: { backgroundColor: "transparent", color: "#000000", fontSize: 12, fontWeight: "normal", padding: 0, textAlign: "left", verticalAlign: "top" }
         };
         
         if (type === 'table') {
@@ -81,7 +82,10 @@ export function useEditor(initialDocId: string | null) {
                 includeExpenditures: true,
                 includeTotalNetto: true,
                 includeTotalTax: true,
-                includeTotalBrutto: true
+                includeTotalBrutto: true,
+                headerTextAlign: "",
+                rowVerticalAlign: "top",
+                footerTextAlign: "right"
             };
         }
         

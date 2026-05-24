@@ -72,7 +72,7 @@
 
 <!-- Modal backdrop -->
 <div
-  class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+  class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-0 sm:p-4"
   onclick={onClose}
   role="button"
   tabindex="0"
@@ -80,7 +80,7 @@
 >
   <!-- Modal -->
   <div
-    class="bg-white rounded-3xl shadow-2xl max-w-xl w-full max-h-[90vh] overflow-hidden flex flex-col relative"
+    class="bg-white sm:rounded-3xl shadow-2xl max-w-xl w-full h-dvh sm:h-auto sm:max-h-[90dvh] overflow-hidden flex flex-col relative"
     onclick={(e) => e.stopPropagation()}
     onkeydown={(e) => e.stopPropagation()}
     role="dialog"
@@ -233,20 +233,25 @@
     </div>
 
     <!-- Footer -->
-    <div class="border-t border-neutral-100 p-6 md:p-8 bg-neutral-50/50 flex flex-col-reverse sm:flex-row gap-3 shrink-0 justify-end">
+    <div class="border-t border-neutral-100 p-4 sm:p-6 md:p-8 bg-white/95 backdrop-blur-md flex flex-row gap-2 sm:gap-3 shrink-0 justify-end sticky bottom-0 z-20 pb-[max(env(safe-area-inset-bottom,0px),1rem)]">
       <button
         onclick={onClose}
+        aria-label="Abbrechen"
         disabled={isSaving || isLoading}
-        class="orga-button-ghost w-full sm:w-auto"
+        class="orga-button-ghost flex-1 sm:flex-none py-3 sm:py-2.5 px-4 sm:px-6 active:scale-95 text-xs sm:text-sm flex justify-center items-center gap-1.5"
       >
-        Abbrechen
+        <span class="sm:hidden text-lg">❌</span>
+        <span class="hidden sm:inline">Abbrechen</span>
       </button>
       <button
         onclick={handleSave}
+        aria-label="Einstellungen speichern"
         disabled={isSaving || isLoading}
-        class="orga-button-primary w-full sm:w-auto shadow-indigo-600/20"
+        class="orga-button-primary shadow-indigo-600/20 flex-1 sm:flex-none py-3 sm:py-2.5 px-4 sm:px-6 active:scale-95 text-xs sm:text-sm flex justify-center items-center gap-1.5"
       >
-        {isSaving || isLoading ? 'Wird gespeichert...' : 'Speichern'}
+        {#if isSaving || isLoading}<div class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>{/if}
+        <span class="sm:hidden text-lg">{isSaving || isLoading ? '' : '💾'}</span>
+        <span class="hidden sm:inline">{isSaving || isLoading ? 'Speichert...' : 'Speichern'}</span>
       </button>
     </div>
   </div>

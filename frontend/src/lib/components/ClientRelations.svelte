@@ -7,6 +7,7 @@
     import ContactModal from "./ContactModal.svelte";
     import RetirementHomeModal from "./RetirementHomeModal.svelte";
     import MultiAppointmentReminderModal from "./MultiAppointmentReminderModal.svelte";
+    import PdfPreviewModal from "./PdfPreviewModal.svelte";
     import { pb } from "$lib/services/pocketbase";
     import { toastStore } from "$lib/services/toastService.svelte";
     import { confirmStore } from "$lib/services/confirmService.svelte";
@@ -42,6 +43,8 @@
     let homeModal: ReturnType<typeof RetirementHomeModal>;
     // svelte-ignore non_reactive_update
     let multiReminderModal: ReturnType<typeof MultiAppointmentReminderModal>;
+    // svelte-ignore non_reactive_update
+    let pdfPreviewModal: ReturnType<typeof PdfPreviewModal>;
     
     let fileInput: HTMLInputElement;
     let isUploading = $state(false);
@@ -86,6 +89,18 @@
         } finally {
             isUploading = false;
             input.value = '';
+        }
+    }
+
+    function previewDocument(e: Event, docFileName: string) {
+        e.preventDefault();
+        if (!clientData) return;
+        const url = pb.files.getURL(clientData as any, docFileName);
+        const lowerName = docFileName.toLowerCase();
+        if (lowerName.endsWith('.pdf') || /\.(jpg|jpeg|png|gif|webp)$/i.test(lowerName)) {
+            pdfPreviewModal?.open(url, 'Klienten-Akte', docFileName);
+        } else {
+            window.open(url, '_blank');
         }
     }
 
@@ -293,10 +308,10 @@
                             <div class="grid grid-cols-1 gap-2">
                                 {#each clientData.documents as docFileName}
                                     <div class="group flex items-center justify-between p-3 rounded-xl border border-neutral-100 hover:border-amber-200 hover:bg-amber-50/30 transition-all shadow-sm hover:shadow-md">
-                                        <a href={pb.files.getURL(clientData, docFileName)} target="_blank" class="flex items-center gap-3 min-w-0 flex-1">
-                                            <div class="text-xl shrink-0 opacity-80 group-hover:scale-110 transition-transform duration-300">{docFileName.endsWith('.pdf') ? '📕' : '🖼️'}</div>
+                                        <button type="button" onclick={(e) => previewDocument(e, docFileName)} class="flex items-center gap-3 min-w-0 flex-1 text-left">
+                                            <div class="text-xl shrink-0 opacity-80 group-hover:scale-110 transition-transform duration-300">{docFileName.toLowerCase().endsWith('.pdf') ? '📕' : '🖼️'}</div>
                                             <div class="truncate"><p class="text-sm font-bold text-neutral-900 truncate" title={docFileName}>{docFileName}</p></div>
-                                        </a>
+                                        </button>
                                         <button onclick={() => deleteDocument(docFileName)} class="p-2 text-neutral-400 hover:text-rose-500 transition-colors opacity-0 xl:opacity-100 group-hover:opacity-100" title="Löschen"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
                                     </div>
                                 {/each}
@@ -327,3 +342,4 @@
 <ContactModal bind:this={contactModal} />
 <RetirementHomeModal bind:this={homeModal} />
 <MultiAppointmentReminderModal bind:this={multiReminderModal} />
+<PdfPreviewModal bind:this={pdfPreviewModal} />

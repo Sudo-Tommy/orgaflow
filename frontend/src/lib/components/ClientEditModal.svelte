@@ -1,6 +1,7 @@
 <script lang="ts">
     import { pb } from "$lib/services/pocketbase";
     import { orgaStore } from "$lib/stores/orgaStore.svelte";
+    import { confirmStore } from "$lib/services/confirmService.svelte";
 
     let { client } = $props<{ client: any }>();
 
@@ -38,6 +39,7 @@
     let hasDrawnSignature = $state(false);
     let existingSignatureUrl = $state("");
     let deleteExistingSignature = $state(false);
+    let initialDataHash = $state("");
 
     // Helper um das Datum für das HTML <input type="date"> kompatibel zu machen
     function toYMD(val: string) {
@@ -84,6 +86,7 @@
         uploadedFile = null;
         deleteExistingSignature = false;
         errorMsg = "";
+        initialDataHash = JSON.stringify({ formData, signatureMode, hasDrawnSignature, deleteExistingSignature });
         dialog?.showModal();
         
         // Kurz warten, bis der Dialog gerendert ist, dann Canvas resetten
@@ -92,6 +95,13 @@
 
     export function close() {
         dialog?.close();
+    }
+
+    export async function attemptClose() {
+        if (JSON.stringify({ formData, signatureMode, hasDrawnSignature, deleteExistingSignature }) !== initialDataHash) {
+            if (!(await confirmStore.ask("Sie haben ungespeicherte Änderungen. Möchten Sie wirklich abbrechen?", "Änderungen verwerfen?", "Verwerfen", "Abbrechen", true))) return;
+        }
+        close();
     }
 
     // --- Canvas (Zeichen) Logik ---
@@ -219,9 +229,9 @@
     }
 </script>
 
-<dialog bind:this={dialog} class="p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-full max-w-2xl mx-auto my-auto rounded-3xl" onclick={(e) => { if (e.target === dialog) close(); }}>
+<dialog bind:this={dialog} class="p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-full max-w-2xl mx-auto my-auto rounded-3xl" onclick={(e) => { if (e.target === dialog) attemptClose(); }}>
     <div class="bg-white rounded-3xl p-6 md:p-8 w-full max-h-[90vh] overflow-y-auto custom-scrollbar relative">
-        <button aria-label="Schließen" title="Schließen" onclick={close} class="absolute top-5 right-5 w-10 h-10 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-colors z-10">
+        <button aria-label="Schließen" title="Schließen" onclick={attemptClose} class="absolute top-5 right-5 w-10 h-10 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-colors z-10">
             <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
         </button>
         
@@ -347,7 +357,7 @@
             </div>
 
             <div class="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-4 border-t border-neutral-100 mt-6">
-                <button type="button" onclick={close} class="orga-button-ghost w-full sm:w-auto py-3 sm:py-2.5" disabled={isLoading}>Abbrechen</button>
+                <button type="button" onclick={attemptClose} class="orga-button-ghost w-full sm:w-auto py-3 sm:py-2.5" disabled={isLoading}>Abbrechen</button>
                 <button type="submit" class="orga-button-primary w-full sm:w-auto py-3 sm:py-2.5" disabled={isLoading}>{isLoading ? "Speichert..." : "Änderungen speichern"}</button>
             </div>
         </form>

@@ -184,7 +184,8 @@
                     pbFormData.append('pdf', tsBlob, tsFilename);
                 }
 
-                await pb.collection('invoices').create(pbFormData);
+                const createdInvoice = await pb.collection('invoices').create(pbFormData);
+                service.generatedInvoiceId = createdInvoice.id;
                 
                 // Setze alle verknüpften Termine auf "abgerechnet" (settled = true)
                 for (const appId of service.selectedAppointmentIds) {
@@ -317,16 +318,50 @@
 {#if service.template && service.step === 4}
     <div style="position: fixed; left: -9999px; top: 0; z-index: -100; color: #000000; background-color: #ffffff;">
         <div bind:this={pdfContainerRef} class="pdf-export-container orga-canvas-a4" style="background-color: #ffffff; width: 794px; min-height: 1123px; position: relative;">
+            <style>
+                .pdf-export-container * {
+                    box-sizing: border-box;
+                    font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+                    line-height: 1.5;
+                    overflow-wrap: break-word;
+                }
+                .pdf-export-container table {
+                    border-collapse: collapse;
+                    width: 100%;
+                    table-layout: fixed;
+                }
+                .pdf-export-container th, .pdf-export-container td {
+                    overflow-wrap: break-word;
+                    word-break: break-word;
+                }
+            </style>
             {#each service.template.content_html?.fields || [] as field}
-                    <div style="position: absolute; left: {field.x}px; top: {field.y}px; width: {field.w}px; height: {field.h}px; font-size: {field.style.fontSize}px; color: {field.style.color}; font-weight: {field.style.fontWeight}; text-align: {field.style.textAlign}; padding: {field.style.padding}px;">{#if field.type === 'text'}{@html service.replacePlaceholders(field.content, false)}{:else if field.type === 'logo'}{#if service.company?.logo}<img src={pb.files.getURL(service.company, service.company.logo)} style="max-width: 100%; max-height: 100%; object-fit: contain;" alt="Logo" crossorigin="anonymous" />{/if}{:else if field.type === 'table'}{@html service.getItemsHtml(field.tableConfig, false)}{/if}</div>
+                    <div style="position: absolute; left: {field.x}px; top: {field.y}px; width: {field.w}px; height: {field.h}px; font-size: {field.style.fontSize}px; color: {field.style.color}; font-weight: {field.style.fontWeight}; text-align: {field.style.textAlign}; padding: {field.style.padding}px; box-sizing: border-box; overflow: hidden; display: flex; flex-direction: column; justify-content: {field.style.verticalAlign === 'middle' ? 'center' : field.style.verticalAlign === 'bottom' ? 'flex-end' : 'flex-start'};"><div style="width: 100%; {field.type === 'logo' ? 'height: 100%; display: flex; align-items: center; justify-content: center;' : ''}">{#if field.type === 'text'}{@html service.replacePlaceholders(field.content, false)}{:else if field.type === 'logo'}{#if service.company?.logo}<img src={pb.files.getURL(service.company, service.company.logo)} style="max-width: 100%; max-height: 100%; object-fit: contain;" alt="Logo" crossorigin="anonymous" />{/if}{:else if field.type === 'table'}{@html service.getItemsHtml(field.tableConfig, false)}{/if}</div></div>
             {/each}
         </div>
     </div>
     {#if service.isInvoice && service.timesheetTemplate}
         <div style="position: fixed; left: -9999px; top: 0; z-index: -100; color: #000000; background-color: #ffffff;">
             <div bind:this={timesheetPdfContainerRef} class="pdf-export-container orga-canvas-a4" style="background-color: #ffffff; width: 794px; min-height: 1123px; position: relative;">
+                    <style>
+                        .pdf-export-container * {
+                            box-sizing: border-box;
+                            font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+                            line-height: 1.5;
+                            overflow-wrap: break-word;
+                        }
+                        .pdf-export-container table {
+                            border-collapse: collapse;
+                            width: 100%;
+                            table-layout: fixed;
+                        }
+                        .pdf-export-container th, .pdf-export-container td {
+                            overflow-wrap: break-word;
+                            word-break: break-word;
+                        }
+                    </style>
                 {#each service.timesheetTemplate.content_html?.fields || [] as field}
-                    <div style="position: absolute; left: {field.x}px; top: {field.y}px; width: {field.w}px; height: {field.h}px; font-size: {field.style.fontSize}px; color: {field.style.color}; font-weight: {field.style.fontWeight}; text-align: {field.style.textAlign}; padding: {field.style.padding}px;">{#if field.type === 'text'}{@html service.replacePlaceholders(field.content, true)}{:else if field.type === 'logo'}{#if service.company?.logo}<img src={pb.files.getURL(service.company, service.company.logo)} style="max-width: 100%; max-height: 100%; object-fit: contain;" alt="Logo" crossorigin="anonymous" />{/if}{:else if field.type === 'table'}{@html service.getItemsHtml(field.tableConfig, true)}{/if}</div>
+                        <div style="position: absolute; left: {field.x}px; top: {field.y}px; width: {field.w}px; height: {field.h}px; font-size: {field.style.fontSize}px; color: {field.style.color}; font-weight: {field.style.fontWeight}; text-align: {field.style.textAlign}; padding: {field.style.padding}px; box-sizing: border-box; overflow: hidden; display: flex; flex-direction: column; justify-content: {field.style.verticalAlign === 'middle' ? 'center' : field.style.verticalAlign === 'bottom' ? 'flex-end' : 'flex-start'};"><div style="width: 100%; {field.type === 'logo' ? 'height: 100%; display: flex; align-items: center; justify-content: center;' : ''}">{#if field.type === 'text'}{@html service.replacePlaceholders(field.content, true)}{:else if field.type === 'logo'}{#if service.company?.logo}<img src={pb.files.getURL(service.company, service.company.logo)} style="max-width: 100%; max-height: 100%; object-fit: contain;" alt="Logo" crossorigin="anonymous" />{/if}{:else if field.type === 'table'}{@html service.getItemsHtml(field.tableConfig, true)}{/if}</div></div>
                 {/each}
             </div>
         </div>

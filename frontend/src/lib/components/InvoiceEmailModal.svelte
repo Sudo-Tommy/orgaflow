@@ -405,6 +405,25 @@
                 }
             } catch (e) { console.warn("E-Mail konnte nicht im Postfach gespeichert werden", e); }
 
+        try {
+            if (invoice?.id) {
+                let newStatus: any = 'Eingereicht';
+                try {
+                    await pb.collection('invoices').update(invoice.id, { status: newStatus }, { requestKey: null });
+                } catch (fallbackErr) {
+                    // Fallback, falls 'Eingereicht' in der Datenbank als Status nicht existiert
+                    newStatus = 'Offen' as any;
+                    await pb.collection('invoices').update(invoice.id, { status: newStatus }, { requestKey: null });
+                }
+                if (orgaStore.invoices) {
+                    const idx = orgaStore.invoices.data.findIndex((i: any) => i.id === invoice.id);
+                    if (idx !== -1) {
+                        orgaStore.invoices.data[idx] = { ...orgaStore.invoices.data[idx], status: newStatus };
+                    }
+                }
+            }
+        } catch (e) { console.warn("Status der Rechnung konnte nicht aktualisiert werden", e); }
+
             successMsg = "E-Mail wurde erfolgreich mit Anhang versendet!";
             setTimeout(() => {
                 close();
@@ -419,10 +438,10 @@
 </script>
 
 <dialog bind:this={dialog} class="p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-full max-w-4xl mx-auto my-auto rounded-3xl" onclick={(e) => { if (e.target === dialog) close(); }}>
-    <div class="bg-neutral-50 rounded-3xl w-full relative shadow-2xl max-h-[90vh] flex flex-col overflow-hidden">
+    <div class="bg-neutral-50 sm:rounded-3xl w-full h-dvh sm:h-auto sm:max-h-[90dvh] relative shadow-2xl flex flex-col overflow-hidden">
         <div class="bg-white px-5 sm:px-8 py-5 border-b border-neutral-200 shrink-0 flex items-center justify-between sticky top-0 z-20 shadow-sm">
             <h2 class="text-xl sm:text-2xl font-bold text-neutral-900 flex items-center gap-3"><span class="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shadow-inner text-lg">✉️</span> Dokumente versenden</h2>
-            <button aria-label="Schließen" title="Schließen" onclick={close} class="w-10 h-10 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-colors">
+            <button aria-label="Schließen" title="Schließen" onclick={close} class="w-10 h-10 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-colors active:scale-95">
             <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
         </button>
         </div>

@@ -64,7 +64,7 @@ export function createMailboxService() {
     },
 
     // Fetch all folders for current user
-    async loadFolders(): Promise<MailboxFolder[]> {
+    async loadFolders(selectedUserEmail?: string): Promise<MailboxFolder[]> {
       isLoading = true;
       error = null;
       try {
@@ -73,14 +73,20 @@ export function createMailboxService() {
           throw new Error('User not authenticated');
         }
 
+      // Identischer Nutzer-Filter für die Live-Berechnung der Ordner-Zähler
+      let userFilter = "";
+      if (selectedUserEmail && selectedUserEmail !== "all") {
+          userFilter = ` && (to_address ~ "${selectedUserEmail}" || from_address ~ "${selectedUserEmail}")`;
+      }
+
       // Wir rufen die ungelesenen Mails für den Badge live ab
       const unreadInbox = await pb.collection('mailbox_messages').getList(1, 1, {
-          filter: `folder = "INBOX" && is_read = false`,
+          filter: `folder = "INBOX" && is_read = false${userFilter}`,
           requestKey: null
       });
-      const totalInbox = await pb.collection('mailbox_messages').getList(1, 1, { filter: `folder = "INBOX"`, requestKey: null });
-      const totalSent = await pb.collection('mailbox_messages').getList(1, 1, { filter: `folder = "Sent"`, requestKey: null });
-      const totalTrash = await pb.collection('mailbox_messages').getList(1, 1, { filter: `folder = "Trash"`, requestKey: null });
+      const totalInbox = await pb.collection('mailbox_messages').getList(1, 1, { filter: `folder = "INBOX"${userFilter}`, requestKey: null });
+      const totalSent = await pb.collection('mailbox_messages').getList(1, 1, { filter: `folder = "Sent"${userFilter}`, requestKey: null });
+      const totalTrash = await pb.collection('mailbox_messages').getList(1, 1, { filter: `folder = "Trash"${userFilter}`, requestKey: null });
 
       // Standard-Ordnerstruktur erzwingen
       folders = [

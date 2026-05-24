@@ -53,7 +53,7 @@
 	// PWA Standby-Fix: Läd Benachrichtigungen neu, sobald das Handy aufwacht
 	function handleResume() {
 		if (document.visibilityState === 'visible' && navigator.onLine) {
-			mailboxService.loadFolders();
+			mailboxService.loadFolders(pb.authStore.model?.email);
 			reqAdmin.init();
 			emailService.syncEmails().catch(() => {});
 			
@@ -82,7 +82,7 @@
 		window.addEventListener('global-company-changed', handleCompanySync);
 
 		// Initialer Ladevorgang für Badge-Counts im Hintergrund
-		mailboxService.loadFolders();
+		mailboxService.loadFolders(pb.authStore.model?.email);
 		reqAdmin.init();
 		
 		// Update-Store prüfen (Admins only)
@@ -97,7 +97,7 @@
 				const res = await emailService.syncEmails();
 				if (res.synced_count > 0) {
 					// Aktualisiert den Zähler und löst die Toast-Nachricht aus!
-					mailboxService.loadFolders();
+					mailboxService.loadFolders(pb.authStore.model?.email);
 				}
 			} catch (e) {}
 		}, 2 * 60 * 1000);

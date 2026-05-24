@@ -7,6 +7,8 @@
   import MailDetail from './MailDetail.svelte';
   import MailComposer from './MailComposer.svelte';
   import MailConfigModal from './MailConfigModal.svelte';
+  import { pb } from "$lib/services/pocketbase";
+
 
   const mailConfigService = getMailConfigService();
   const mailboxService = getMailboxService();
@@ -20,11 +22,22 @@
   let mobileMenuOpen = $state(false);
   let mobileDetailOpen = $state(false);
 
+   // New states for User Filter
+  let users = $state<any[]>([]);
+  let isSuperAdmin = $derived(pb.authStore.isSuperuser || pb.authStore.model?.role === 'superadmin');
+  let selectedUserEmail = $state(pb.authStore.model?.email || '');
+
+
   // Initialize on mount
   async function initializeMail() {
     if (isInitialized) return;
     
     try {
+
+      if (isSuperAdmin) {
+      pb.collection('users').getFullList({ requestKey: null }).then(res => users = res).catch(()=>{});
+      }
+
       // Check if config exists
       const config = await mailConfigService.loadConfig();
       
@@ -33,19 +46,19 @@
         showConfigModal = true;
       } else {
         // Load folders and sync
-        await mailboxService.loadFolders();
+        await mailboxService.loadFolders(selectedUserEmail);
         
         // E-Mails sofort initial für den ausgewählten Ordner laden
         if (mailboxService.selectedFolderPath) {
-          await emailService.loadEmails({ folder: mailboxService.selectedFolderPath });
+          await emailService.loadEmails({ folder: mailboxService.selectedFolderPath, userEmail: selectedUserEmail });
         }
         
         await emailService.syncEmails();
         
         // Nach dem Sync die E-Mails und Ordner nochmal aktualisieren
         if (mailboxService.selectedFolderPath) {
-          await emailService.loadEmails({ folder: mailboxService.selectedFolderPath });
-          await mailboxService.loadFolders();
+          await emailService.loadEmails({ folder: mailboxService.selectedFolderPath, userEmail: selectedUserEmail });
+          await mailboxService.loadFolders(selectedUserEmail);
         }
       }
       
@@ -62,11 +75,24 @@
       showConfigModal = false;
       
       // Now load mailbox
-      await mailboxService.loadFolders();
+      await mailboxService.loadFolders(selectedUserEmail);
       await emailService.syncEmails();
     } catch (err) {
       console.error('[Mail Layout] Config save error:', err);
     }
+  }
+
+  // Handle user change
+  async function handleUserChange(email: string) {
+      selectedUserEmail = email;
+      selectedEmailId = null;
+      await mailboxService.loadFolders(selectedUserEmail);
+      if (mailboxService.selectedFolderPath) {
+          await emailService.loadEmails({
+              folder: mailboxService.selectedFolderPath,
+              userEmail: selectedUserEmail
+          });
+      }
   }
 
   // Handle folder selection
@@ -77,7 +103,8 @@
     mobileDetailOpen = false;
     if (mailboxService.selectedFolder) {
       emailService.loadEmails({
-        folder: folderPath
+        folder: folderPath,
+        userEmail: selectedUserEmail
       });
     }
   }
@@ -102,7 +129,8 @@
       // Reload emails for current folder
       if (mailboxService.selectedFolder) {
         await emailService.loadEmails({
-          folder: mailboxService.selectedFolder.folder_path
+          folder: mailboxService.selectedFolder.folder_path,
+          userEmail: selectedUserEmail
         });
       }
     mobileDetailOpen = false;
@@ -135,6 +163,10 @@
       showComposer = false;
       // Sync to get updated sent folder
       await emailService.syncEmails();
+      // Reload with new sent emails if applicable
+      if (mailboxService.selectedFolderPath) {
+        await emailService.loadEmails({ folder: mailboxService.selectedFolderPath, userEmail: selectedUserEmail });
+      }
     } catch (err) {
       console.error('[Mail Layout] Send error:', err);
     }
@@ -167,12 +199,16 @@
         onComposeClick={() => (showComposer = true)}
         isLoading={mailboxService.isLoading}
         onCloseMenu={() => (mobileMenuOpen = false)}
+        {isSuperAdmin}
+        {users}
+        {selectedUserEmail}
+        onUserChange={handleUserChange}
       />
     {/if}
   </div>
 
   <!-- Main content -->
-  <div class="flex-1 flex flex-col">
+  <div class="flex-1 flex flex-col w-full">
     {#if !mailConfigService.hasConfig}
       <div class="flex-1 flex items-center justify-center bg-neutral-50/50">
         <div class="text-center">
@@ -197,7 +233,7 @@
       <!-- Mail list and detail -->
       <div class="flex-1 flex overflow-hidden relative">
         <!-- List -->
-        <div class="flex-1 md:w-96 md:flex-none border-r border-neutral-100 bg-white overflow-y-auto flex flex-col min-w-0">
+        <div class="flex-1 md:w-96 md:flex-none border-r border-neutral-100 bg-white flex flex-col min-w-0 relative">
           <MailList
             emails={emailService.paginatedEmails}
             selectedEmailId={selectedEmailId}
@@ -205,6 +241,7 @@
             totalPages={emailService.totalPages}
             isLoading={emailService.isLoading}
             folderName={mailboxService.selectedFolder?.folder_name || 'Posteingang'}
+            isMobileDetailOpen={mobileDetailOpen}
             onEmailSelect={handleEmailSelect}
             onPageChange={(page: number) => (emailService.currentPage = page)}
             onToggleMenu={() => (mobileMenuOpen = true)}
@@ -213,7 +250,7 @@
         </div>
 
         <!-- Detail -->
-        <div class="absolute inset-0 z-30 md:relative md:z-auto bg-neutral-50 flex-1 overflow-y-auto transition-transform duration-300 transform {mobileDetailOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}">
+        <div class="absolute inset-0 z-30 md:relative md:z-auto bg-neutral-50 flex-1 flex flex-col overflow-hidden transition-transform duration-300 transform {mobileDetailOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}">
           {#if selectedEmailId}
             <MailDetail
               emailId={selectedEmailId}

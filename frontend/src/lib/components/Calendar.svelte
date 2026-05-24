@@ -2,6 +2,7 @@
     import { onMount } from 'svelte';
     import AppointmentDetailModal from './AppointmentDetailModal.svelte';
     import BulkBlockModal from './BulkBlockModal.svelte';
+    import BulkVisibilityModal from './BulkVisibilityModal.svelte';
     import { pb } from "$lib/services/pocketbase";
     import { orgaStore } from "$lib/stores/orgaStore.svelte";
     import { toastStore } from "$lib/services/toastService.svelte";
@@ -16,12 +17,15 @@
     let currentUser = $state(pb.authStore.record || pb.authStore.model);
     
     const checkIsSuperuser = (u: any) => pb.authStore.isSuperuser || u?.collectionName === '_superusers';
-    let isSuperAdmin = $derived(checkIsSuperuser(currentUser) || currentUser?.role === 'superadmin' || currentUser?.role === 'admin');
     let isGodMode = $derived(checkIsSuperuser(currentUser) || currentUser?.role === 'superadmin');
+    let isSuperAdmin = $derived(isGodMode || currentUser?.role === 'admin');
+    
+    let isGuest = $derived(!currentUser || !currentUser.id);
+    let canEdit = $derived(!isGuest);
     
     let users = $state<any[]>([]);
     // svelte-ignore state_referenced_locally
-    let selectedUserId = $state<string>((checkIsSuperuser(currentUser) || currentUser?.role === 'superadmin' || currentUser?.role === 'admin') ? "all" : (currentUser?.id || "all"));
+    let selectedUserId = $state<string>(isSuperAdmin ? "all" : (currentUser?.id || "all"));
     let selectedCompanyId = $state<string>("all");
 
     let myCompId = $derived.by(() => {
@@ -305,10 +309,37 @@
         return Math.max(30, durationMinutes) / 60 * HOUR_HEIGHT - 2; // Mindestens 30 Min hoch, -2px für Abstand
     }
 
+    // --- HELPER FÜR SAUBERE KARTEN & RBAC ---
+    const isBlock = (app: any) => app.description?.includes('[BLOCK]');
+    const getBlockText = (app: any) => app.description?.replace('[BLOCK]', '').trim() || 'Sperrzeit / Abwesend';
+
+    function getCardTitle(app: any) {
+        if (isGuest) return "Belegt";
+        if (app.is_private && app.user !== currentUser?.id && !isGodMode) return "Privater Termin";
+        if (isBlock(app)) return getBlockText(app);
+        const clientName = app.expand?.client?.[0] ? `${app.expand.client[0].name_first} ${app.expand.client[0].name_last}` : '';
+        return clientName || 'Interner Termin';
+    }
+
+    function getCardSubtitle(app: any) {
+        if (isGuest || (app.is_private && app.user !== currentUser?.id && !isGodMode)) return "";
+        if (isBlock(app)) return "Sperrzeit";
+        return app.description || '';
+    }
+
+    function getCardStateClasses(app: any) {
+        let classes = [];
+        if (app.settled) classes.push('grayscale opacity-60');
+        else if (currentUser?.id && app.user !== currentUser.id) classes.push('opacity-60 saturate-50 hover:opacity-100 hover:saturate-100');
+        return classes.join(' ');
+    }
+
     // svelte-ignore non_reactive_update
     let detailModal: ReturnType<typeof AppointmentDetailModal>;
     // svelte-ignore non_reactive_update
     let bulkBlockModal: ReturnType<typeof BulkBlockModal>;
+    // svelte-ignore non_reactive_update
+    let bulkVisibilityModal: ReturnType<typeof BulkVisibilityModal>;
 
     // --- Drag & Drop Logik ---
     let draggedAppId = $state<string | null>(null);
@@ -415,37 +446,83 @@
 
         await updateAppointmentDate(app.id, newDate);
     }
+
+    async function toggleVisibility(app: any) {
+        try {
+            const newValue = !app.is_visible;
+            await pb.collection('appointments').update(app.id, { is_visible: newValue });
+            if (orgaStore.appointments) {
+                const newData = [...orgaStore.appointments.data];
+                const idx = newData.findIndex(a => a.id === app.id);
+                if (idx !== -1) {
+                    newData[idx] = { ...newData[idx], is_visible: newValue };
+                    orgaStore.appointments.data = newData;
+                }
+            }
+            toastStore.success(newValue ? "Termin ist nun im Portal sichtbar 👁️" : "Termin ist nun versteckt 🙈");
+        } catch (err) {
+            console.error("Fehler beim Umschalten der Sichtbarkeit:", err);
+            toastStore.error("Sichtbarkeit konnte nicht geändert werden.");
+        }
+    }
 </script>
+
+{#snippet statusIcons(app: any)}
+    <div class="flex items-center gap-0.75 opacity-60 hover:opacity-100 shrink-0 text-[10px] transition-opacity cursor-help">
+        {#if isSuperAdmin}
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <span onclick={(e) => { e.stopPropagation(); toggleVisibility(app); }} class="hover:scale-125 transition-transform cursor-pointer mr-0.5" title={app.is_visible ? "Öffentlich sichtbar (Klick zum Verbergen)" : "Unsichtbar (Klick zum Veröffentlichen)"}>
+                {app.is_visible ? '👁️' : '🙈'}
+            </span>
+        {/if}
+        {#if app.is_private}<span title="Privater Termin">🔒</span>{/if}
+        {#if app.is_series}<span class="text-indigo-600" title="Wiederkehrender Serientermin">🔁</span>{/if}
+        {#if app.settled}<span class="text-emerald-600" title="Bereits abgerechnet">✓</span>{/if}
+        {#if app.expand?.time_record?.length > 0}<span title="Zeiterfassung liegt vor">⏱️</span>{/if}
+        {#if app.expand?.drive_record?.length > 0}<span title="Fahrtenbuch-Eintrag liegt vor">🚗</span>{/if}
+        {#if app.expand?.expenditures?.length > 0}<span title="Ausgaben/Kassenbon hinterlegt">💶</span>{/if}
+        {#if app.expand?.tasks?.length > 0}<span title="Besuchsbericht/Aufgabe vorhanden">📝</span>{/if}
+    </div>
+{/snippet}
+
+{#snippet userTag(app: any)}
+    {#if isSuperAdmin && app.expand?.user && app.expand.user.id !== currentUser?.id}
+        <span class="inline-block text-[8px] sm:text-[9px] font-bold text-neutral-500 bg-neutral-200/60 border border-neutral-200/80 px-1 py-0.5 rounded truncate max-w-[95%] shrink-0 text-center" title="Zugewiesen an: {app.expand.user.name_first} {app.expand.user.name_last}">
+            👤 {app.expand.user.name_first}
+        </span>
+    {/if}
+{/snippet}
 
 <div class="orga-calendar-wrapper {isUpdating ? 'opacity-50 pointer-events-none transition-opacity' : ''}">
     <!-- Toolbar -->
-    <div class="orga-calendar-toolbar flex-wrap {isWidget ? 'p-3 sm:p-4' : 'p-4 md:p-6'}">
-        <div class="flex items-center gap-2 max-w-fit">
-            <button onclick={today} class="px-3 py-1.5 text-sm font-bold text-neutral-600 bg-white border border-neutral-200 hover:bg-neutral-100 rounded-lg shadow-sm transition-colors shrink-0">Heute</button>
+    <div class="orga-calendar-toolbar flex-wrap {isWidget ? 'p-2 sm:p-3' : 'p-3 md:p-5'} gap-y-3">
+        <div class="flex items-center gap-2 max-w-fit w-full sm:w-auto justify-between sm:justify-start">
             <div class="flex items-center bg-white border border-neutral-200 rounded-lg p-0.5 shadow-sm shrink-0">
                 <!-- svelte-ignore a11y_consider_explicit_label -->
-                <button onclick={prev} class="p-1.5 text-neutral-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg></button>
-                <span class="w-28 text-center font-bold text-neutral-800 text-sm">{monthName} {year}</span>
+                <button onclick={prev} class="p-1 sm:p-1.5 text-neutral-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"><svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg></button>
+                <span class="w-24 sm:w-28 text-center font-bold text-neutral-800 text-xs sm:text-sm truncate">{monthName} {year}</span>
                 <!-- svelte-ignore a11y_consider_explicit_label -->
-                <button onclick={next} class="p-1.5 text-neutral-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" /></svg></button>
+                <button onclick={next} class="p-1 sm:p-1.5 text-neutral-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"><svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" /></svg></button>
             </div>
+            <button onclick={today} class="px-2.5 py-1.5 sm:px-3 sm:py-1.5 text-xs sm:text-sm font-bold text-neutral-600 bg-white border border-neutral-200 hover:bg-neutral-100 rounded-lg shadow-sm transition-colors shrink-0">Heute</button>
         </div>
         
-        <div class="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-3 mt-3 lg:mt-0">
+        <div class="flex flex-row flex-wrap items-center gap-2 w-full lg:w-auto mt-1 lg:mt-0">
             <!-- Ansicht-Toggle -->
             <div class="flex bg-neutral-100 p-1 rounded-lg border border-neutral-200 shadow-inner shrink-0">
-                <button onclick={() => viewMode = 'month'} class="px-3 py-1 text-xs font-bold rounded-md transition-colors {viewMode === 'month' ? 'bg-white shadow-sm text-indigo-600' : 'text-neutral-500 hover:text-neutral-700'}">Monat</button>
-                <button onclick={() => viewMode = 'week'} class="px-3 py-1 text-xs font-bold rounded-md transition-colors {viewMode === 'week' ? 'bg-white shadow-sm text-indigo-600' : 'text-neutral-500 hover:text-neutral-700'}">Woche</button>
+                <button onclick={() => viewMode = 'month'} class="px-2 sm:px-3 py-1 text-[10px] sm:text-xs font-bold rounded-md transition-colors {viewMode === 'month' ? 'bg-white shadow-sm text-indigo-600' : 'text-neutral-500 hover:text-neutral-700'}">Monat</button>
+                <button onclick={() => viewMode = 'week'} class="px-2 sm:px-3 py-1 text-[10px] sm:text-xs font-bold rounded-md transition-colors {viewMode === 'week' ? 'bg-white shadow-sm text-indigo-600' : 'text-neutral-500 hover:text-neutral-700'}">Woche</button>
             </div>
             <!-- Klienten-Filter -->
-            <select bind:value={selectedClientId} class="bg-white border border-neutral-200 text-sm font-semibold text-neutral-700 rounded-lg px-3 py-1.5 shadow-sm focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 outline-none w-full sm:w-auto cursor-pointer">
+            <select bind:value={selectedClientId} class="bg-white border border-neutral-200 text-xs sm:text-sm font-semibold text-neutral-700 rounded-lg px-2 py-1.5 sm:px-3 shadow-sm focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 outline-none flex-1 sm:flex-none cursor-pointer truncate max-w-35 sm:max-w-50">
                 <option value="all">Alle Klienten</option>
                 {#each clients as c (c.id)}
                     <option value={c.id}>{c.name_first} {c.name_last}</option>
                 {/each}
             </select>
             {#if isSuperAdmin}
-                <select bind:value={selectedUserId} class="bg-white border border-neutral-200 text-sm font-semibold text-neutral-700 rounded-lg px-3 py-1.5 shadow-sm focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 outline-none w-full sm:w-auto cursor-pointer">
+                <select bind:value={selectedUserId} class="bg-white border border-neutral-200 text-xs sm:text-sm font-semibold text-neutral-700 rounded-lg px-2 py-1.5 sm:px-3 shadow-sm focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 outline-none flex-1 sm:flex-none cursor-pointer truncate max-w-35 sm:max-w-50">
                     <option value="all">Alle Mitarbeiter</option>
                 <option value={currentUser?.id}>Meine Termine</option>
                     {#each users as u (u.id)}
@@ -454,8 +531,11 @@
                         {/if}
                     {/each}
                 </select>
-                <button type="button" onclick={() => bulkBlockModal?.open()} class="bg-white border border-rose-200 text-rose-600 hover:bg-rose-50 text-sm font-bold rounded-lg px-3 py-1.5 shadow-sm transition-colors flex items-center gap-1.5 shrink-0" title="Mehrere Tage auf einmal sperren">
-                    <span>🚫</span> <span class="hidden xl:inline">Serien-Sperre</span>
+                <button type="button" onclick={() => bulkBlockModal?.open()} class="bg-white border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs sm:text-sm font-bold rounded-lg px-2 py-1.5 sm:px-3 shadow-sm transition-colors flex items-center gap-1.5 shrink-0" title="Mehrere Tage auf einmal sperren">
+                    <span>🚫</span> <span class="hidden sm:inline">Sperren</span>
+                </button>
+                <button type="button" onclick={() => bulkVisibilityModal?.open(filteredAppointments)} class="bg-white border border-sky-200 text-sky-600 hover:bg-sky-50 text-xs sm:text-sm font-bold rounded-lg px-2 py-1.5 sm:px-3 shadow-sm transition-colors flex items-center gap-1.5 shrink-0" title="Sichtbarkeit mehrerer Termine umschalten">
+                    <span>👁️</span> <span class="hidden sm:inline">Sichtbarkeit</span>
                 </button>
             {/if}
         </div>
@@ -468,7 +548,7 @@
             <div class="flex-1 min-w-0 {isWidget ? 'border-b md:border-b-0 md:border-r border-neutral-100' : 'border-transparent'}">
                 <div class="orga-calendar-header">
                     {#each weekdays as day}
-                        <div class="py-2.5 text-center text-[10px] sm:text-xs font-bold text-neutral-500 uppercase tracking-wider border-r border-neutral-100 last:border-0">{day}</div>
+                        <div class="py-2 text-center text-[10px] sm:text-xs font-bold text-neutral-500 uppercase tracking-wider border-r border-neutral-100 last:border-0">{day}</div>
                     {/each}
                 </div>
 
@@ -476,17 +556,21 @@
                     {#each calendarDays as day}
                         <!-- svelte-ignore a11y_click_events_have_key_events -->
                         <!-- svelte-ignore a11y_no_static_element_interactions -->
-                        <div ondrop={(e) => handleDropOnMonthDay(e, day.date)} ondragover={(e) => e.preventDefault()} onclick={() => selectDay(day.date)} class="orga-calendar-day group md:min-h-30 lg:min-h-35 {selectedDate && isSameDay(day.date, selectedDate) ? 'ring-2 ring-inset ring-indigo-500/50 z-10 bg-indigo-50/20' : ''} {!day.isCurrentMonth ? 'opacity-50 bg-neutral-50/50' : ''} {isDragging ? 'hover:ring-2 hover:ring-inset hover:ring-indigo-400' : ''}">
+                        <div ondrop={canEdit ? (e) => handleDropOnMonthDay(e, day.date) : null} ondragover={(e) => e.preventDefault()} onclick={() => selectDay(day.date)} class="orga-calendar-day group md:min-h-24 lg:min-h-32 {selectedDate && isSameDay(day.date, selectedDate) ? 'ring-2 ring-inset ring-indigo-500/50 z-10 bg-indigo-50/20' : ''} {!day.isCurrentMonth ? 'opacity-50 bg-neutral-50/50' : ''} {isDragging ? 'hover:ring-2 hover:ring-inset hover:ring-indigo-400' : ''}">
                             <div class="flex justify-between items-start w-full">
-                                <button onclick={(e) => { e.stopPropagation(); onNewAppointment?.(day.date); }} class="hidden md:flex w-6 h-6 mt-0.5 ml-0.5 items-center justify-center text-neutral-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors opacity-0 group-hover:opacity-100" title="Neuer Termin">
-                                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
-                                </button>
+                                {#if canEdit}
+                                    <button onclick={(e) => { e.stopPropagation(); onNewAppointment?.(day.date); }} class="hidden md:flex w-5 h-5 mt-0.5 ml-0.5 items-center justify-center text-neutral-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors opacity-0 group-hover:opacity-100" title="Neuer Termin">
+                                        <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
+                                    </button>
+                                {:else}
+                                    <div></div>
+                                {/if}
                                 <span class="w-6 h-6 sm:w-7 sm:h-7 mx-auto sm:mx-0 sm:ml-auto flex items-center justify-center text-[10px] sm:text-xs font-bold rounded-full {isSameDay(day.date, now) ? 'bg-brand-600 text-white shadow-md' : 'text-neutral-700'}">
                                     {day.date.getDate()}
                                 </span>
                             </div>
                             <!-- Mobile Variante: Nur farbige Punkte -->
-                            <div class="flex-wrap gap-1 justify-center sm:justify-end mt-1.5 px-0.5 {isWidget ? 'flex' : 'flex md:hidden'}">
+                            <div class="flex-wrap gap-0.75 justify-center mt-1 sm:mt-1.5 px-1 {isWidget ? 'flex' : 'flex md:hidden'}">
                                 {#each day.apps.slice(0, 4) as app}
                                     {@const cColor = getCompanyColor(app)}
                                     <span class="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full shadow-sm {cColor ? '' : (app.is_private ? 'bg-rose-500' : 'bg-indigo-500')}" style="{cColor ? `background-color: ${cColor};` : ''}" title={app.description || 'Termin'}></span>
@@ -495,44 +579,31 @@
                                     <span class="text-[8px] font-bold text-neutral-400">+{day.apps.length - 4}</span>
                                 {/if}
                             </div>
-                            <!-- Desktop Variante: Echte Terminkarten im Tages-Feld -->
-                            <div class="flex-col gap-1.5 mt-2 flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-0.5 pb-0.5 {isWidget ? 'hidden' : 'hidden md:flex'}">
+                            <!-- Desktop Variante: Kompakte Chips -->
+                            <div class="flex-col gap-1 mt-1.5 flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-0.5 pb-0.5 {isWidget ? 'hidden' : 'hidden md:flex'}">
                                 {#each day.apps as app}
-                                    {@const locationContact = app.expand?.appointment_at?.[0]}
-                                    {@const locationText = locationContact ? `${locationContact.company_name || ''} ${locationContact.name_first || ''} ${locationContact.name_last || ''}`.trim() : app.location_address}
                                     {@const cColor = getCompanyColor(app)}
-                                    {#if app.description?.includes('[BLOCK]')}
-                                        <button type="button" onclick={(e) => { e.stopPropagation(); detailModal?.open(app.id); }} class="w-full text-left block px-2 py-1.5 rounded-lg bg-neutral-100 border border-neutral-200 text-neutral-600 shadow-sm hover:shadow-md transition-all">
-                                            <div class="font-bold text-[11px] flex items-center gap-1">🚫 Blockiert</div>
-                                            {#if app.description.replace('[BLOCK]', '').trim()}
-                                                <div class="text-[10px] truncate opacity-80 mt-0.5">{app.description.replace('[BLOCK]', '').trim()}</div>
-                                            {/if}
+                                    {#if isBlock(app)}
+                                        <button type="button" onclick={canEdit ? (e) => { e.stopPropagation(); detailModal?.open(app.id); } : (e) => e.stopPropagation()} class="w-full text-left block px-1.5 py-1 rounded-md bg-rose-50/50 border border-rose-100 text-rose-800 hover:bg-rose-100 transition-colors truncate {getCardStateClasses(app)}">
+                                            <div class="flex justify-between items-center w-full">
+                                                <div class="truncate"><span class="font-bold text-[9px] mr-1">🚫</span> <span class="text-[10px] font-semibold">{getBlockText(app)}</span></div>
+                                                {#if isSuperAdmin}
+                                                    <!-- svelte-ignore a11y_click_events_have_key_events -->
+                                                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                                                    <span onclick={(e) => { e.stopPropagation(); toggleVisibility(app); }} class="shrink-0 ml-1 hover:scale-125 transition-transform cursor-pointer text-[10px] opacity-60 hover:opacity-100" title={app.is_visible ? "Öffentlich" : "Versteckt"}>{app.is_visible ? '👁️' : '🙈'}</span>
+                                                {/if}
+                                            </div>
                                         </button>
                                     {:else}
-                                        <button type="button" draggable="true" ondragstart={(e) => handleDragStart(e, app.id)} ondragend={handleDragEnd} onclick={(e) => { e.stopPropagation(); detailModal?.open(app.id); }} class="cursor-grab active:cursor-grabbing w-full text-left block px-2 py-1.5 rounded-lg border border-transparent shadow-sm hover:shadow-md transition-all hover:-translate-y-px {cColor ? 'hover:brightness-95' : (app.is_private ? 'bg-rose-50 hover:border-rose-200 text-rose-800' : 'bg-indigo-50 hover:border-indigo-200 text-indigo-800')} {draggedAppId === app.id ? 'opacity-40' : ''} {app.settled ? 'opacity-50 grayscale' : ''}" style="{cColor ? `background-color: color-mix(in srgb, ${cColor} 10%, white); border-left: 3px solid ${cColor}; color: color-mix(in srgb, ${cColor} 90%, black);` : ''}" title={app.description}>
-                                            <div class="flex items-center gap-1 mb-0.5">
-                                                <span class="font-bold text-[11px] leading-none">{getDisplayTime(app)}</span>
-                                                {#if app.is_private}<span class="text-[9px]" title="Privat">🔒</span>{/if}
-                                                {#if app.is_series}<span class="text-[10px] text-indigo-500 font-bold" title="Serientermin">🔁</span>{/if}
-                                                {#if app.settled}<span class="text-[10px] text-emerald-600 font-bold" title="Abgerechnet">✓</span>{/if}
+                                        <button type="button" draggable={canEdit ? "true" : "false"} ondragstart={canEdit ? (e) => handleDragStart(e, app.id) : null} ondragend={handleDragEnd} onclick={canEdit ? (e) => { e.stopPropagation(); detailModal?.open(app.id); } : (e) => e.stopPropagation()} class="{canEdit ? 'cursor-grab active:cursor-grabbing hover:-translate-y-px hover:shadow-md' : 'cursor-default'} w-full text-left flex flex-col gap-0.5 px-1.5 py-1 rounded-md border border-transparent transition-all {cColor ? 'hover:brightness-95' : (app.is_private ? 'bg-rose-50 text-rose-800' : 'bg-indigo-50 text-indigo-800')} {draggedAppId === app.id ? 'opacity-40' : ''} {getCardStateClasses(app)}" style="{cColor ? `background-color: color-mix(in srgb, ${cColor} 10%, white); border-left: 2px solid ${cColor}; color: color-mix(in srgb, ${cColor} 90%, black);` : ''}" title={getCardSubtitle(app)}>
+                                            <div class="flex items-center justify-between w-full">
+                                                <span class="font-bold text-[9px] leading-none truncate pr-1">{getDisplayTime(app)}</span>
+                                                {@render statusIcons(app)}
                                             </div>
-                                            <div class="text-xs font-semibold truncate text-neutral-900">
-                                                {#if isSuperAdmin && app.expand?.user}
-                                                    <span class="inline-block align-text-bottom text-[9px] font-bold text-neutral-500 bg-neutral-200/50 border border-neutral-200 px-1 py-0.5 rounded mr-1" title="{app.expand.user.name_first} {app.expand.user.name_last}">👤 {app.expand.user.name_first}</span>
-                                                {/if}
-                                                {app.expand?.client?.[0] ? app.expand.client[0].name_first + ' ' + app.expand.client[0].name_last : 'Kein Klient'}
+                                            <div class="flex items-center gap-1 w-full mt-0.5">
+                                                {@render userTag(app)}
+                                                <span class="text-[10px] font-semibold truncate flex-1 leading-tight">{getCardTitle(app)}</span>
                                             </div>
-                                            {#if app.expand?.client?.[0]?.notes}
-                                                <div class="mt-0.5 px-1.5 py-0.5 bg-sky-100/60 border border-sky-200/60 text-sky-800 rounded text-[9px] font-medium leading-tight truncate" title={app.expand.client[0].notes}>
-                                                    👤 {app.expand.client[0].notes}
-                                                </div>
-                                            {/if}
-                                            <div class="text-[10px] truncate opacity-80 mt-0.5">{app.description || 'Termin'}</div>
-                                            {#if app.notes || app.internal_notes}
-                                                <div class="mt-1 px-1.5 py-1 bg-amber-100/60 border border-amber-200/60 text-amber-800 rounded text-[9px] font-medium leading-tight truncate" title={app.notes || app.internal_notes}>
-                                                    🔒 {app.notes || app.internal_notes}
-                                                </div>
-                                            {/if}
                                         </button>
                                     {/if}
                                 {/each}
@@ -551,7 +622,9 @@
                             <span class="hidden sm:inline">{selectedDate.toLocaleDateString('de-DE', { day: '2-digit', month: 'long' })}</span>
                             <span class="sm:hidden">{selectedDate.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}</span>
                         </h3>
-                        <button onclick={() => onNewAppointment?.(selectedDate as Date)} class="text-indigo-600 hover:text-indigo-800 text-sm sm:text-lg font-bold transition-colors">+</button>
+                        {#if canEdit}
+                            <button onclick={() => onNewAppointment?.(selectedDate as Date)} class="text-indigo-600 hover:text-indigo-800 text-sm sm:text-lg font-bold transition-colors">+</button>
+                        {/if}
                     </div>
                     
                     {#if selectedDayAppointments.length === 0}
@@ -559,52 +632,49 @@
                     {:else}
                         <div class="flex flex-col gap-2 overflow-y-auto custom-scrollbar pr-1 max-h-60 md:max-h-100">
                             {#each selectedDayAppointments as app}
-                                    {@const locationContact = app.expand?.appointment_at?.[0]}
-                                    {@const locationText = locationContact ? `${locationContact.company_name || ''} ${locationContact.name_first || ''} ${locationContact.name_last || ''}`.trim() : app.location_address}
-                                    {#if app.description?.includes('[BLOCK]')}
-                                        <button type="button" onclick={(e) => { e.stopPropagation(); detailModal?.open(app.id); }} class="w-full text-left block bg-neutral-100 p-2 sm:p-3 rounded-lg border border-neutral-200 hover:border-neutral-300 hover:shadow-md transition-all group">
-                                            <div class="flex justify-between items-start mb-1">
-                                                <span class="text-[10px] sm:text-xs font-bold text-neutral-600">Ganztägig</span>
+                                    {#if isBlock(app)}
+                                        <button type="button" onclick={canEdit ? (e) => { e.stopPropagation(); detailModal?.open(app.id); } : (e) => e.stopPropagation()} class="w-full text-left flex items-center bg-rose-50/50 p-2 sm:p-3 rounded-xl border border-rose-100 hover:border-rose-300 transition-colors gap-3 {getCardStateClasses(app)}">
+                                            <div class="w-14 sm:w-16 shrink-0 flex flex-col items-center justify-center gap-0.5">
+                                                {@render userTag(app)}
+                                                <span class="text-lg opacity-80">🚫</span>
                                             </div>
-                                            <p class="text-[10px] sm:text-xs text-neutral-800 font-medium line-clamp-2">🚫 {app.description.replace('[BLOCK]', '').trim() || 'Blockiert'}</p>
+                                            <div class="flex-1 min-w-0 flex justify-between items-center">
+                                                <p class="text-[11px] sm:text-xs text-rose-900 font-bold truncate pr-2">{getBlockText(app)}</p>
+                                                {#if isSuperAdmin}
+                                                    <!-- svelte-ignore a11y_click_events_have_key_events -->
+                                                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                                                    <span onclick={(e) => { e.stopPropagation(); toggleVisibility(app); }} class="shrink-0 hover:scale-125 transition-transform cursor-pointer text-xs opacity-60 hover:opacity-100" title={app.is_visible ? "Öffentlich" : "Versteckt"}>{app.is_visible ? '👁️' : '🙈'}</span>
+                                                {/if}
+                                            </div>
                                         </button>
                                     {:else}
-                                        <button type="button" onclick={(e) => { e.stopPropagation(); detailModal?.open(app.id); }} class="w-full text-left block bg-white p-2 sm:p-3 rounded-lg border border-neutral-200 hover:border-indigo-300 hover:shadow-md transition-all group {app.settled ? 'opacity-50 grayscale' : ''}">
-                                            <div class="flex justify-between items-start mb-1 gap-2">
-                                                <span class="flex items-center gap-1 text-[10px] sm:text-xs font-bold shrink-0 {app.is_private ? 'text-rose-600' : 'text-indigo-600'}">
-                                                    {getDisplayTime(app)}
-                                                    {#if app.is_private}<span class="text-[9px]" title="Privat">🔒</span>{/if}
-                                                    {#if app.is_series}<span class="text-[10px] text-indigo-500 font-bold" title="Serientermin">🔁</span>{/if}
-                                                    {#if app.settled}<span class="text-[10px] text-emerald-600 font-bold" title="Abgerechnet">✓</span>{/if}
+                                        <button type="button" onclick={canEdit ? (e) => { e.stopPropagation(); detailModal?.open(app.id); } : (e) => e.stopPropagation()} class="{canEdit ? 'hover:border-indigo-300 hover:shadow-md' : 'cursor-default'} w-full text-left flex bg-white p-2.5 sm:p-3 rounded-xl border border-neutral-100 shadow-sm transition-all group gap-3 {getCardStateClasses(app)}">
+                                            <!-- Links: Uhrzeit Kasten -->
+                                            <div class="w-14 sm:w-16 shrink-0 flex flex-col items-center justify-center bg-neutral-50 rounded-lg border border-neutral-100/50 py-1.5 gap-1">
+                                                {@render userTag(app)}
+                                                <span class="text-[11px] sm:text-xs font-black {app.is_private ? 'text-rose-600' : 'text-indigo-600'} text-center flex flex-col leading-tight">
+                                                    {#each getDisplayTime(app).split(' - ') as t, i}
+                                                        <span>{t}</span>
+                                                        {#if i === 0 && getDisplayTime(app).includes(' - ')}<span class="text-[8px] text-neutral-400 opacity-50 my-0.5 font-bold">bis</span>{/if}
+                                                    {/each}
                                                 </span>
-                                                <div class="flex items-center gap-1.5 min-w-0 justify-end text-right">
-                                                    {#if isSuperAdmin && app.expand?.user}
-                                                        <span class="hidden sm:inline-block text-[9px] font-bold text-neutral-500 bg-neutral-100 border border-neutral-200 px-1.5 py-0.5 rounded-md truncate max-w-25" title="{app.expand.user.name_first} {app.expand.user.name_last}">👤 {app.expand.user.name_first}</span>
-                                                    {/if}
-                                                    {#if app.expand?.client?.[0]}
-                                                        <span class="inline-block text-[9px] font-bold text-neutral-600 bg-neutral-100 border border-neutral-200 px-1.5 py-0.5 rounded-md truncate max-w-32.5 sm:max-w-40" title="{app.expand.client[0].name_first} {app.expand.client[0].name_last}">{app.expand.client[0].name_first} {app.expand.client[0].name_last}</span>
-                                                    {/if}
-                                                </div>
                                             </div>
-                                            <p class="text-[10px] sm:text-xs text-neutral-800 font-medium line-clamp-2">
-                                                {app.description || 'Ohne Beschreibung'}
-                                            </p>
-                                            {#if locationText}
-                                                {@const mapsQuery = locationContact ? `${locationContact.company_name || ''} ${locationContact.name_first || ''} ${locationContact.name_last || ''}, ${locationContact.street || ''} ${locationContact.housenr || ''}, ${locationContact.zip || ''} ${locationContact.city || ''}` : locationText}
-                                                <a href="https://www.google.com/maps/search/?api=1&query={encodeURIComponent(mapsQuery)}" target="_blank" rel="noopener noreferrer" onclick={(e) => e.stopPropagation()} class="mt-1.5 px-2 py-1 bg-blue-100/60 border border-blue-200/60 text-blue-800 rounded text-[10px] font-medium leading-tight line-clamp-2 flex items-center gap-1 hover:bg-blue-100">
-                                                    <span class="text-xs">📍</span> <span class="truncate">{locationText}</span>
-                                                </a>
-                                            {/if}
-                                            {#if app.expand?.client?.[0]?.notes}
-                                                <div class="mt-1.5 px-2 py-1 bg-sky-100/60 border border-sky-200/60 text-sky-800 rounded text-[10px] font-medium leading-tight line-clamp-2" title={app.expand.client[0].notes}>
-                                                    👤 {app.expand.client[0].notes}
+                                            
+                                            <!-- Rechts: Inhalt -->
+                                            <div class="flex-1 min-w-0 flex flex-col justify-center py-0.5">
+                                                <div class="flex items-start justify-between mb-1 gap-2">
+                                                    <span class="text-xs font-bold text-neutral-900 truncate">{getCardTitle(app)}</span>
+                                                    {@render statusIcons(app)}
                                                 </div>
-                                            {/if}
-                                            {#if app.notes || app.internal_notes}
-                                                <div class="mt-1.5 px-2 py-1 bg-amber-100/60 border border-amber-200/60 text-amber-800 rounded text-[10px] font-medium leading-tight line-clamp-2" title={app.notes || app.internal_notes}>
-                                                    🔒 {app.notes || app.internal_notes}
-                                                </div>
-                                            {/if}
+                                                {#if getCardSubtitle(app)}
+                                                    <p class="text-[10px] sm:text-[11px] text-neutral-500 line-clamp-1 mb-1.5 leading-snug">{getCardSubtitle(app)}</p>
+                                                {/if}
+                                                {#if app.expand?.appointment_at?.[0] || app.location_address}
+                                                    <div class="flex items-center gap-1.5 mt-auto">
+                                                        <span class="text-[9px] font-bold text-blue-600 bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded flex items-center gap-1 truncate max-w-32" title="Standort/Fahrtziel hinterlegt">📍 Route</span>
+                                                    </div>
+                                                {/if}
+                                            </div>
                                         </button>
                                     {/if}
                             {/each}
@@ -654,39 +724,32 @@
                         <!-- svelte-ignore a11y_no_static_element_interactions -->
                         <div ondrop={(e) => handleDropOnWeekDay(e, day.date)} ondragover={(e) => e.preventDefault()} onclick={() => selectDay(day.date)} class="relative border-r border-neutral-100 last:border-0 cursor-pointer hover:bg-neutral-50/30 transition-colors {selectedDate && isSameDay(day.date, selectedDate) ? 'bg-indigo-50/20' : ''} {isDragging ? 'hover:bg-indigo-50/50 outline-dashed outline-2 outline-indigo-200 -outline-offset-2' : ''}">
                             {#each day.apps as app}
-                                    {@const locationContact = app.expand?.appointment_at?.[0]}
-                                    {@const locationText = locationContact ? `${locationContact.company_name || ''} ${locationContact.name_first || ''} ${locationContact.name_last || ''}`.trim() : app.location_address}
                                     {@const cColor = getCompanyColor(app)}
-                                    {#if app.description?.includes('[BLOCK]')}
-                                        <button type="button" onclick={(e) => { e.stopPropagation(); detailModal?.open(app.id); }} class="text-left absolute left-0.5 right-0.5 sm:left-1 sm:right-1 rounded-md p-1 sm:p-1.5 text-[10px] sm:text-xs overflow-hidden transition-all border shadow-sm hover:shadow-md hover:z-20 bg-neutral-100 border-neutral-200 text-neutral-700" style="top: {getAppTop(app)}px; height: {getAppHeight(app)}px;" title={app.description}>
-                                            <div class="font-bold flex items-center gap-1 mb-0.5">🚫 Blockiert</div>
-                                            <div class="truncate opacity-75">{app.description.replace('[BLOCK]', '').trim()}</div>
+                                    {#if isBlock(app)}
+                                        <button type="button" onclick={canEdit ? (e) => { e.stopPropagation(); detailModal?.open(app.id); } : (e) => e.stopPropagation()} class="{canEdit ? 'hover:shadow-md hover:z-20' : 'cursor-default'} text-left absolute left-0.5 right-0.5 sm:left-1 sm:right-1 rounded-md p-1.5 overflow-hidden transition-all border shadow-sm bg-rose-50/80 border-rose-100 text-rose-800 backdrop-blur-sm {getCardStateClasses(app)}" style="top: {getAppTop(app)}px; height: {getAppHeight(app)}px;" title={getBlockText(app)}>
+                                            <div class="flex justify-between items-start w-full">
+                                                <div class="font-bold text-[10px] flex items-center gap-1 mb-0.5">🚫 Sperrzeit</div>
+                                                {#if isSuperAdmin}
+                                                    <!-- svelte-ignore a11y_click_events_have_key_events -->
+                                                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                                                    <span onclick={(e) => { e.stopPropagation(); toggleVisibility(app); }} class="shrink-0 hover:scale-125 transition-transform cursor-pointer text-[10px] opacity-60 hover:opacity-100" title={app.is_visible ? "Öffentlich" : "Versteckt"}>{app.is_visible ? '👁️' : '🙈'}</span>
+                                                {/if}
+                                            </div>
+                                            <div class="truncate opacity-75 text-[10px]">{getBlockText(app)}</div>
                                         </button>
                                     {:else}
-                                        <button type="button" draggable="true" ondragstart={(e) => handleDragStart(e, app.id)} ondragend={handleDragEnd} onclick={(e) => { e.stopPropagation(); detailModal?.open(app.id); }} class="cursor-grab active:cursor-grabbing text-left absolute left-0.5 right-0.5 sm:left-1 sm:right-1 rounded-md p-1 sm:p-1.5 text-[10px] sm:text-xs overflow-hidden transition-all border shadow-sm hover:shadow-md hover:z-20 {cColor ? 'hover:brightness-95' : (app.is_private ? 'bg-rose-50 border-rose-200 text-rose-800' : 'bg-indigo-50 border-indigo-200 text-indigo-800')} {draggedAppId === app.id ? 'opacity-40 z-50 pointer-events-none' : ''} {app.settled ? 'opacity-50 grayscale' : ''}" style="top: {getAppTop(app)}px; height: {getAppHeight(app)}px; {cColor ? `background-color: color-mix(in srgb, ${cColor} 15%, white); border-color: color-mix(in srgb, ${cColor} 40%, white); color: color-mix(in srgb, ${cColor} 90%, black); border-left: 3px solid ${cColor};` : ''}" title={app.description}>
-                                            <div class="font-bold flex items-center gap-1 mb-0.5">
-                                                <span>{getDisplayTime(app)}</span>
-                                                {#if app.is_private}<span class="text-[8px] sm:text-[10px]" title="Privat">🔒</span>{/if}
-                                                {#if app.is_series}<span class="text-[9px] sm:text-[11px] text-indigo-500 font-bold" title="Serientermin">🔁</span>{/if}
-                                                {#if app.settled}<span class="text-[9px] sm:text-[11px] text-emerald-600 font-bold" title="Abgerechnet">✓</span>{/if}
+                                        <button type="button" draggable={canEdit ? "true" : "false"} ondragstart={canEdit ? (e) => handleDragStart(e, app.id) : null} ondragend={handleDragEnd} onclick={canEdit ? (e) => { e.stopPropagation(); detailModal?.open(app.id); } : (e) => e.stopPropagation()} class="{canEdit ? 'cursor-grab active:cursor-grabbing hover:shadow-md hover:z-20' : 'cursor-default'} flex flex-col text-left absolute left-0.5 right-0.5 sm:left-1 sm:right-1 rounded-md p-1.5 overflow-hidden transition-all border shadow-sm {cColor ? 'hover:brightness-95' : (app.is_private ? 'bg-rose-50/90 border-rose-200 text-rose-800' : 'bg-white/90 border-neutral-200 text-neutral-800')} backdrop-blur-md {draggedAppId === app.id ? 'opacity-40 z-50 pointer-events-none' : ''} {getCardStateClasses(app)}" style="top: {getAppTop(app)}px; height: {getAppHeight(app)}px; {cColor ? `background-color: color-mix(in srgb, ${cColor} 10%, white); border-color: color-mix(in srgb, ${cColor} 30%, white); color: color-mix(in srgb, ${cColor} 90%, black); border-left: 3px solid ${cColor};` : 'border-left: 3px solid #6366f1;'}" title={getCardSubtitle(app)}>
+                                            <div class="flex items-start justify-between w-full gap-1">
+                                                <span class="font-bold text-[9px] leading-none">{getDisplayTime(app)}</span>
+                                                {@render statusIcons(app)}
                                             </div>
-                                            <div class="truncate font-semibold text-neutral-900">
-                                                {#if isSuperAdmin && app.expand?.user}
-                                                    <span class="inline-block align-text-bottom text-[9px] font-bold text-neutral-500 bg-neutral-200/50 border border-neutral-200 px-1 py-0.5 rounded mr-1" title="{app.expand.user.name_first} {app.expand.user.name_last}">👤 {app.expand.user.name_first}</span>
-                                                {/if}
-                                                {app.expand?.client?.[0] ? app.expand.client[0].name_first + ' ' + app.expand.client[0].name_last : 'Kein Klient'}
-                                            </div>
-                                            {#if app.expand?.client?.[0]?.notes}
-                                                <div class="mt-0.5 px-1 py-0.5 bg-sky-100/60 border border-sky-200/60 text-sky-800 rounded text-[9px] font-medium leading-tight truncate" title={app.expand.client[0].notes}>
-                                                    👤 {app.expand.client[0].notes}
-                                                </div>
+                                            <div class="mt-1 text-[11px] font-bold leading-tight line-clamp-2">{getCardTitle(app)}</div>
+                                            {#if getCardSubtitle(app)}
+                                                <div class="text-[9px] opacity-75 truncate mt-0.5 font-medium">{getCardSubtitle(app)}</div>
                                             {/if}
-                                            <div class="truncate opacity-75">{app.description || 'Termin'}</div>
-                                            {#if app.notes || app.internal_notes}
-                                                <div class="mt-0.5 px-1 py-0.5 bg-amber-100/60 border border-amber-200/60 text-amber-800 rounded text-[9px] font-medium leading-tight truncate" title={app.notes || app.internal_notes}>
-                                                    🔒 {app.notes || app.internal_notes}
+                                            <div class="mt-auto pt-1 flex items-center justify-between w-full">
+                                                {@render userTag(app)}
                                                 </div>
-                                            {/if}
                                         </button>
                                     {/if}
                             {/each}
@@ -699,69 +762,78 @@
 
     <!-- Detail-Ansicht für den ausgewählten Tag -->
     {#if selectedDate && !isWidget}
-        <!-- Wird auf dem Desktop ausgeblendet (md:hidden), da die Termine dort ohnehin im Kalender selbst stehen -->
-        <div class="p-6 bg-neutral-50/50 border-t border-neutral-100 flex-1 md:hidden">
-            <div class="flex items-center justify-between mb-4">
-                <h3 class="text-sm font-bold text-neutral-900 flex items-center gap-2"><span>📅</span> Termine für den {selectedDate.toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}</h3>
-                <button onclick={() => onNewAppointment?.(selectedDate as Date)} class="text-indigo-600 hover:text-indigo-800 text-sm font-bold transition-colors">+ Hinzufügen</button>
+        <!-- Wird auf dem Desktop ausgeblendet (md:hidden), da die Termine dort ohnehin im Kalender selbst stehen. Mobile Optimiert. -->
+        <div class="bg-neutral-50/50 border-t border-neutral-200 flex-1 md:hidden flex flex-col h-full relative">
+            <div class="sticky top-0 bg-neutral-50/95 backdrop-blur-md z-10 py-3 px-4 sm:px-6 border-b border-neutral-200/60 shadow-sm flex items-center justify-between">
+                <h3 class="text-sm sm:text-base font-bold text-neutral-900 flex items-center gap-2">
+                    <span class="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center shadow-inner text-sm sm:text-base">📅</span> 
+                    {selectedDate.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: 'long' })}
+                </h3>
+                {#if canEdit}
+                    <button onclick={() => onNewAppointment?.(selectedDate as Date)} class="w-7 h-7 sm:w-8 sm:h-8 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center justify-center font-bold transition-colors shadow-sm" title="Neuer Termin">+</button>
+                {/if}
             </div>
-            {#if selectedDayAppointments.length === 0}
-                <p class="text-sm text-neutral-500 italic">Keine Termine an diesem Tag.</p>
-            {:else}
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {#each selectedDayAppointments as app}
-                            {@const locationContact = app.expand?.appointment_at?.[0]}
-                            {@const locationText = locationContact ? `${locationContact.company_name || ''} ${locationContact.name_first || ''} ${locationContact.name_last || ''}`.trim() : app.location_address}
-                            {#if app.description?.includes('[BLOCK]')}
-                                <button type="button" onclick={(e) => { e.stopPropagation(); detailModal?.open(app.id); }} class="w-full text-left block bg-neutral-100 p-4 rounded-xl border border-neutral-200 hover:border-neutral-300 hover:shadow-md transition-all group">
-                                    <div class="flex justify-between items-start mb-2">
-                                        <span class="text-sm font-bold text-neutral-600">Ganztägig blockiert</span>
-                                    </div>
-                                    <p class="text-sm text-neutral-800 font-medium line-clamp-2">🚫 {app.description.replace('[BLOCK]', '').trim() || 'Urlaub / Blockiert'}</p>
-                                </button>
-                            {:else}
-                                <button type="button" onclick={(e) => { e.stopPropagation(); detailModal?.open(app.id); }} class="w-full text-left block bg-white p-4 rounded-xl border border-neutral-200 hover:border-indigo-300 hover:shadow-md transition-all group {app.settled ? 'opacity-50 grayscale' : ''}">
-                                    <div class="flex justify-between items-start mb-2 gap-2">
-                                        <span class="flex items-center gap-1.5 text-sm font-bold shrink-0 {app.is_private ? 'text-rose-600' : 'text-indigo-600'}">
-                                            {getDisplayTime(app)} Uhr
-                                            {#if app.is_private}<span class="text-xs" title="Privat">🔒</span>{/if}
-                                            {#if app.is_series}<span class="text-sm text-indigo-500 font-bold" title="Serientermin">🔁</span>{/if}
-                                            {#if app.settled}<span class="text-sm text-emerald-600 font-bold" title="Abgerechnet">✓</span>{/if}
-                                        </span>
-                                        <div class="flex items-center gap-1.5 min-w-0 justify-end text-right">
-                                            {#if isSuperAdmin && app.expand?.user}
-                                                <span class="hidden sm:inline-block text-[10px] sm:text-xs font-bold text-neutral-500 bg-neutral-100 border border-neutral-200 px-2 py-0.5 rounded-md truncate max-w-37.5" title="{app.expand.user.name_first} {app.expand.user.name_last}">👤 {app.expand.user.name_first}</span>
-                                            {/if}
-                                            {#if app.expand?.client?.[0]}
-                                                <span class="inline-block text-[10px] sm:text-xs font-bold text-neutral-600 bg-neutral-100 border border-neutral-200 px-2 py-0.5 rounded-md truncate max-w-37.5 sm:max-w-48" title="{app.expand.client[0].name_first} {app.expand.client[0].name_last}">{app.expand.client[0].name_first} {app.expand.client[0].name_last}</span>
+            
+            <div class="p-4 sm:p-6 overflow-y-auto custom-scrollbar">
+                {#if selectedDayAppointments.length === 0}
+                    <div class="flex flex-col items-center justify-center py-10 opacity-60">
+                        <span class="text-4xl mb-3">🍃</span>
+                        <p class="text-sm text-neutral-500 font-medium">Keine Termine an diesem Tag.</p>
+                    </div>
+                {:else}
+                    <div class="flex flex-col gap-3">
+                        {#each selectedDayAppointments as app}
+                                {#if isBlock(app)}
+                                    <button type="button" onclick={canEdit ? (e) => { e.stopPropagation(); detailModal?.open(app.id); } : (e) => e.stopPropagation()} class="w-full text-left flex items-center bg-rose-50/50 p-3 sm:p-4 rounded-xl border border-rose-100 hover:border-rose-300 transition-colors gap-4 {getCardStateClasses(app)}">
+                                        <div class="w-16 sm:w-20 shrink-0 flex flex-col items-center justify-center gap-0.5">
+                                            {@render userTag(app)}
+                                            <span class="text-lg opacity-80">🚫</span>
+                                        </div>
+                                        <div class="flex-1 min-w-0 flex justify-between items-center">
+                                            <p class="text-sm text-rose-900 font-bold truncate pr-2">{getBlockText(app)}</p>
+                                            {#if isSuperAdmin}
+                                                <!-- svelte-ignore a11y_click_events_have_key_events -->
+                                                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                                                <span onclick={(e) => { e.stopPropagation(); toggleVisibility(app); }} class="shrink-0 hover:scale-125 transition-transform cursor-pointer text-sm opacity-60 hover:opacity-100" title={app.is_visible ? "Öffentlich" : "Versteckt"}>{app.is_visible ? '👁️' : '🙈'}</span>
                                             {/if}
                                         </div>
-                                    </div>
-                                    <p class="text-sm text-neutral-800 font-medium line-clamp-2">{app.description || 'Keine Beschreibung'}</p>
-                                    {#if locationText}
-                                        {@const mapsQuery = locationContact ? `${locationContact.company_name || ''} ${locationContact.name_first || ''} ${locationContact.name_last || ''}, ${locationContact.street || ''} ${locationContact.housenr || ''}, ${locationContact.zip || ''} ${locationContact.city || ''}` : locationText}
-                                        <a href="https://www.google.com/maps/search/?api=1&query={encodeURIComponent(mapsQuery)}" target="_blank" rel="noopener noreferrer" onclick={(e) => e.stopPropagation()} class="mt-2 px-2.5 py-1.5 bg-blue-100/60 border border-blue-200/60 text-blue-800 rounded-md text-xs font-medium leading-tight line-clamp-2 flex items-center gap-1.5 hover:bg-blue-100">
-                                            <span class="text-sm">📍</span> <span class="truncate">{locationText}</span>
-                                        </a>
-                                    {/if}
-                                    {#if app.expand?.client?.[0]?.notes}
-                                        <div class="mt-2 px-2.5 py-1.5 bg-sky-100/60 border border-sky-200/60 text-sky-800 rounded-md text-xs font-medium leading-tight line-clamp-2" title={app.expand.client[0].notes}>
-                                            👤 {app.expand.client[0].notes}
+                                    </button>
+                                {:else}
+                                    <button type="button" onclick={canEdit ? (e) => { e.stopPropagation(); detailModal?.open(app.id); } : (e) => e.stopPropagation()} class="{canEdit ? 'hover:border-indigo-300 hover:shadow-md' : 'cursor-default'} w-full text-left flex bg-white p-3 sm:p-4 rounded-xl border border-neutral-100 shadow-sm transition-all group gap-3 sm:gap-4 {getCardStateClasses(app)}">
+                                        <div class="w-16 sm:w-20 shrink-0 flex flex-col items-center justify-center bg-neutral-50 rounded-xl border border-neutral-100/50 py-2 sm:py-3 gap-1.5">
+                                            {@render userTag(app)}
+                                            <span class="text-xs sm:text-sm font-black {app.is_private ? 'text-rose-600' : 'text-indigo-600'} text-center flex flex-col leading-tight">
+                                                {#each getDisplayTime(app).split(' - ') as t, i}
+                                                    <span>{t}</span>
+                                                    {#if i === 0 && getDisplayTime(app).includes(' - ')}<span class="text-[9px] sm:text-[10px] text-neutral-400 opacity-50 my-0.5 font-bold">bis</span>{/if}
+                                                {/each}
+                                            </span>
                                         </div>
-                                    {/if}
-                                    {#if app.notes || app.internal_notes}
-                                        <div class="mt-2 px-2.5 py-1.5 bg-amber-100/60 border border-amber-200/60 text-amber-800 rounded-md text-xs font-medium leading-tight line-clamp-2" title={app.notes || app.internal_notes}>
-                                            🔒 {app.notes || app.internal_notes}
+                                        
+                                        <div class="flex-1 min-w-0 flex flex-col justify-center">
+                                            <div class="flex items-start justify-between mb-1.5 gap-2">
+                                                <span class="text-sm font-bold text-neutral-900 truncate">{getCardTitle(app)}</span>
+                                                {@render statusIcons(app)}
+                                            </div>
+                                            {#if getCardSubtitle(app)}
+                                                <p class="text-xs text-neutral-500 line-clamp-2 leading-relaxed mb-2.5">{getCardSubtitle(app)}</p>
+                                                {/if}
+                                            {#if app.expand?.appointment_at?.[0] || app.location_address}
+                                                <div class="flex items-center gap-2 mt-auto">
+                                                    <span class="text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-100 px-2 py-0.5 rounded flex items-center gap-1.5 truncate max-w-48" title="Standort/Fahrtziel hinterlegt">📍 Route zeigen</span>
+                                                </div>
+                                            {/if}
                                         </div>
-                                    {/if}
-                                </button>
-                            {/if}
-                    {/each}
-                </div>
-            {/if}
+                                    </button>
+                                {/if}
+                        {/each}
+                    </div>
+                {/if}
+            </div>
         </div>
     {/if}
 </div>
 
 <AppointmentDetailModal bind:this={detailModal} />
 <BulkBlockModal bind:this={bulkBlockModal} />
+<BulkVisibilityModal bind:this={bulkVisibilityModal} />

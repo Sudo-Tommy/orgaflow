@@ -201,7 +201,7 @@
 
 <!-- Modal backdrop -->
 <div
-  class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+  class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-0 sm:p-4"
   onclick={onClose}
   role="button"
   tabindex="0"
@@ -209,7 +209,7 @@
 >
   <!-- Modal -->
   <div
-    class="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col relative"
+    class="bg-white sm:rounded-3xl shadow-2xl max-w-2xl w-full h-dvh sm:h-auto sm:max-h-[90dvh] overflow-hidden flex flex-col relative"
     onclick={(e) => e.stopPropagation()}
     onkeydown={(e) => e.stopPropagation()}
     role="dialog"
@@ -266,7 +266,7 @@
               {/each}
             </select>
           {#if isSuperAdmin}
-              <button type="button" onclick={addAllToBcc} class="orga-button-ghost flex-1 sm:flex-none py-3 sm:py-2 px-3 text-xs bg-indigo-50 text-indigo-700 border-indigo-200 shadow-sm whitespace-nowrap hover:bg-indigo-100 transition-colors" disabled={isSending} title="Rundmail an alle (BCC)">
+              <button type="button" onclick={addAllToBcc} class="orga-button-ghost flex-1 sm:flex-none shrink-0 py-3 sm:py-2 px-3 text-xs bg-indigo-50 text-indigo-700 border-indigo-200 shadow-sm whitespace-nowrap hover:bg-indigo-100 transition-colors" disabled={isSending} title="Rundmail an alle (BCC)">
                   📢 An Alle
               </button>
           {/if}
@@ -338,9 +338,9 @@
     {#if attachments.length > 0}
       <div class="flex flex-wrap gap-2 pt-2">
         {#each attachments as file, i}
-          <div class="flex items-center gap-2 bg-neutral-100 text-neutral-700 px-3 py-1.5 rounded-lg text-sm border border-neutral-200 shadow-sm animate-enter">
-            <span class="truncate max-w-50 font-medium">📎 {file.name}</span>
-            <button type="button" onclick={() => removeAttachment(i)} class="text-rose-500 hover:text-rose-700 font-bold ml-1" disabled={isSending} title="Anhang entfernen">✕</button>
+            <div class="flex items-center justify-between gap-2 bg-neutral-100 text-neutral-700 px-3 py-1.5 rounded-lg text-sm border border-neutral-200 shadow-sm animate-enter max-w-full">
+              <span class="truncate flex-1 min-w-0 font-medium">📎 {file.name}</span>
+              <button type="button" onclick={() => removeAttachment(i)} class="shrink-0 text-rose-500 hover:text-rose-700 font-bold ml-1" disabled={isSending} title="Anhang entfernen">✕</button>
           </div>
         {/each}
       </div>
@@ -357,19 +357,23 @@
     </div>
 
     <!-- Footer -->
-  <div class="border-t border-neutral-100 p-5 sm:p-8 bg-neutral-50/50 flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4 shrink-0">
-    <div class="w-full md:w-auto">
+  <div class="border-t border-neutral-100 p-4 sm:p-6 md:p-8 bg-white/95 backdrop-blur-md flex flex-wrap sm:flex-nowrap justify-between items-center gap-2 sm:gap-4 shrink-0 sticky bottom-0 z-20 pb-[max(env(safe-area-inset-bottom,0px),1rem)]">
+    <!-- UX: Ergonomische Daumen-Leiste für Aktionen auf Mobile -->
+    <div class="w-auto flex-1 sm:flex-none">
       <input type="file" id="file-upload" multiple class="hidden" onchange={handleFileSelect} disabled={isSending} />
-      <button type="button" onclick={() => document.getElementById('file-upload')?.click()} class="w-full md:w-auto flex items-center justify-center gap-2 text-sm font-bold text-neutral-600 hover:text-indigo-600 transition-colors px-4 py-3 md:py-2.5 bg-white hover:bg-indigo-50 border border-neutral-200 hover:border-indigo-200 rounded-xl shadow-sm" disabled={isSending}>
-        <span class="text-lg">📎</span> Datei anhängen
+      <button type="button" onclick={() => document.getElementById('file-upload')?.click()} aria-label="Datei anhängen" class="w-full sm:w-auto flex items-center justify-center gap-2 text-xs sm:text-sm font-bold text-neutral-600 hover:text-indigo-600 transition-colors px-4 py-3 sm:py-2.5 bg-white hover:bg-indigo-50 border border-neutral-200 hover:border-indigo-200 rounded-xl shadow-sm active:scale-95" disabled={isSending}>
+        <span class="text-lg">📎</span> <span class="hidden sm:inline">Datei anhängen</span>
       </button>
     </div>
-    <div class="flex flex-col-reverse md:flex-row gap-3 w-full md:w-auto">
-      <button onclick={onClose} disabled={isSending} class="orga-button-ghost w-full md:w-auto py-3 md:py-2.5 px-6">
-        Abbrechen
+    <div class="flex flex-row gap-2 sm:gap-3 w-full sm:w-auto mt-2 sm:mt-0 order-last sm:order-0">
+      <button onclick={onClose} aria-label="Abbrechen" disabled={isSending} class="orga-button-ghost flex-1 sm:flex-none py-3 sm:py-2.5 px-4 sm:px-6 active:scale-95 text-xs sm:text-sm flex justify-center items-center gap-1.5">
+        <span class="sm:hidden text-lg">❌</span>
+        <span class="hidden sm:inline">Abbrechen</span>
       </button>
-      <button onclick={handleSend} disabled={isSending} class="orga-button-primary shadow-indigo-600/20 w-full md:w-auto py-3 md:py-2.5 px-6">
-        {isSending ? 'Wird gesendet...' : 'Senden'}
+      <button onclick={handleSend} aria-label="E-Mail senden" disabled={isSending} class="orga-button-primary shadow-indigo-600/20 flex-1 sm:flex-none py-3 sm:py-2.5 px-4 sm:px-6 active:scale-95 text-xs sm:text-sm flex justify-center items-center gap-1.5">
+        {#if isSending}<div class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>{/if}
+        <span class="sm:hidden text-lg">{isSending ? '' : '📤'}</span>
+        <span class="hidden sm:inline">{isSending ? 'Sendet...' : 'Senden'}</span>
       </button>
     </div>
   </div>

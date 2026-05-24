@@ -17,6 +17,14 @@
         return url;
     }
 
+    function decodeJwt(token: string) {
+        try {
+            return JSON.parse(atob(token.split('.')[1]));
+        } catch {
+            return null;
+        }
+    }
+
     onMount(async () => {
         const token = localStorage.getItem('portal_token');
         if (!token) { goto('/portal'); return; }
@@ -28,7 +36,40 @@
             if (res.status === 401 || data.error) {
                 localStorage.removeItem('portal_token'); goto('/portal'); return;
             }
-            invoices = data.invoices || [];
+            
+            const allInvoices = data.invoices || [];
+            const payload = decodeJwt(token);
+            
+            if (!payload || !payload.id) {
+                invoices = allInvoices;
+                return;
+            }
+
+            const userId = payload.id;
+            const collection = payload.collectionName; // 'clients', 'contacts' oder 'users'
+            
+            if (collection === 'users' || collection === '_superusers') {
+                // Admins dürfen zu Testzwecken im Portal alles sehen
+                invoices = allInvoices;
+            } else if (collection === 'clients') {
+                // Klient sieht nur seine eigenen Rechnungen
+                invoices = allInvoices.filter((inv: any) => inv.client === userId || (Array.isArray(inv.client) && inv.client.includes(userId)) || inv.expand?.client?.id === userId);
+            } else {
+                // Betreuer / Kontakt -> Hole verknüpfte Klienten aus PocketBase
+                let allowedClientIds: string[] = [];
+                try {
+                    const pbBaseUrl = import.meta.env.DEV ? 'http://127.0.0.1:8090' : (env.PUBLIC_POCKETBASE_URL || window.location.origin);
+                    const filter = encodeURIComponent(`caregiver='${userId}' || contacts~'${userId}'`);
+                    const cRes = await fetch(`${pbBaseUrl}/api/collections/clients/records?filter=${filter}`, { headers: { 'Authorization': `Bearer ${token}` } });
+                    if (cRes.ok) {
+                        const cData = await cRes.json();
+                        if (cData && cData.items) allowedClientIds = cData.items.map((c: any) => c.id);
+                    }
+                } catch(e) { console.error("Konnte verknüpfte Klienten nicht abrufen", e); }
+                
+                invoices = allInvoices.filter((inv: any) => allowedClientIds.includes(inv.client) || (Array.isArray(inv.client) && inv.client.some((cId: string) => allowedClientIds.includes(cId))) || allowedClientIds.includes(inv.expand?.client?.id));
+            }
+            
         } catch (err) {
             errorMsg = "Verbindung zum Server konnte nicht hergestellt werden.";
         } finally { isLoading = false; }
