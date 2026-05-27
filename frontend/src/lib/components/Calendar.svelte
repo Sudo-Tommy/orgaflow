@@ -83,7 +83,7 @@
             }
         };
         
-        pb.collection('appointments').subscribe('*', realtimeCallback);
+        pb.collection('appointments').subscribe('*', realtimeCallback, { requestKey: null });
 
         if (isSuperAdmin) {
             pb.collection('users').getFullList({ requestKey: null }).then(res => {
@@ -158,7 +158,14 @@
         return filteredAppointments.filter((app: any) => {
             if (!app.appointment) return false;
             return isSameDay(new Date(app.appointment), date);
-        }).sort((a: any, b: any) => new Date(a.appointment).getTime() - new Date(b.appointment).getTime());
+        }).sort((a: any, b: any) => {
+            const aIsBlock = a.description?.includes('[BLOCK]') ? 1 : 0;
+            const bIsBlock = b.description?.includes('[BLOCK]') ? 1 : 0;
+            if (aIsBlock !== bIsBlock) {
+                return bIsBlock - aIsBlock;
+            }
+            return new Date(a.appointment).getTime() - new Date(b.appointment).getTime();
+        });
     }
 
     // Berechnet das Raster (Grid) für den Kalender
@@ -689,11 +696,13 @@
             <div class="w-12 sm:w-16 flex-none border-r border-neutral-100"></div>
             <div class="flex-1 grid grid-cols-7">
                 {#each calendarDays as day, i}
+                    {@const isBlockedDay = day.apps.some(a => isBlock(a))}
+                    {@const isFullDay = day.apps.filter(a => !isBlock(a)).length >= 4}
                     <!-- svelte-ignore a11y_click_events_have_key_events -->
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
-                    <div onclick={() => selectDay(day.date)} class="py-2 text-center border-r border-neutral-100 last:border-0 cursor-pointer hover:bg-neutral-100 transition-colors {selectedDate && isSameDay(day.date, selectedDate) ? 'bg-indigo-50/50' : ''}">
-                        <div class="text-[10px] sm:text-xs font-bold {isSameDay(day.date, now) ? 'text-brand-500' : 'text-neutral-500'} uppercase tracking-wider">{weekdays[i]}</div>
-                        <div class="text-sm sm:text-base font-bold {isSameDay(day.date, now) ? 'text-brand-600' : 'text-neutral-900'}">{day.date.getDate()}</div>
+                    <div onclick={() => selectDay(day.date)} class="py-2 text-center border-r border-neutral-100 last:border-0 cursor-pointer hover:bg-neutral-100 transition-colors {selectedDate && isSameDay(day.date, selectedDate) ? 'bg-indigo-50/50' : (isBlockedDay ? 'bg-rose-50/50' : (isFullDay ? 'bg-orange-50/40' : ''))}">
+                        <div class="text-[10px] sm:text-xs font-bold {isSameDay(day.date, now) ? 'text-brand-500' : (isBlockedDay ? 'text-rose-600' : (isFullDay ? 'text-orange-600' : 'text-neutral-500'))} uppercase tracking-wider">{weekdays[i]}</div>
+                        <div class="text-sm sm:text-base font-bold {isSameDay(day.date, now) ? 'text-brand-600' : (isBlockedDay ? 'text-rose-700' : (isFullDay ? 'text-orange-700' : 'text-neutral-900'))}">{day.date.getDate()}</div>
                     </div>
                 {/each}
             </div>
@@ -713,6 +722,9 @@
                 </div>
                 <div class="absolute inset-0 grid grid-cols-7 z-10">
                     {#each calendarDays as day}
+                    {@const isBlockedDay = day.apps.some(a => isBlock(a))}
+                    {@const isFullDay = day.apps.filter(a => !isBlock(a)).length >= 4}
+                    
                         <!-- Rote Echtzeit-Linie, wenn dieser Tag HEUTE ist -->
                         {#if isSameDay(day.date, now)}
                             <div class="absolute left-0 right-0 border-t-2 border-rose-500 z-30 pointer-events-none" style="top: {(now.getHours() * 64) + (now.getMinutes() / 60 * 64)}px;">
@@ -722,11 +734,12 @@
                         
                         <!-- svelte-ignore a11y_click_events_have_key_events -->
                         <!-- svelte-ignore a11y_no_static_element_interactions -->
-                        <div ondrop={(e) => handleDropOnWeekDay(e, day.date)} ondragover={(e) => e.preventDefault()} onclick={() => selectDay(day.date)} class="relative border-r border-neutral-100 last:border-0 cursor-pointer hover:bg-neutral-50/30 transition-colors {selectedDate && isSameDay(day.date, selectedDate) ? 'bg-indigo-50/20' : ''} {isDragging ? 'hover:bg-indigo-50/50 outline-dashed outline-2 outline-indigo-200 -outline-offset-2' : ''}">
-                            {#each day.apps as app}
-                                    {@const cColor = getCompanyColor(app)}
-                                    {#if isBlock(app)}
-                                        <button type="button" onclick={canEdit ? (e) => { e.stopPropagation(); detailModal?.open(app.id); } : (e) => e.stopPropagation()} class="{canEdit ? 'hover:shadow-md hover:z-20' : 'cursor-default'} text-left absolute left-0.5 right-0.5 sm:left-1 sm:right-1 rounded-md p-1.5 overflow-hidden transition-all border shadow-sm bg-rose-50/80 border-rose-100 text-rose-800 backdrop-blur-sm {getCardStateClasses(app)}" style="top: {getAppTop(app)}px; height: {getAppHeight(app)}px;" title={getBlockText(app)}>
+                    <div ondrop={(e) => handleDropOnWeekDay(e, day.date)} ondragover={(e) => e.preventDefault()} onclick={() => selectDay(day.date)} class="relative border-r border-neutral-100 last:border-0 cursor-pointer hover:bg-neutral-50/30 transition-colors {selectedDate && isSameDay(day.date, selectedDate) ? 'bg-indigo-50/20' : (isBlockedDay ? 'bg-rose-50/50' : (isFullDay ? 'bg-orange-50/40' : 'bg-transparent'))} {isDragging ? 'hover:bg-indigo-50/50 outline-dashed outline-2 outline-indigo-200 -outline-offset-2' : ''}">
+                                {#if day.apps.some(a => isBlock(a))}
+                                    {@const blockApps = day.apps.filter((a: any) => isBlock(a))}
+                                <div class="sticky top-1 z-30 px-0.5 sm:px-1 w-full flex flex-col gap-1 pt-1">
+                                    {#each blockApps as app}
+                                        <button type="button" onclick={canEdit ? (e) => { e.stopPropagation(); detailModal?.open(app.id); } : (e) => e.stopPropagation()} class="{canEdit ? 'hover:shadow-md hover:z-40' : 'cursor-default'} text-left w-full rounded-md p-1.5 overflow-hidden transition-all border shadow-sm bg-rose-50/95 border-rose-200 text-rose-800 backdrop-blur-md {getCardStateClasses(app)}" title={getBlockText(app)}>
                                             <div class="flex justify-between items-start w-full">
                                                 <div class="font-bold text-[10px] flex items-center gap-1 mb-0.5">🚫 Sperrzeit</div>
                                                 {#if isSuperAdmin}
@@ -737,23 +750,28 @@
                                             </div>
                                             <div class="truncate opacity-75 text-[10px]">{getBlockText(app)}</div>
                                         </button>
-                                    {:else}
-                                        <button type="button" draggable={canEdit ? "true" : "false"} ondragstart={canEdit ? (e) => handleDragStart(e, app.id) : null} ondragend={handleDragEnd} onclick={canEdit ? (e) => { e.stopPropagation(); detailModal?.open(app.id); } : (e) => e.stopPropagation()} class="{canEdit ? 'cursor-grab active:cursor-grabbing hover:shadow-md hover:z-20' : 'cursor-default'} flex flex-col text-left absolute left-0.5 right-0.5 sm:left-1 sm:right-1 rounded-md p-1.5 overflow-hidden transition-all border shadow-sm {cColor ? 'hover:brightness-95' : (app.is_private ? 'bg-rose-50/90 border-rose-200 text-rose-800' : 'bg-white/90 border-neutral-200 text-neutral-800')} backdrop-blur-md {draggedAppId === app.id ? 'opacity-40 z-50 pointer-events-none' : ''} {getCardStateClasses(app)}" style="top: {getAppTop(app)}px; height: {getAppHeight(app)}px; {cColor ? `background-color: color-mix(in srgb, ${cColor} 10%, white); border-color: color-mix(in srgb, ${cColor} 30%, white); color: color-mix(in srgb, ${cColor} 90%, black); border-left: 3px solid ${cColor};` : 'border-left: 3px solid #6366f1;'}" title={getCardSubtitle(app)}>
-                                            <div class="flex items-start justify-between w-full gap-1">
-                                                <span class="font-bold text-[9px] leading-none">{getDisplayTime(app)}</span>
-                                                {@render statusIcons(app)}
-                                            </div>
-                                            <div class="mt-1 text-[11px] font-bold leading-tight line-clamp-2">{getCardTitle(app)}</div>
-                                            {#if getCardSubtitle(app)}
-                                                <div class="text-[9px] opacity-75 truncate mt-0.5 font-medium">{getCardSubtitle(app)}</div>
-                                            {/if}
-                                            <div class="mt-auto pt-1 flex items-center justify-between w-full">
-                                                {@render userTag(app)}
-                                                </div>
-                                        </button>
+                                    {/each}
+                                </div>
+                            {/if}
+
+                            {#each day.apps.filter((a) => !isBlock(a)) as app}
+                                {@const normalApps = day.apps.filter((a: any) => !isBlock(a))}
+                                {@const cColor = getCompanyColor(app)}
+                                <button type="button" draggable={canEdit ? "true" : "false"} ondragstart={canEdit ? (e) => handleDragStart(e, app.id) : null} ondragend={handleDragEnd} onclick={canEdit ? (e) => { e.stopPropagation(); detailModal?.open(app.id); } : (e) => e.stopPropagation()} class="{canEdit ? 'cursor-grab active:cursor-grabbing hover:shadow-md hover:z-20' : 'cursor-default'} flex flex-col text-left absolute left-0.5 right-0.5 sm:left-1 sm:right-1 rounded-md p-1.5 overflow-hidden transition-all border shadow-sm {cColor ? 'hover:brightness-95' : (app.is_private ? 'bg-rose-50/90 border-rose-200 text-rose-800' : 'bg-white/90 border-neutral-200 text-neutral-800')} backdrop-blur-md {draggedAppId === app.id ? 'opacity-40 z-50 pointer-events-none' : ''} {getCardStateClasses(app)}" style="top: {getAppTop(app)}px; height: {getAppHeight(app)}px; {cColor ? `background-color: color-mix(in srgb, ${cColor} 10%, white); border-color: color-mix(in srgb, ${cColor} 30%, white); color: color-mix(in srgb, ${cColor} 90%, black); border-left: 3px solid ${cColor};` : 'border-left: 3px solid #6366f1;'}" title={getCardSubtitle(app)}>
+                                    <div class="flex items-start justify-between w-full gap-1">
+                                        <span class="font-bold text-[9px] leading-none">{getDisplayTime(app)}</span>
+                                        {@render statusIcons(app)}
+                                    </div>
+                                    <div class="mt-1 text-[11px] font-bold leading-tight line-clamp-2">{getCardTitle(app)}</div>
+                                    {#if getCardSubtitle(app)}
+                                        <div class="text-[9px] opacity-75 truncate mt-0.5 font-medium">{getCardSubtitle(app)}</div>
                                     {/if}
+                                    <div class="mt-auto pt-1 flex items-center justify-between w-full">
+                                        {@render userTag(app)}
+                                    </div>
+                                </button>
                             {/each}
-                        </div>
+                    </div>
                     {/each}
                 </div>
             </div>

@@ -1,31 +1,53 @@
 <script lang="ts">
-    let { title = $bindable(), type = $bindable(), saveMessage, isSaving, onSave, onAdd } = $props<{
+    import { slide } from 'svelte/transition';
+    import { ChevronLeft, Type, Image as ImageIcon, Table, Save, Loader2, ChevronDown, Check } from 'lucide-svelte';
+
+    let { title = $bindable(), type = $bindable(), marginTop = $bindable(250), marginBottom = $bindable(150), saveMessage, isSaving, onSave, onAdd } = $props<{
         title: string;
         type: string;
+        marginTop?: number;
+        marginBottom?: number;
         saveMessage: string;
         isSaving: boolean;
         onSave: () => void;
         onAdd: (type: 'text' | 'logo' | 'table') => void;
     }>();
+
+    let isTypeDropdownOpen = $state(false);
+    const docTypes = [
+        { value: 'rechnung', label: 'Rechnung' },
+        { value: 'arbeitszeitnachweis', label: 'Arbeitszeitnachweis' },
+        { value: 'vollmacht', label: 'Vollmacht' },
+        { value: 'antrag', label: 'Antrag' },
+        { value: 'kündigung', label: 'Kündigung' },
+        { value: 'vertrag', label: 'Vertrag' },
+        { value: 'allgemein', label: 'Brief / Sonstiges' }
+    ];
+
+    let selectedDocType = $derived(docTypes.find(t => t.value === type) ?? docTypes[0]);
+
+    function selectType(val: string) {
+        type = val;
+        isTypeDropdownOpen = false;
+    }
 </script>
 
-<!-- Wird nun als linkes Menü (Sidebar) gerendert, Dateiname historisch bedingt -->
-<aside class="bg-neutral-950 text-neutral-400 w-64 md:w-72 flex flex-col border-r border-neutral-900 shrink-0 h-full shadow-2xl z-20 relative overflow-hidden">
-    <!-- Subtiler Hintergrund-Glow für mehr Tiefe -->
-    <div class="absolute top-0 left-0 w-full h-32 bg-indigo-500/5 blur-3xl pointer-events-none"></div>
+<!-- Wird nun als linkes Menü (Sidebar) gerendert -->
+<aside class="bg-neutral-900 text-neutral-300 w-72 flex flex-col border-r border-neutral-800 shrink-0 h-full shadow-2xl z-20 relative overflow-hidden">
+    <div class="absolute top-0 left-0 w-full h-40 bg-brand-500/5 blur-3xl pointer-events-none"></div>
 
     <!-- Back Button & Header -->
-    <div class="p-5 border-b border-neutral-900/80 flex items-center gap-4 relative z-10">
-        <a href="/documents" class="w-10 h-10 flex items-center justify-center bg-neutral-900 hover:bg-neutral-800 text-neutral-400 hover:text-white rounded-xl transition-colors shadow-sm border border-neutral-800" title="Zurück zur Übersicht">
-            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+    <div class="p-6 border-b border-neutral-800/80 flex items-center gap-4 relative z-10 bg-neutral-950/20">
+        <a href="/documents" class="w-12 h-12 flex items-center justify-center bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-white rounded-2xl transition-all shadow-sm border border-neutral-700 active:scale-95" title="Zurück zur Übersicht">
+            <ChevronLeft class="w-6 h-6" />
         </a>
         <div>
-            <h1 class="font-bold text-white text-lg leading-tight">Editor</h1>
-            <p class="text-[10px] uppercase tracking-wider text-indigo-400 font-bold">Vorlagen-Design</p>
+            <h1 class="font-black text-white text-xl leading-tight">Editor</h1>
+            <p class="text-[10px] uppercase tracking-widest text-brand-400 font-bold mt-0.5">Vorlagen-Design</p>
         </div>
     </div>
     
-    <div class="flex-1 overflow-y-auto custom-scrollbar p-5 space-y-8 relative z-10">
+    <div class="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-8 relative z-10">
         <!-- Dokumenten-Einstellungen -->
         <div class="space-y-4">
             <h3 class="text-xs font-bold uppercase tracking-wider text-neutral-500">Dokument</h3>
@@ -36,72 +58,105 @@
                     id="doc-title"
                     type="text" 
                     bind:value={title} 
-                    class="w-full bg-neutral-900 border border-neutral-800 text-white rounded-lg px-3 py-2.5 text-sm focus:border-indigo-500 focus:outline-none transition-colors" 
+                    class="w-full bg-neutral-950 border border-neutral-800 text-white rounded-xl px-4 min-h-12 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none transition-all" 
                     placeholder="z.B. Standard Rechnung"
                 />
             </div>
             
-            <div>
+            <div class="relative">
                 <label for="doc-type" class="block text-xs font-semibold text-neutral-400 mb-1.5">Dokumententyp</label>
-                <div class="relative">
-                    <select id="doc-type" bind:value={type} class="w-full bg-neutral-900 border border-neutral-800 text-white rounded-lg px-3 py-2.5 text-sm focus:border-indigo-500 focus:outline-none transition-colors cursor-pointer appearance-none">
-                        <option value="rechnung">Rechnung</option>
-                        <option value="arbeitszeitnachweis">Arbeitszeitnachweis</option>
-                        <option value="allgemein">Brief / Allgemein</option>
-                    </select>
-                    <div class="absolute inset-y-0 right-0 flex items-center px-3 pointer-events-none text-neutral-500">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
-                    </div>
+                <!-- svelte-ignore a11y_click_events_have_key_events -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <div 
+                    class="w-full bg-neutral-950 border border-neutral-800 hover:border-neutral-700 text-white rounded-xl px-4 min-h-12 text-sm flex items-center justify-between cursor-pointer transition-all"
+                    onclick={() => isTypeDropdownOpen = !isTypeDropdownOpen}
+                >
+                    <span class="font-medium">{selectedDocType.label}</span>
+                    <ChevronDown class="w-4 h-4 text-neutral-500 transition-transform duration-300 {isTypeDropdownOpen ? 'rotate-180' : ''}" />
                 </div>
+                
+                {#if isTypeDropdownOpen}
+                    <div transition:slide={{ duration: 200 }} class="absolute left-0 right-0 mt-2 bg-neutral-800 border border-neutral-700 rounded-xl shadow-xl overflow-hidden z-20">
+                        {#each docTypes as docType}
+                            <!-- svelte-ignore a11y_click_events_have_key_events -->
+                            <!-- svelte-ignore a11y_no_static_element_interactions -->
+                            <div 
+                                class="px-4 py-3 text-sm flex items-center justify-between cursor-pointer hover:bg-neutral-700 transition-colors {type === docType.value ? 'text-brand-400 bg-neutral-700/50 font-bold' : 'text-neutral-300'}"
+                                onclick={() => selectType(docType.value)}
+                            >
+                                <span>{docType.label}</span>
+                                {#if type === docType.value}
+                                    <Check class="w-4 h-4" />
+                                {/if}
+                            </div>
+                        {/each}
+                    </div>
+                {/if}
             </div>
+
+            <div class="grid grid-cols-2 gap-3 mt-4">
+                <div><label for="doc-margin-top" class="block text-xs font-semibold text-neutral-400 mb-1.5">Kopfzeile (px)</label><input id="doc-margin-top" type="number" bind:value={marginTop} class="w-full bg-neutral-950 border border-neutral-800 text-white rounded-xl px-4 min-h-12 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none transition-all" /></div>
+                <div><label for="doc-margin-bottom" class="block text-xs font-semibold text-neutral-400 mb-1.5">Fußzeile (px)</label><input id="doc-margin-bottom" type="number" bind:value={marginBottom} class="w-full bg-neutral-950 border border-neutral-800 text-white rounded-xl px-4 min-h-12 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none transition-all" /></div>
+            </div>
+            <p class="text-[10px] text-neutral-500 leading-relaxed -mt-2">Begrenzt den Bereich für dynamische Texte & Tabellen.</p>
         </div>
         
-        <div class="h-px w-full bg-neutral-900"></div>
+        <div class="h-px w-full bg-neutral-800"></div>
         
         <!-- Elemente hinzufügen -->
         <div class="space-y-3">
             <h3 class="text-xs font-bold uppercase tracking-wider text-neutral-500 mb-2">Elemente einfügen</h3>
             
-            <button onclick={() => onAdd('text')} class="w-full flex items-center gap-3 p-3 rounded-xl bg-neutral-900/40 hover:bg-neutral-800 border border-neutral-800 hover:border-neutral-700 transition-all group shadow-sm hover:shadow-md">
-                <div class="w-10 h-10 rounded-lg bg-neutral-800 group-hover:bg-indigo-500/20 text-neutral-300 group-hover:text-indigo-400 flex items-center justify-center text-xl shadow-inner transition-colors border border-neutral-700 group-hover:border-indigo-500/30">T</div>
-                <div class="text-left">
-                    <p class="text-sm font-bold text-neutral-200 group-hover:text-white transition-colors">Textfeld</p>
-                    <p class="text-[10px] text-neutral-500 group-hover:text-neutral-400 transition-colors">Für Variablen & Fließtext</p>
+            <button onclick={() => onAdd('text')} class="w-full flex items-center gap-3 p-3 min-h-12 rounded-xl bg-neutral-950/40 hover:bg-neutral-800 border border-neutral-800 hover:border-brand-500/50 transition-all group shadow-sm hover:shadow-md active:scale-95">
+                <div class="w-10 h-10 rounded-lg bg-neutral-900 group-hover:bg-brand-500/20 text-neutral-400 group-hover:text-brand-400 flex items-center justify-center shadow-inner transition-colors border border-neutral-800 group-hover:border-brand-500/30 shrink-0">
+                    <Type class="w-4 h-4" />
+                </div>
+                <div class="text-left flex-1 min-w-0">
+                    <p class="text-xs font-bold text-neutral-200 group-hover:text-white transition-colors truncate">Textfeld</p>
+                    <p class="text-[10px] text-neutral-500 group-hover:text-neutral-400 transition-colors mt-0.5 truncate">Für Variablen & Fließtext</p>
                 </div>
             </button>
             
-            <button onclick={() => onAdd('logo')} class="w-full flex items-center gap-3 p-3 rounded-xl bg-neutral-900/40 hover:bg-neutral-800 border border-neutral-800 hover:border-neutral-700 transition-all group shadow-sm hover:shadow-md">
-                <div class="w-10 h-10 rounded-lg bg-neutral-800 group-hover:bg-emerald-500/20 text-neutral-300 group-hover:text-emerald-400 flex items-center justify-center text-xl shadow-inner transition-colors border border-neutral-700 group-hover:border-emerald-500/30">🖼️</div>
-                <div class="text-left">
-                    <p class="text-sm font-bold text-neutral-200 group-hover:text-white transition-colors">Firmenlogo</p>
-                    <p class="text-[10px] text-neutral-500 group-hover:text-neutral-400 transition-colors">Lädt Ihr hinterlegtes Logo</p>
+            <button onclick={() => onAdd('logo')} class="w-full flex items-center gap-3 p-3 min-h-12 rounded-xl bg-neutral-950/40 hover:bg-neutral-800 border border-neutral-800 hover:border-emerald-500/50 transition-all group shadow-sm hover:shadow-md active:scale-95">
+                <div class="w-10 h-10 rounded-lg bg-neutral-900 group-hover:bg-emerald-500/20 text-neutral-400 group-hover:text-emerald-400 flex items-center justify-center shadow-inner transition-colors border border-neutral-800 group-hover:border-emerald-500/30 shrink-0">
+                    <ImageIcon class="w-4 h-4" />
+                </div>
+                <div class="text-left flex-1 min-w-0">
+                    <p class="text-xs font-bold text-neutral-200 group-hover:text-white transition-colors truncate">Firmenlogo</p>
+                    <p class="text-[10px] text-neutral-500 group-hover:text-neutral-400 transition-colors mt-0.5 truncate">Lädt Ihr hinterlegtes Logo</p>
                 </div>
             </button>
             
-            <button onclick={() => onAdd('table')} class="w-full flex items-center gap-3 p-3 rounded-xl bg-neutral-900/40 hover:bg-neutral-800 border border-neutral-800 hover:border-neutral-700 transition-all group shadow-sm hover:shadow-md">
-                <div class="w-10 h-10 rounded-lg bg-neutral-800 group-hover:bg-amber-500/20 text-neutral-300 group-hover:text-amber-400 flex items-center justify-center text-xl shadow-inner transition-colors border border-neutral-700 group-hover:border-amber-500/30">📊</div>
-                <div class="text-left">
-                    <p class="text-sm font-bold text-neutral-200 group-hover:text-white transition-colors">Tabelle</p>
-                    <p class="text-[10px] text-neutral-500 group-hover:text-neutral-400 transition-colors">Für Rechnungspositionen</p>
+            <button onclick={() => onAdd('table')} class="w-full flex items-center gap-3 p-3 min-h-12 rounded-xl bg-neutral-950/40 hover:bg-neutral-800 border border-neutral-800 hover:border-amber-500/50 transition-all group shadow-sm hover:shadow-md active:scale-95">
+                <div class="w-10 h-10 rounded-lg bg-neutral-900 group-hover:bg-amber-500/20 text-neutral-400 group-hover:text-amber-400 flex items-center justify-center shadow-inner transition-colors border border-neutral-800 group-hover:border-amber-500/30 shrink-0">
+                    <Table class="w-4 h-4" />
+                </div>
+                <div class="text-left flex-1 min-w-0">
+                    <p class="text-xs font-bold text-neutral-200 group-hover:text-white transition-colors truncate">Tabelle</p>
+                    <p class="text-[10px] text-neutral-500 group-hover:text-neutral-400 transition-colors mt-0.5 truncate">Für Rechnungspositionen</p>
                 </div>
             </button>
         </div>
     </div>
     
     <!-- Speichern Bereich -->
-    <div class="p-5 border-t border-neutral-900 bg-neutral-950/80 shrink-0 relative z-10">
+    <div class="p-6 border-t border-neutral-800 bg-neutral-950/50 shrink-0 relative z-10">
         {#if saveMessage}
-            <div class="mb-3 flex items-center gap-2 text-xs font-bold px-3 py-2 rounded-lg bg-neutral-900 border {saveMessage.includes('Fehler') ? 'text-rose-400 border-rose-900/50' : 'text-emerald-400 border-emerald-900/50'} animate-enter">
-                <span>{saveMessage.includes('Fehler') ? '❌' : '✅'}</span>
+            <div class="mb-4 flex items-center gap-2 text-xs font-bold px-4 py-3 rounded-xl bg-neutral-900 border shadow-inner {saveMessage.includes('Fehler') ? 'text-rose-400 border-rose-900/50' : 'text-emerald-400 border-emerald-900/50'} animate-enter">
+                {#if saveMessage.includes('Fehler')}
+                    <span class="text-rose-500">❌</span>
+                {:else}
+                    <Check class="w-4 h-4 text-emerald-500" />
+                {/if}
                 {saveMessage}
             </div>
         {/if}
-        <button onclick={onSave} disabled={isSaving} class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3.5 px-4 rounded-xl transition-all shadow-lg shadow-indigo-600/20 active:scale-95 disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2">
+        <button onclick={onSave} disabled={isSaving} class="orga-button-primary w-full shadow-brand-600/20 disabled:opacity-50 min-h-14">
             {#if isSaving}
-                <div class="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                <Loader2 class="w-5 h-5 animate-spin" />
                 Speichert...
             {:else}
-                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg>
+                <Save class="w-5 h-5" />
                 Vorlage speichern
             {/if}
         </button>

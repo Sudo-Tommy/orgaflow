@@ -28,9 +28,11 @@ export const orgaStore = {
     }),
     
     clients: new OrgaLiveCollection<ClientRecord>('clients', { 
-        sort: 'name_last', // Alphabetisch nach Nachnamen sortieren
-        expand: 'insurance,retirement_homes,contacts,templates,caregiver'
+        sort: 'name_last', 
+        expand: 'insurance,retirement_homes,contacts,templates,caregiver,inheritor'
+        // WICHTIG: Entferne hier den harten Filter, der 'Verstorben' oder 'Inaktiv' ausschließt!
     }),
+
     
     company: new OrgaLiveCollection<CompanyRecord>('company', { 
         expand: 'users,clients'

@@ -151,7 +151,7 @@ export function createMailConfigService() {
           throw new Error('No config to delete');
         }
 
-        await pb.collection('userMailConfigs').delete(currentConfig.id);
+        const deleted = await pb.collection('userMailConfigs').delete(currentConfig.id);
         currentConfig = null;
       } catch (err) {
         error = err instanceof Error ? err.message : 'Failed to delete mail config';
@@ -213,4 +213,7 @@ export function getMailConfigService() {
     mailConfigService = createMailConfigService();
   }
   return mailConfigService;
+}
+function $state<T>(arg0: T): T {
+  throw new Error('Function not implemented.');
 }

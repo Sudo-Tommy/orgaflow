@@ -28,6 +28,7 @@
         <div class="flex flex-col sm:flex-row gap-4 justify-center">
             <button onclick={() => appModal?.open()} class="orga-button-primary w-full sm:w-auto">Kostenloses Kennenlernen</button>
             <button onclick={() => leistungenModal?.open()} class="orga-button-ghost w-full sm:w-auto bg-white border-2 border-brand-100 shadow-sm hover:border-brand-300">Was wir für Sie tun können</button>
+            <a href="/portal" class="orga-button-ghost w-full sm:w-auto bg-indigo-50 border-2 border-indigo-200 text-indigo-800 shadow-sm hover:bg-indigo-100 flex items-center justify-center gap-2">🔐 Zum Portal</a>
         </div>
         
         <!-- Wichtige Info: Vertragsfreiheit -->

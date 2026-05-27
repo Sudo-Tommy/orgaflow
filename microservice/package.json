@@ -17,6 +17,7 @@
     "jsonwebtoken": "^9.0.3",
     "mailparser": "^3.9.8",
     "nodemailer": "^6.9.7",
+    "pdfkit": "^0.18.0",
     "pocketbase": "^0.21.1",
     "web-push": "^3.6.7"
   }

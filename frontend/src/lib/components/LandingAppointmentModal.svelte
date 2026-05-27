@@ -23,6 +23,9 @@
     let request_text = $state("");
     let time = $state("");
     let preferredContact = $state<"phone" | "email" | "mail">("phone");
+    let isPortalUser = $state(false);
+    let portalClients = $state<{id: string, name: string}[]>([]);
+    let selectedPortalClient = $state("");
 
     let isValidContact = $derived.by(() => {
         if (preferredContact === 'email') return email.trim().length >= 5 && email.includes('@');
@@ -147,9 +150,20 @@
     export function open() {
         successMsg = "";
         errorMsg = "";
+        portalClients = [];
+        selectedPortalClient = "";
         
         // Auto-Fill für eingeloggte Portal-Nutzer (Klienten, Kontakte, Mitarbeiter)
-        const model = pb.authStore.model;
+        let model = pb.authStore.model;
+        if (!model && typeof window !== 'undefined') {
+            const token = localStorage.getItem('portal_token') || sessionStorage.getItem('portal_token');
+            if (token) {
+                try { model = JSON.parse(atob(token.split('.')[1])); } catch (e) {}
+            }
+        }
+        
+        isPortalUser = !!model;
+
         if (model && !sender_name) {
             sender_name = `${model.name_first || ''} ${model.name_last || ''}`.trim();
             email = model.email || "";
@@ -166,6 +180,25 @@
             if (model.company) {
                 const cId = Array.isArray(model.company) ? model.company[0] : model.company;
                 if (cId && companies.some(c => c.id === cId)) company_id = cId;
+            }
+        }
+
+        // Fetch clients for dropdown if portal user or admin
+        if (pb.authStore.isValid && pb.authStore.model?.email) {
+            pb.collection('clients').getFullList({ 
+                filter: `caregiver.email = "${pb.authStore.model.email}"`,
+                requestKey: null 
+            })
+                .then(res => { portalClients = res.map(c => ({ id: c.id, name: `${c.name_first} ${c.name_last}`.trim() })); })
+                .catch(() => {});
+        } else if (isPortalUser && typeof window !== 'undefined') {
+            const token = localStorage.getItem('portal_token') || sessionStorage.getItem('portal_token');
+            if (token) {
+                const apiBaseUrl = import.meta.env.DEV ? 'http://localhost:3000/portal' : '/api/emails/portal';
+                fetch(`${apiBaseUrl}/clients?caregiverOnly=true`, { headers: { 'Authorization': `Bearer ${token}` } })
+                    .then(res => res.json())
+                    .then(data => { if (data.success && data.clients) portalClients = data.clients; })
+                    .catch(() => {});
             }
         }
 
@@ -219,7 +252,13 @@
 
         let contactMethod = preferredContact === 'email' ? 'e-mail-address' : (preferredContact === 'mail' ? 'mail-adress' : 'telephone');
 
-        const final_request_text = `${request_text.trim()}
+        let clientInfo = "";
+        if (isPortalUser && selectedPortalClient) {
+            const cName = portalClients.find(c => c.id === selectedPortalClient)?.name || selectedPortalClient;
+            clientInfo = `Betrifft Klient: ${cName}\n\n`;
+        }
+
+        const final_request_text = `${clientInfo}${request_text.trim()}
 
 --- Kontaktdaten ---
 E-Mail: ${preferredContact === 'email' ? email : '-'}
@@ -265,7 +304,7 @@ Adresse: ${preferredContact === 'mail' ? `${street}, ${zip_city}` : '-'}`;
             
             // Reset (Kontaktdaten nur leeren, wenn man nicht eingeloggt ist)
             request_text = ""; time = ""; selectedDate = null;
-            if (!pb.authStore.model) {
+            if (!pb.authStore.model && !(typeof window !== 'undefined' && localStorage.getItem('portal_token'))) {
                 sender_name = ""; email = ""; phone = ""; street = ""; zip_city = ""; preferredContact = "phone";
             }
         } catch (err: any) {
@@ -391,11 +430,19 @@ Adresse: ${preferredContact === 'mail' ? `${street}, ${zip_city}` : '-'}`;
                     <!-- Rechte Spalte: Formulardaten -->
                     <div class="lg:col-span-7 flex flex-col">
                         <div class="orga-card-white p-4 sm:p-6 md:p-8 border border-neutral-200 shadow-lg h-full flex flex-col bg-white">
-                            <h3 class="text-xl font-bold text-brand-950 mb-1.5">3. Ihre Kontaktdaten & Anliegen</h3>
-                            <p class="text-sm text-neutral-600 mb-6 pb-4 border-b border-neutral-100">Wie dürfen wir Sie am besten erreichen?</p>
+                            <h3 class="text-xl font-bold text-brand-950 mb-1.5">3. {isPortalUser ? 'Ihr Anliegen' : 'Ihre Kontaktdaten & Anliegen'}</h3>
+                            <p class="text-sm text-neutral-600 mb-6 pb-4 border-b border-neutral-100">
+                                {#if isPortalUser}
+                                    Bitte beschreiben Sie kurz, wie wir Ihnen helfen können.
+                                {:else}
+                                    Wie dürfen wir Sie am besten erreichen?
+                                {/if}
+                            </p>
                             
                             <div class="space-y-5 flex-1">
-                                <div><label for="req-name" class="block text-sm font-semibold text-neutral-700 mb-1.5">Ihr Vor- und Nachname *</label><input id="req-name" type="text" bind:value={sender_name} class="orga-input-clear bg-neutral-50" placeholder="Max Mustermann" required disabled={isLoading} /></div>
+                                {#if !isPortalUser}
+                                    <div><label for="req-name" class="block text-sm font-semibold text-neutral-700 mb-1.5">Ihr Vor- und Nachname *</label><input id="req-name" type="text" bind:value={sender_name} class="orga-input-clear bg-neutral-50" placeholder="Max Mustermann" required disabled={isLoading} /></div>
+                                {/if}
                                 
                                 <div>
                                     <label for="req-time" class="block text-sm font-semibold text-neutral-700 mb-1.5">Wunsch-Uhrzeit (optional)</label>
@@ -409,6 +456,7 @@ Adresse: ${preferredContact === 'mail' ? `${street}, ${zip_city}` : '-'}`;
                                     {/if}
                                 </div>
 
+                                {#if !isPortalUser}
                                 <div>
                                     <!-- svelte-ignore a11y_label_has_associated_control -->
                                     <label class="block text-sm font-semibold text-neutral-700 mb-1.5">Gewünschter Kontaktweg *</label>
@@ -431,6 +479,28 @@ Adresse: ${preferredContact === 'mail' ? `${street}, ${zip_city}` : '-'}`;
                                         </div>
                                     {/if}
                                 </div>
+                                {:else}
+                                <div class="p-4 bg-emerald-50 border border-emerald-100 rounded-xl animate-enter flex flex-col gap-3 shadow-sm">
+                                    <div class="flex items-start gap-3">
+                                        <span class="text-xl leading-none">👋</span>
+                                        <div>
+                                            <p class="text-sm font-bold text-emerald-900 mb-0.5">Hallo {sender_name}!</p>
+                                            <p class="text-xs text-emerald-700">Ihre Kontaktdaten werden sicher und automatisch aus Ihrem Profil übernommen.</p>
+                                        </div>
+                                    </div>
+                                    {#if portalClients.length > 0}
+                                        <div class="pt-3 border-t border-emerald-100/50 mt-1">
+                                            <label for="req-portal-client" class="block text-sm font-semibold text-emerald-900 mb-1.5">Für welchen Klienten ist die Anfrage?</label>
+                                            <select id="req-portal-client" bind:value={selectedPortalClient} class="orga-input-clear bg-white border-emerald-200 text-emerald-900 text-sm w-full cursor-pointer" disabled={isLoading}>
+                                                <option value="">Für mich selbst / Allgemein</option>
+                                                {#each portalClients as c}
+                                                    <option value={c.id}>{c.name}</option>
+                                                {/each}
+                                            </select>
+                                        </div>
+                                    {/if}
+                                </div>
+                                {/if}
                                 
                                 <div class="flex-1 flex flex-col">
                                     <label for="req-text" class="block text-sm font-semibold text-neutral-700 mb-1.5">Wie können wir Ihnen helfen? *</label>

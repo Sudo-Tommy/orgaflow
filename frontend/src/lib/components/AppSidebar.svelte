@@ -3,6 +3,7 @@
 	import type { Snippet } from 'svelte';
 	import ChatWidget from "$lib/components/ChatWidget.svelte";
 	import { updateStore } from "$lib/services/updateService.svelte";
+	import { pb } from "$lib/services/pocketbase";
 
 	let { items } = $props<{
 		items: Array<{ label: string; href: string; icon: Snippet; roles?: string[] }>;
@@ -14,6 +15,8 @@
 	
 	// Zieht sich die Versionsnummer nun live und fehlerfrei direkt aus dem Update-Log!
 	let appVersion = $derived(updateStore.updates?.length > 0 ? (String(updateStore.updates[0].number).toLowerCase().startsWith('v') ? updateStore.updates[0].number : `v${updateStore.updates[0].number}`) : "v1.0.0");
+	
+	let isSuperAdmin = $derived(pb.authStore.isSuperuser || pb.authStore.model?.role === 'superadmin');
 </script>
 
 <aside class="w-64 bg-neutral-950 text-neutral-400 flex-col border-r border-neutral-900 hidden md:flex h-full shadow-2xl relative overflow-hidden">
@@ -32,18 +35,33 @@
 	<!-- Navigation -->
 	<nav class="flex-1 px-3 space-y-1 overflow-y-auto custom-scrollbar pb-6 z-10">
 		{#each items as item}
-			{@const isActive = currentPath.startsWith(item.href) && (item.href !== '/' || currentPath === '/')}
-			<a
-				href={item.href}
-				class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 font-medium group {isActive ? 'bg-indigo-500/10 text-indigo-300 shadow-[inset_0_1px_0_0_rgba(99,102,241,0.1)] ring-1 ring-indigo-500/20' : 'text-neutral-400 hover:bg-neutral-900/80 hover:text-neutral-100'}"
-			>
-				<span class="w-5 h-5 shrink-0 transition-transform duration-300 group-hover:scale-110 {isActive ? 'text-indigo-400' : 'text-neutral-500 group-hover:text-neutral-300'}">
-					{@render item.icon()}
-				</span>
-				<span class="transition-transform duration-200 {isActive ? '' : 'group-hover:translate-x-0.5'}">
-					{item.label}
-				</span>
-			</a>
+			{#if item.label !== 'System-Admin' || isSuperAdmin}
+				{@const isActive = currentPath.startsWith(item.href) && (item.href !== '/' || currentPath === '/')}
+				<a
+					href={item.href}
+					class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 font-medium group {isActive ? 'bg-indigo-500/10 text-indigo-300 shadow-[inset_0_1px_0_0_rgba(99,102,241,0.1)] ring-1 ring-indigo-500/20' : 'text-neutral-400 hover:bg-neutral-900/80 hover:text-neutral-100'}"
+				>
+					<span class="w-5 h-5 shrink-0 transition-transform duration-300 group-hover:scale-110 {isActive ? 'text-indigo-400' : 'text-neutral-500 group-hover:text-neutral-300'}">
+						{@render item.icon()}
+					</span>
+					<span class="transition-transform duration-200 {isActive ? '' : 'group-hover:translate-x-0.5'}">
+						{item.label}
+					</span>
+				</a>
+				{#if item.label === 'Finanzen' && isSuperAdmin}
+					{@const isTravelExpensesActive = currentPath.startsWith('/vma')}
+					<a
+						href="/vma"
+						class="flex items-center gap-3 pl-10 pr-3 py-2.5 rounded-lg transition-all duration-200 font-medium group
+						{isTravelExpensesActive ? 'bg-indigo-500/10 text-indigo-300 shadow-[inset_0_1px_0_0_rgba(99,102,241,0.1)] ring-1 ring-indigo-500/20' : 'text-neutral-400 hover:bg-neutral-900/80 hover:text-neutral-100'}"
+					>
+						<span class="w-5 h-5 shrink-0 transition-transform duration-300 group-hover:scale-110 {isTravelExpensesActive ? 'text-indigo-400' : 'text-neutral-500 group-hover:text-neutral-300'}">
+								<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-car"><path d="M19 17H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2Z"/><circle cx="7" cy="15" r="2"/><circle cx="17" cy="15" r="2"/></svg>
+							</span>
+						<span class="transition-transform duration-200 {isTravelExpensesActive ? '' : 'group-hover:translate-x-0.5'}">Reisekosten</span>
+					</a>
+				{/if}
+			{/if}
 		{/each}
 	</nav>
 

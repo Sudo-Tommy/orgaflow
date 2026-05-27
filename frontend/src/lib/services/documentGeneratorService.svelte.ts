@@ -5,6 +5,7 @@ export function useDocumentGenerator() {
     let isLoading = $state(false);
     let errorMsg = $state("");
     let successMsg = $state("");
+    let isRegenerating = $state(false);
 
     let step = $state(1);
     let selectedTemplateId = $state("");
@@ -13,6 +14,7 @@ export function useDocumentGenerator() {
     let recipientId = $state("");
     let selectedAppointmentIds = $state<string[]>([]);
     let selectedCompanyId = $state<string>("all");
+    let templateTypeFilter = $state<string>("all");
 
     let showBilledAppointments = $state(false);
     let hourlyWage = $state(40);
@@ -21,6 +23,16 @@ export function useDocumentGenerator() {
 
     let manualInvoiceNr = $state("");
     let generatedInvoiceId = $state<string | null>(null);
+    let existingInvoiceId = $state<string | null>(null);
+    let existingStatus = $state<string | null>(null);
+    let existingPositions = $state<any[] | null>(null);
+    let existingNetto = $state<number | null>(null);
+    let existingTaxSum = $state<number | null>(null);
+    let existingBrutto = $state<number | null>(null);
+    
+    function formatMoney(amount: number): string {
+        return (amount || 0).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
     
     function getLocalDate() {
         const d = new Date();
@@ -28,6 +40,12 @@ export function useDocumentGenerator() {
         const month = String(d.getMonth() + 1).padStart(2, '0');
         const day = String(d.getDate()).padStart(2, '0');
         return `${year}-${month}-${day}`;
+    }
+    
+    function safeString(val: any, maxLength = 45) {
+        let str = String(val ?? '').trim();
+        if (!str) return ' ';
+        return str.split(' ').map(w => w.length > maxLength ? w.match(new RegExp('.{1,' + maxLength + '}', 'g'))?.join(' ') || w : w).join(' ');
     }
     
     let manualIssueDate = $state(getLocalDate()); // YYYY-MM-DD
@@ -112,17 +130,24 @@ export function useDocumentGenerator() {
     $effect(() => {
         if (selectedClientId !== lastClient) {
             lastClient = selectedClientId;
-            const c = orgaStore.clients?.data.find(cl => cl.id === selectedClientId);
-            if (c) {
-                hourlyWage = c.hourly_wage ?? 40;
-                kmRate = c.km_rate ?? 0.3;
-                taxRate = c.tax_rate != null ? c.tax_rate.toString() : "0";
+            if (!isRegenerating) {
+                const c = orgaStore.clients?.data.find(cl => cl.id === selectedClientId);
+                if (c) {
+                    hourlyWage = c.hourly_wage ?? 40;
+                    kmRate = c.km_rate ?? 0.3;
+                    taxRate = c.tax_rate != null ? c.tax_rate.toString() : "0";
+                }
             }
         }
     });
 
     // Vorlagen filtern und den Timesheet-Template heraussuchen
-    let availableTemplates = $derived((orgaStore.document_templates?.data || []).filter(t => (t.type || '').toLowerCase() !== 'arbeitszeitnachweis'));
+    let availableTemplates = $derived((orgaStore.document_templates?.data || []).filter(t => {
+        const tType = (t.type || '').toLowerCase();
+        if (tType === 'arbeitszeitnachweis') return false;
+        if (templateTypeFilter !== "all" && tType !== templateTypeFilter) return false;
+        return true;
+    }));
     let timesheetTemplate = $derived(orgaStore.document_templates?.data.find(t => (t.type || '').toLowerCase() === 'arbeitszeitnachweis'));
 
     let availableAppointments = $derived.by(() => {
@@ -152,6 +177,33 @@ export function useDocumentGenerator() {
         if (!requiresAppointments || selectedAppointmentIds.length === 0) return null;
         const apps = availableAppointments.filter((a:any) => selectedAppointmentIds.includes(a.id));
         
+        let service_period = "";
+        if (apps.length > 0) {
+            const periods = apps.map((a: any) => {
+                if (!a.appointment) return "";
+                const d = new Date(a.appointment);
+                return d.toLocaleString('de-DE', { month: 'long', year: 'numeric' });
+            }).filter(Boolean);
+            service_period = [...new Set(periods)].join(' & ');
+        }
+
+            const currentInvoiceNr = manualInvoiceNr || getNextInvoiceNumber();
+
+        // 1 zu 1 Übernahme der exakten alten Rechnungspositionen und Summen
+            if (isRegenerating && existingPositions && Array.isArray(existingPositions) && existingPositions.length > 0) {
+                // Strikte Datentyp-Prüfung, um NaN Fehler im Backend (pdfkit-table) zu blockieren
+                const sanitizedPositions = existingPositions.map((p: any) => ({
+                pos: safeString(p.pos),
+                date: safeString(p.date),
+                duration: safeString(p.duration),
+                title: safeString(p.title, 45),
+                price: safeString(p.price),
+                    total: Number(p.total) || 0,
+                    itemType: String(p.itemType ?? '').trim() || ' '
+                }));
+                return { invoice_nr: currentInvoiceNr, netto: existingNetto || 0, tax_sum: existingTaxSum || 0, brutto: existingBrutto || 0, positions: sanitizedPositions, service_period, issue_date: manualIssueDate };
+        }
+
         // Die Konfiguration aus dem Tabellen-Element der gewählten Vorlage holen
         let tableConf = template?.content_html?.fields?.find((f: any) => f.type === 'table')?.tableConfig || {};
         const includeTime = tableConf.includeTimeRecords !== false;
@@ -179,11 +231,19 @@ export function useDocumentGenerator() {
                     const hours = appTimeMins / 60;
                     const total = hours * hourlyWage;
                     netto += total;
-                    let titleDesc = app.description || 'Alltagshilfe';
-                    if (app.expand?.tasks && app.expand.tasks.length > 0) {
+                    let titleDesc = "";
+                    if (tableConf.staticDescription) {
+                        titleDesc = replacePlaceholders(tableConf.staticDescription, false, {
+                            invoice_nr: currentInvoiceNr,
+                            service_period: service_period,
+                            brutto: 0
+                        });
+                    } else if (app.expand?.tasks && app.expand.tasks.length > 0) {
                         titleDesc = app.expand.tasks.map((t:any) => t.title).join(', ');
+                    } else {
+                        titleDesc = app.description || 'Alltagshilfe';
                     }
-                    positions.push({ pos: posCounter++, date: new Date(app.appointment as string).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }), duration: `${hours.toFixed(2).replace('.', ',')} h`, title: `${titleDesc}`, price: `${hourlyWage.toFixed(2).replace('.', ',')} €`, total });
+                    positions.push({ pos: posCounter++, date: new Date(app.appointment as string).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }), duration: `${hours.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} h`, title: safeString(titleDesc), price: `${formatMoney(hourlyWage)} €`, total, itemType: 'time' });
                 }
             }
 
@@ -192,12 +252,12 @@ export function useDocumentGenerator() {
                 for (const dr of app.expand.drive_record) {
                     if (dr.lump_sum > 0 && includeDriveLumpSum) { 
                         netto += dr.lump_sum;
-                        positions.push({ pos: posCounter++, date: new Date(app.appointment as string).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }), duration: "1", title: `Anfahrt`, price: `${dr.lump_sum.toFixed(2).replace('.', ',')} €`, total: dr.lump_sum });
+                        positions.push({ pos: posCounter++, date: new Date(app.appointment as string).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }), duration: "1", title: safeString(`Anfahrt`), price: `${formatMoney(dr.lump_sum)} €`, total: dr.lump_sum, itemType: 'drive_lump' });
                     }
                     if (dr.km > 0 && includeDriveKm) { 
                         let total = dr.km * kmRate;
                         netto += total;
-                        positions.push({ pos: posCounter++, date: new Date(app.appointment as string).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }), duration: `${dr.km.toString().replace('.', ',')} km`, title: `Fahrtkosten (${dr.km.toString().replace('.', ',')} km)`, price: `${kmRate.toFixed(2).replace('.', ',')} €`, total: total });
+                        positions.push({ pos: posCounter++, date: new Date(app.appointment as string).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }), duration: `${dr.km.toLocaleString('de-DE', { maximumFractionDigits: 2 })} km`, title: safeString(`Fahrtkosten (${dr.km.toLocaleString('de-DE', { maximumFractionDigits: 2 })} km)`), price: `${formatMoney(kmRate)} €`, total: total, itemType: 'drive_km' });
                     }
                 }
             }
@@ -207,7 +267,7 @@ export function useDocumentGenerator() {
                 for (const exp of app.expand.expenditures) {
                     if (exp.sum > 0) {
                         netto += exp.sum;
-                        positions.push({ pos: posCounter++, date: new Date(app.appointment as string).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }), duration: "1", title: `Auslage: ${exp.titel}`, price: `${exp.sum.toFixed(2).replace('.', ',')} €`, total: exp.sum });
+                        positions.push({ pos: posCounter++, date: new Date(app.appointment as string).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }), duration: "1", title: safeString(`Auslage: ${exp.titel}`), price: `${formatMoney(exp.sum)} €`, total: exp.sum, itemType: 'expenditure' });
                     }
                 }
             }
@@ -216,20 +276,8 @@ export function useDocumentGenerator() {
         const taxRateNum = parseFloat(taxRate) || 0;
         const taxSum = netto * (taxRateNum / 100);
         const brutto = netto + taxSum;
-        const invoice_nr = manualInvoiceNr || getNextInvoiceNumber();
 
-        let service_period = "";
-        if (apps.length > 0) {
-            const periods = apps.map((a: any) => {
-                if (!a.appointment) return "";
-                const d = new Date(a.appointment);
-                return d.toLocaleString('de-DE', { month: 'long', year: 'numeric' });
-            }).filter(Boolean);
-            // Nutzt ein Set um Duplikate zu filtern. Ergibt z.B. "Mai 2026" oder "April 2026 & Mai 2026"
-            service_period = [...new Set(periods)].join(' & ');
-        }
-
-        return { invoice_nr, netto, tax_sum: taxSum, brutto, positions, service_period, issue_date: manualIssueDate };
+        return { invoice_nr: currentInvoiceNr, netto, tax_sum: taxSum, brutto, positions, service_period, issue_date: manualIssueDate };
     });
 
     let isInvoiceNrDuplicate = $derived.by(() => {
@@ -240,111 +288,104 @@ export function useDocumentGenerator() {
         return invoices.some((inv: any) => inv.invoice_nr === nr);
     });
 
-    // NEU: Eigene Datenberechnung für den Zeitnachweis, damit dieser unabhängig von der Rechnungskonfiguration IMMER die Zeiten enthält
+    // Eigene Datenberechnung für den Zeitnachweis: Berücksichtigt jetzt korrekt die Schalter der Arbeitszeitnachweis-Vorlage
     let timesheetData = $derived.by(() => {
         if (!requiresAppointments || selectedAppointmentIds.length === 0) return null;
         const apps = availableAppointments.filter((a:any) => selectedAppointmentIds.includes(a.id));
         
+        let tableConf = timesheetTemplate?.content_html?.fields?.find((f: any) => f.type === 'table')?.tableConfig || {};
+        const includeTime = tableConf.includeTimeRecords !== false;
+        const includeDriveKm = tableConf.includeDriveKm !== false;
+        const includeDriveLumpSum = tableConf.includeDriveLumpSum !== false;
+        const includeExp = tableConf.includeExpenditures !== false;
+
         let positions: any[] = [];
         let netto = 0;
         let posCounter = 1;
 
+        const currentInvoiceNr = manualInvoiceNr || getNextInvoiceNumber();
+        const currentServicePeriod = invoiceData ? invoiceData.service_period : "";
+
         for (const app of apps) {
-            let appTimeMins = 0;
-            if (app.expand?.time_record) {
-                for (const tr of app.expand.time_record) {
-                    if (tr.start && tr.end) {
-                const diffMs = new Date(tr.end as string).getTime() - new Date(tr.start as string).getTime();
-                        if (diffMs > 0) appTimeMins += Math.round(diffMs / 60000);
+            // Zeiterfassung berechnen
+            if (includeTime) {
+                let appTimeMins = 0;
+                if (app.expand?.time_record) {
+                    for (const tr of app.expand.time_record) {
+                        if (tr.start && tr.end) {
+                            const diffMs = new Date(tr.end as string).getTime() - new Date(tr.start as string).getTime();
+                            if (diffMs > 0) appTimeMins += Math.round(diffMs / 60000);
+                        }
+                    }
+                }
+                if (appTimeMins > 0) {
+                    const hours = appTimeMins / 60;
+                    const total = hours * hourlyWage;
+                    netto += total;
+                    let titleDesc = "";
+                    if (tableConf.staticDescription) {
+                        titleDesc = replacePlaceholders(tableConf.staticDescription, true, {
+                            invoice_nr: currentInvoiceNr,
+                            service_period: currentServicePeriod,
+                            brutto: 0
+                        });
+                    } else if (app.expand?.tasks && app.expand.tasks.length > 0) {
+                        titleDesc = app.expand.tasks.map((t:any) => t.title).join(', ');
+                    } else {
+                        titleDesc = app.description || 'Alltagshilfe';
+                    }
+                    positions.push({ pos: posCounter++, date: new Date(app.appointment as string).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }), duration: `${hours.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} h`, title: safeString(titleDesc), price: `${formatMoney(hourlyWage)} €`, total, itemType: 'time' });
+                }
+            }
+
+            // Fahrten berechnen
+            if (app.expand?.drive_record) {
+                for (const dr of app.expand.drive_record) {
+                    if (dr.lump_sum > 0 && includeDriveLumpSum) { 
+                        netto += dr.lump_sum;
+                        positions.push({ pos: posCounter++, date: new Date(app.appointment as string).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }), duration: "1", title: safeString(`Anfahrt`), price: `${formatMoney(dr.lump_sum)} €`, total: dr.lump_sum, itemType: 'drive_lump' });
+                    }
+                    if (dr.km > 0 && includeDriveKm) { 
+                        let total = dr.km * kmRate;
+                        netto += total;
+                        positions.push({ pos: posCounter++, date: new Date(app.appointment as string).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }), duration: `${dr.km.toLocaleString('de-DE', { maximumFractionDigits: 2 })} km`, title: safeString(`Fahrtkosten (${dr.km.toLocaleString('de-DE', { maximumFractionDigits: 2 })} km)`), price: `${formatMoney(kmRate)} €`, total: total, itemType: 'drive_km' });
                     }
                 }
             }
-            if (appTimeMins > 0) {
-                const hours = appTimeMins / 60;
-                const total = hours * hourlyWage;
-                netto += total;
-                let titleDesc = app.description || 'Alltagshilfe';
-                if (app.expand?.tasks && app.expand.tasks.length > 0) {
-                    titleDesc = app.expand.tasks.map((t:any) => t.title).join(', ');
+
+            // Sonderausgaben berechnen
+            if (includeExp && app.expand?.expenditures) {
+                for (const exp of app.expand.expenditures) {
+                    if (exp.sum > 0) {
+                        netto += exp.sum;
+                        positions.push({ pos: posCounter++, date: new Date(app.appointment as string).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }), duration: "1", title: safeString(`Auslage: ${exp.titel}`), price: `${formatMoney(exp.sum)} €`, total: exp.sum, itemType: 'expenditure' });
+                    }
                 }
-                positions.push({ pos: posCounter++, date: new Date(app.appointment as string).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }), duration: `${hours.toFixed(2).replace('.', ',')} h`, title: `${titleDesc}`, price: `${hourlyWage.toFixed(2).replace('.', ',')} €`, total });
             }
         }
 
         const taxRateNum = parseFloat(taxRate) || 0;
         const taxSum = netto * (taxRateNum / 100);
         const brutto = netto + taxSum;
-        const invoice_nr = manualInvoiceNr || getNextInvoiceNumber();
-        const service_period = invoiceData ? invoiceData.service_period : "";
 
-        return { invoice_nr, netto, tax_sum: taxSum, brutto, positions, service_period, issue_date: manualIssueDate };
+        return { invoice_nr: currentInvoiceNr, netto, tax_sum: taxSum, brutto, positions, service_period: currentServicePeriod, issue_date: manualIssueDate };
     });
-
-    function getItemsHtml(fieldConf: any, isTimesheet: boolean = false) {
-        const dataToUse = isTimesheet ? timesheetData : invoiceData;
-        if (!dataToUse) return "";
-        
-        let tableHtml = `<table style="width: 100%; border-collapse: collapse; font-size: ${fieldConf?.fontSize || 12}px;">`;
-        if (fieldConf?.showHeaders) {
-            tableHtml += `<thead><tr style="background-color: ${fieldConf.headerBackgroundColor}; color: ${fieldConf.headerTextColor}; border-bottom: 2px solid #cbd5e1;">`;
-            for (const col of fieldConf.columns) {
-                tableHtml += `<th style="text-align: ${col.align}; padding: 6px 4px; width: ${col.width}%;">${col.name}</th>`;
-            }
-            tableHtml += `</tr></thead>`;
-        }
-        tableHtml += `<tbody>`;
-        for (const pos of dataToUse.positions) {
-            tableHtml += `<tr style="border-bottom: 1px solid #f1f5f9;">`;
-            for (const col of fieldConf?.columns || []) {
-                let val = "";
-                if (col.type === 'pos') val = pos.pos;
-                else if (col.type === 'date') val = pos.date;
-                else if (col.type === 'duration') val = pos.duration;
-                else if (col.type === 'title') {
-                    if (fieldConf.staticDescription) {
-                        val = replacePlaceholders(fieldConf.staticDescription, isTimesheet);
-                    } else {
-                        val = pos.title;
-                    }
-                }
-                else if (col.type === 'price') val = pos.price;
-                else if (col.type === 'total') val = `${pos.total.toFixed(2).replace('.', ',')} €`;
-                tableHtml += `<td style="text-align: ${col.align}; padding: 6px 4px; vertical-align: top;">${val}</td>`;
-            }
-            tableHtml += `</tr>`;
-        }
-        tableHtml += `</tbody></table>`;
-        
-        // Summierung unten anfügen
-        if (fieldConf?.includeTotalNetto !== false || fieldConf?.includeTotalTax !== false || fieldConf?.includeTotalBrutto !== false) {
-            tableHtml += `<div style="margin-top: 15px; border-top: 2px solid ${fieldConf?.headerBackgroundColor || '#ccc'}; padding-top: 10px; width: 250px; margin-left: auto;">`;
-            
-            if (fieldConf?.includeTotalNetto !== false) {
-                tableHtml += `<div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Netto:</span> <span>${dataToUse.netto.toFixed(2).replace('.',',')} €</span></div>`;
-            }
-            if (fieldConf?.includeTotalTax !== false) {
-                tableHtml += `<div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>MwSt (${taxRate}%):</span> <span>${dataToUse.tax_sum.toFixed(2).replace('.',',')} €</span></div>`;
-            }
-            if (fieldConf?.includeTotalBrutto !== false) {
-                tableHtml += `<div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 14px;"><span>Gesamt:</span> <span>${dataToUse.brutto.toFixed(2).replace('.',',')} €</span></div>`;
-            }
-            
-            tableHtml += `</div>`;
-        }
-        
-        return tableHtml;
-    }
 
     function getRecipientData() {
         if (!client) return {};
         if (recipientType === 'client') return client;
+        if (recipientType === 'caregiver') return client.expand?.caregiver || {};
         if (recipientType === 'contact') return client.expand?.contacts?.find((c: any) => c.id === recipientId) || {};
         if (recipientType === 'insurance') return client.expand?.insurance || {};
         if (recipientType === 'home') return client.expand?.retirement_homes?.find((h: any) => h.id === recipientId) || {};
+        if (recipientType === 'inheritor') {
+            const inheritors = Array.isArray(client.expand?.inheritor) ? client.expand.inheritor : (client.expand?.inheritor ? [client.expand.inheritor] : []);
+            return inheritors.find((i: any) => i.id === recipientId) || inheritors[0] || {};
+        }
         return client;
     }
 
-    function replacePlaceholders(text: string, isTimesheet: boolean = false) {
+    function replacePlaceholders(text: string, isTimesheet: boolean = false, overrideData?: any) {
         if (!text) return "";
         
         function safeFormatDate(val: string) {
@@ -362,35 +403,77 @@ export function useDocumentGenerator() {
         const comp: any = company || {};
         const usr: any = pb.authStore.record || {};
         const ins: any = client?.expand?.insurance || {};
-        const dataToUse = isTimesheet ? timesheetData : invoiceData;
-        
-        // Wenn der Empfänger der Klient ist, aber ein Betreuer existiert, wird der Betreuer zum Empfänger.
-        // Dies gilt nicht, wenn explizit ein anderer Kontakt (z.B. Angehöriger) als Empfänger gewählt wurde.
-        if (recipientType === 'client' && client?.expand?.caregiver) {
-            rec = client.expand.caregiver;
-        }
 
-        const clientSignUrl = rec.sign ? pb.files.getURL(rec, rec.sign) : '';
-        const userSignUrl = usr.sign ? pb.files.getURL(usr, usr.sign) : '';
+        let clientSignUrl = rec.sign ? pb.files.getURL(rec, rec.sign) : '';
+        let userSignUrl = usr.sign ? pb.files.getURL(usr, usr.sign) : '';
+
+        // Authentifizierungs-Token anhängen, damit fetch() nicht von PocketBase blockiert wird!
+        if (clientSignUrl && pb.authStore.token) clientSignUrl += (clientSignUrl.includes('?') ? '&' : '?') + 'token=' + pb.authStore.token;
+        if (userSignUrl && pb.authStore.token) userSignUrl += (userSignUrl.includes('?') ? '&' : '?') + 'token=' + pb.authStore.token;
 
         const dueDate = new Date(new Date(manualIssueDate).getTime() + 14 * 24 * 60 * 60 * 1000);
 
+        const dataToUse = overrideData || (isTimesheet ? timesheetData : invoiceData);
+
+        let clientNameFirst = rec.name_first || rec.name || '';
+        let clientNameLast = rec.name_last || '';
+        let clientStreetHousenr = `${rec.street || ''} ${rec.housenr || ''}`.trim();
+        let clientZipCity = `${rec.zip || ''} ${rec.city || ''}`.trim();
+        
+        let rawStreet = rec.street || '';
+        let rawCity = rec.city || '';
+        
+        let addressSalutation = '';
+        if (rec.salutation === 'Herr') {
+            addressSalutation = 'Herr';
+        } else if (rec.salutation === 'Frau') {
+            addressSalutation = 'Frau';
+        } else if (rec.salutation && rec.salutation !== 'Keine Angabe' && rec.salutation !== 'Divers') {
+            addressSalutation = rec.salutation;
+        }
+
+        const cStatus = (client?.status || '').toLowerCase();
+        if (cStatus === 'verstorben') {
+            addressSalutation = '';
+        }
+
+        if (recipientType === 'inheritor' && client) {
+            addressSalutation = '';
+            clientNameFirst = client.name_first || '';
+            clientNameLast = client.name_last || '';
+            clientStreetHousenr = `c/o ${rec.name_first || ''} ${rec.name_last || ''}<br>${rec.street || ''} ${rec.housenr || ''}`.trim();
+            rawStreet = `c/o ${rec.name_first || ''} ${rec.name_last || ''}<br>${rec.street || ''}`.trim();
+            
+            let city = rec.city || '';
+            const otMatch = city.match(/\b(?:ot|o\.t\.|ortsteil)\b\s*(.*)/i);
+            if (otMatch) {
+                const mainCity = city.substring(0, otMatch.index).replace(/[\s,\-]+$/, '').replace(/\($/, '').trim();
+                const otName = otMatch[1].replace(/^[,\-\s]+/, '').replace(/\)$/, '').trim();
+                clientZipCity = `${rec.zip || ''} ${mainCity}<br>OT ${otName}`.trim();
+                rawCity = `${mainCity}<br>OT ${otName}`.trim();
+            } else {
+                clientZipCity = `${rec.zip || ''} ${city}`.trim();
+            }
+        }
+
         const map: Record<string, string> = {
-            '{{client.salutation}}': rec.salutation || '',
+            '{{client.salutation}}': addressSalutation,
             '{{client.salutation_formal}}': rec.salutation === 'Herr' ? `Sehr geehrter Herr ${rec.name_last},` : (rec.salutation === 'Frau' ? `Sehr geehrte Frau ${rec.name_last},` : `Guten Tag ${rec.name_first} ${rec.name_last},`),
-            '{{client.name_first}}': rec.name_first || rec.name || '',
-            '{{client.name_last}}': rec.name_last || '',
-            '{{client.street}} {{client.housenr}}': `${rec.street || ''} ${rec.housenr || ''}`.trim(),
-            '{{client.zip}} {{client.city}}': `${rec.zip || ''} ${rec.city || ''}`.trim(),
+            '{{client.name_first}}': clientNameFirst,
+            '{{client.name_last}}': clientNameLast,
+            '{{client.street}} {{client.housenr}}': clientStreetHousenr,
+            '{{client.zip}} {{client.city}}': clientZipCity,
+            '{{client.company_name}}': rec.company_name || '',
+            '{{client.addition}}': rec.company_name || '',
             '{{client.email}}': rec.email || '',
             '{{client.phone}}': rec.phone || '',
             '{{client.handy}}': rec.handy || '',
             '{{client.insurance_nr}}': rec.insurance_nr || '',
             '{{client.birthdate}}': safeFormatDate(rec.birthdate),
             '{{client.level_of_care}}': rec.level_of_care || '',
-            '{{client.hourly_wage}}': (client?.hourly_wage ?? '').toString().replace('.', ','),
-            '{{client.km_rate}}': (client?.km_rate ?? '').toString().replace('.', ','),
-            '{{client.tax_rate}}': (client?.tax_rate ?? '').toString().replace('.', ','),
+            '{{client.hourly_wage}}': formatMoney(client?.hourly_wage ?? 0),
+            '{{client.km_rate}}': formatMoney(client?.km_rate ?? 0),
+            '{{client.tax_rate}}': (client?.tax_rate ?? 0).toLocaleString('de-DE'),
             '{{client.signature}}': clientSignUrl ? `<img src="${clientSignUrl}" style="max-height: 60px; object-fit: contain;" crossorigin="anonymous" />` : '',
             
             '{{insurance.name}}': ins.name || '',
@@ -434,13 +517,13 @@ export function useDocumentGenerator() {
             '{{company_housenr}}': comp.housenr || '',
             '{{company_zip}}': comp.zip || '',
             '{{company_city}}': comp.city || '',
-            '{{salutation}}': rec.salutation || '',
-            '{{name_first}}': rec.name_first || '',
-            '{{name_last}}': rec.name_last || '',
-            '{{street}}': rec.street || '',
+            '{{salutation}}': addressSalutation,
+            '{{name_first}}': clientNameFirst,
+            '{{name_last}}': clientNameLast,
+            '{{street}}': rawStreet,
             '{{housenr}}': rec.housenr || '',
             '{{zip}}': rec.zip || '',
-            '{{city}}': rec.city || '',
+            '{{city}}': rawCity,
             '{{rechnungsdatum}}': new Date(manualIssueDate).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' }),
             
             // Rückwärtskompatibilität für alte User-Platzhalter
@@ -457,7 +540,7 @@ export function useDocumentGenerator() {
 
         if (dataToUse) {
             map['{{invoice.number}}'] = dataToUse.invoice_nr || '';
-            map['{{invoice.total}}'] = `${dataToUse.brutto.toFixed(2).replace('.', ',')} €`;
+            map['{{invoice.total}}'] = dataToUse.brutto ? `${formatMoney(dataToUse.brutto)} €` : '';
             map['{{rechnungs_nr}}'] = dataToUse.invoice_nr || '';
             map['{{invoice.service_period}}'] = dataToUse.service_period || '';
             map['{{leistungszeitraum}}'] = dataToUse.service_period || '';
@@ -483,6 +566,14 @@ export function useDocumentGenerator() {
         manualInvoiceNr = getNextInvoiceNumber();
         manualIssueDate = getLocalDate();
         generatedInvoiceId = null;
+        existingInvoiceId = null;
+        existingStatus = null;
+        isRegenerating = false;
+        existingPositions = null;
+        existingNetto = null;
+        existingTaxSum = null;
+        existingBrutto = null;
+        templateTypeFilter = "all";
     }
 
     return {
@@ -500,6 +591,9 @@ export function useDocumentGenerator() {
         get manualInvoiceNr() { return manualInvoiceNr; }, set manualInvoiceNr(v) { manualInvoiceNr = v; },
         get manualIssueDate() { return manualIssueDate; }, set manualIssueDate(v) { manualIssueDate = v; },
         get generatedInvoiceId() { return generatedInvoiceId; }, set generatedInvoiceId(v) { generatedInvoiceId = v; },
+        get existingInvoiceId() { return existingInvoiceId; }, set existingInvoiceId(v) { existingInvoiceId = v; },
+        get existingStatus() { return existingStatus; }, set existingStatus(v) { existingStatus = v; },
+        get templateTypeFilter() { return templateTypeFilter; }, set templateTypeFilter(v) { templateTypeFilter = v; },
         get template() { return template; },
         get availableTemplates() { return availableTemplates; },
         get timesheetTemplate() { return timesheetTemplate; },
@@ -509,10 +603,18 @@ export function useDocumentGenerator() {
         get isInvoice() { return isInvoice; },
         get requiresAppointments() { return requiresAppointments; },
         get invoiceData() { return invoiceData; },
+        get timesheetData() { return timesheetData; },
         get isInvoiceNrDuplicate() { return isInvoiceNrDuplicate; },
         get isLoading() { return isLoading; }, set isLoading(v) { isLoading = v; },
+        get isRegenerating() { return isRegenerating; }, set isRegenerating(v) { isRegenerating = v; },
         get errorMsg() { return errorMsg; }, set errorMsg(v) { errorMsg = v; },
         get successMsg() { return successMsg; }, set successMsg(v) { successMsg = v; },
-        replacePlaceholders, getItemsHtml, reset
+        get existingPositions() { return existingPositions; }, set existingPositions(v) { existingPositions = v; },
+        get existingNetto() { return existingNetto; }, set existingNetto(v) { existingNetto = v; },
+        get existingTaxSum() { return existingTaxSum; }, set existingTaxSum(v) { existingTaxSum = v; },
+        get existingBrutto() { return existingBrutto; }, set existingBrutto(v) { existingBrutto = v; },
+        replacePlaceholders, 
+        safeString,
+        reset
     };
 }

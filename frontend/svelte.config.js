@@ -14,7 +14,13 @@ const config = {
 			fallback: 'index.html', // WICHTIG für SPAs
 			precompress: false,
 			strict: true
-		})
+		}),
+		csrf: {
+			trustedOrigins: [
+				'http://localhost:5173',
+				'https://www.ihre-seniorenassistenz.com'
+			]
+		}
 	}
 };
 

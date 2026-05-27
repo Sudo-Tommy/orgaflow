@@ -5582,5 +5582,80 @@
     "indexes": [],
     "system": false,
     "viewQuery": "SELECT \n  appointments.id,\n  appointments.appointment,\n  users.company,\n  appointments.client,\n  (CASE WHEN appointments.description LIKE '%[BLOCK]%' THEN 1 ELSE 0 END) as is_blocked\nFROM appointments\nLEFT JOIN users ON users.id = appointments.user\n\n"
+  },
+  {
+    "id": "pbc_audit_logs1",
+    "listRule": "@request.auth.role = \"admin\" || @request.auth.role = \"superadmin\"",
+    "viewRule": "@request.auth.role = \"admin\" || @request.auth.role = \"superadmin\"",
+    "createRule": null,
+    "updateRule": null,
+    "deleteRule": null,
+    "name": "audit_logs",
+    "type": "base",
+    "fields": [
+      {
+        "autogeneratePattern": "[a-z0-9]{15}",
+        "hidden": false,
+        "id": "text3208210256",
+        "max": 15,
+        "min": 15,
+        "name": "id",
+        "pattern": "^[a-z0-9]+$",
+        "primaryKey": true,
+        "required": true,
+        "system": true,
+        "type": "text"
+      },
+      {
+        "hidden": false,
+        "id": "text_user_name",
+        "name": "user_name",
+        "type": "text"
+      },
+      {
+        "hidden": false,
+        "id": "text_user_role",
+        "name": "user_role",
+        "type": "text"
+      },
+      {
+        "hidden": false,
+        "id": "text_action",
+        "name": "action",
+        "type": "text"
+      },
+      {
+        "hidden": false,
+        "id": "text_route",
+        "name": "route",
+        "type": "text"
+      },
+      {
+        "hidden": false,
+        "id": "text_details",
+        "name": "details",
+        "type": "text"
+      },
+      {
+        "hidden": false,
+        "id": "autodate2990389176",
+        "name": "created",
+        "onCreate": true,
+        "onUpdate": false,
+        "system": true,
+        "type": "autodate"
+      },
+      {
+        "hidden": false,
+        "id": "autodate3332085495",
+        "name": "updated",
+        "onCreate": true,
+        "onUpdate": true,
+        "system": true,
+        "type": "autodate"
+      }
+    ],
+    "indexes": [],
+    "system": false
   }
 ]

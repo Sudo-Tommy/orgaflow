@@ -27,3 +27,51 @@ export function keepPocketBaseAlive() {
 } 
 
 // WICHTIG: PocketBase niemals in ein $state() packen (Proxy-Konflikt)!
+
+// --- GLOBALER AUDIT-HOOK FÜR POCKETBASE ---
+// Fängt alle Schreib-, Änderungs- und Löschvorgänge im Frontend ab und sendet sie an den Microservice Log
+const originalBeforeSend = pb.beforeSend;
+
+pb.beforeSend = async function (url, options) {
+    // Führe ggf. bestehende Hooks aus, falls du schon einen beforeSend hattest
+    if (originalBeforeSend) {
+        const res = await originalBeforeSend(url, options) as any;
+        url = res.url ?? url;
+        options = res.reqOpts ?? res.options ?? options;
+    }
+
+    // Wir loggen nur Mutationen (POST, PUT, PATCH, DELETE), keine reinen Leseabfragen (GET)
+    if (options.method && options.method !== 'GET') {
+        try {
+            let payloadData = options.body;
+            
+            // Formulardaten (z.B. Signatur-Uploads) in Text umwandeln, da FormData sonst als {} geloggt wird
+            if (options.body instanceof FormData) {
+                payloadData = "FormData (Dateiupload / Komplexe Daten)";
+            } else if (typeof options.body === 'string') {
+                try { payloadData = JSON.parse(options.body as string); } catch(e) {}
+            }
+
+            // Relative URL für den Microservice generieren (Lokal vs. Live)
+            const microserviceUrl = (typeof window !== 'undefined' && !window.location.hostname.includes('ihre-seniorenassistenz.com')) 
+                ? `http://${window.location.hostname}:3000/portal/frontend-audit` 
+                : '/api/emails/portal/frontend-audit';
+
+            // Heimlich im Hintergrund ("Fire & Forget") an den Express Server schicken
+            fetch(microserviceUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': pb.authStore.token ? `Bearer ${pb.authStore.token}` : ''
+                },
+                body: JSON.stringify({
+                    method: options.method,
+                    url: url.replace(pb.baseUrl, ''), // Entferne Basis-URL für besseren Lesefluss im Log
+                    payload: payloadData
+                })
+            }).catch(() => {}); // Fehler beim Loggen dürfen die eigentliche App-Funktion nicht stören
+        } catch(e) {}
+    }
+    
+    return { url, reqOpts: options } as any;
+};

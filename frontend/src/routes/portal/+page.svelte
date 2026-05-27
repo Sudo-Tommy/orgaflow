@@ -9,6 +9,7 @@
     let isLoading = $state(false);
     let errorMsg = $state("");
     let successMsg = $state("");
+    let stayLoggedIn = $state(true); // Standardmäßig "Angemeldet bleiben"
 
     let isSuperAdmin = $derived(pb.authStore.isSuperuser || pb.authStore.model?.role === 'superadmin' || pb.authStore.model?.role === 'admin');
 
@@ -18,8 +19,8 @@
 
     onMount(() => {
         // Wenn der Nutzer schon einen Token hat, schicken wir ihn direkt zu den Rechnungen
-        if (localStorage.getItem('portal_token')) {
-            goto('/portal/invoices');
+        if (localStorage.getItem('portal_token') || sessionStorage.getItem('portal_token')) {
+            goto('/portal/overview');
         }
     });
 
@@ -60,15 +61,20 @@
         isLoading = true; errorMsg = "";
         try {
             const cleanOtp = otp.replace(/[^0-9]/g, ''); // Letzte Sicherheits-Reinigung
-            const res = await fetch(`${apiBaseUrl}/verify-otp`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, otp: cleanOtp }) });
+            const res = await fetch(`${apiBaseUrl}/verify-otp`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, otp: cleanOtp, rememberMe: stayLoggedIn }) });
             if (!res.ok && res.status === 404) throw new Error("API-Route nicht gefunden.");
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || data.message || "Falscher Code.");
             if (data.error) throw new Error(data.error);
             
-            localStorage.setItem('portal_token', data.token);
+            if (stayLoggedIn) {
+                localStorage.setItem('portal_token', data.token);
+            } else {
+                sessionStorage.setItem('portal_token', data.token);
+            }
+            
             // Erfolgreicher Login -> Ab zu den Rechnungen!
-            goto('/portal/invoices');
+            goto('/portal/overview');
         } catch (err: any) {
             console.error(err);
             errorMsg = err.message || "Falscher Code oder abgelaufen.";
@@ -80,7 +86,7 @@
     function enterAsAdmin() {
         localStorage.setItem('portal_token', pb.authStore.token);
         localStorage.setItem('portal_admin_mode', 'true');
-        goto('/portal/invoices');
+        goto('/portal/overview');
     }
 </script>
 
@@ -114,6 +120,15 @@
                         Wichtig: Bitte achten Sie bei der Eingabe exakt auf die Groß- und Kleinschreibung (z.B. beim ersten Buchstaben).
                     </p>
                 </div>
+
+                <label class="flex items-center gap-3 p-4 border border-neutral-200 rounded-xl cursor-pointer hover:border-brand-300 transition-colors bg-neutral-50/50 focus-within:ring-2 focus-within:ring-brand-500">
+                    <input type="checkbox" bind:checked={stayLoggedIn} class="w-5 h-5 text-brand-600 rounded focus:ring-brand-500" disabled={isLoading} />
+                    <div>
+                        <span class="font-bold text-neutral-900 text-sm block">Angemeldet bleiben</span>
+                        <span class="text-xs text-neutral-500 mt-0.5 block">Sie bleiben auf diesem Gerät eingeloggt.</span>
+                    </div>
+                </label>
+
                 <button type="submit" disabled={isLoading || !email} class="orga-button-primary w-full py-3 shadow-brand-600/20 text-base">{isLoading ? 'Code wird gesendet...' : 'Zugangs-Code anfordern'}</button>
             </form>
         {:else}

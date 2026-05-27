@@ -1,6 +1,8 @@
 <script lang="ts">
-  import type { MailConfig } from '$lib/services/mailConfigService.svelte';
-  import type { MailConfigInput } from '$lib/services/mailConfigService.svelte';
+  import type { MailConfig } from '$lib/services/mailConfigServiceStore';
+  import type { MailConfigInput } from '$lib/services/mailConfigServiceStore';
+  import { slide } from 'svelte/transition';
+  import { Lock, X, AlertTriangle, Save, Loader2 } from 'lucide-svelte';
 
   interface Props {
     currentConfig: MailConfig | null;
@@ -72,7 +74,7 @@
 
 <!-- Modal backdrop -->
 <div
-  class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-0 sm:p-4"
+  class="fixed inset-0 h-dvh bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-0 sm:p-4"
   onclick={onClose}
   role="button"
   tabindex="0"
@@ -80,7 +82,7 @@
 >
   <!-- Modal -->
   <div
-    class="bg-white sm:rounded-3xl shadow-2xl max-w-xl w-full h-dvh sm:h-auto sm:max-h-[90dvh] overflow-hidden flex flex-col relative"
+    class="bg-white sm:rounded-3xl shadow-2xl max-w-xl w-full h-full sm:h-auto sm:max-h-[90%] overflow-hidden flex flex-col relative border border-neutral-100"
     onclick={(e) => e.stopPropagation()}
     onkeydown={(e) => e.stopPropagation()}
     role="dialog"
@@ -88,29 +90,33 @@
   >
     <!-- Header -->
     <div class="border-b border-neutral-100 p-6 md:p-8 shrink-0 relative">
-      <button aria-label="Schließen" onclick={onClose} class="absolute top-6 right-6 w-10 h-10 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-colors z-10"><svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
+      <button aria-label="Schließen" onclick={onClose} class="absolute top-6 right-6 w-12 h-12 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-all active:scale-95 focus-visible:ring-2 focus-visible:ring-neutral-500 focus-visible:outline-none z-10">
+        <X class="w-5 h-5" />
+      </button>
       <div class="flex items-center gap-3">
-        <span class="text-2xl">🔒</span>
-        <h2 class="text-2xl font-bold text-neutral-900">E-Mail Server-Settings</h2>
+        <div class="w-12 h-12 rounded-xl bg-brand-50 text-brand-600 flex items-center justify-center shadow-inner shrink-0">
+          <Lock class="w-6 h-6" />
+        </div>
+        <h2 class="text-xl sm:text-2xl font-black text-neutral-900">E-Mail Server-Settings</h2>
       </div>
-      <p class="text-sm text-neutral-500 mt-2 pr-8">
+      <p class="text-sm text-neutral-500 font-medium mt-3 pr-8 leading-relaxed">
         Konfigurieren Sie die zentralen SMTP/IMAP-Server. Die Zugangsdaten gelten firmenweit.
       </p>
     </div>
 
     <!-- Content -->
-    <div class="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-8">
+    <div class="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-8 bg-neutral-50/30">
       {#if error || saveError}
-        <div class="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex gap-3">
-          <span class="text-xl shrink-0 mt-0.5">⚠️</span>
-          <p class="text-sm font-bold text-red-800">{error || saveError}</p>
+        <div transition:slide class="mb-6 p-4 bg-rose-50 border border-rose-200 rounded-2xl flex gap-3 shadow-sm">
+          <AlertTriangle class="w-5 h-5 text-rose-500 shrink-0 mt-0.5" />
+          <p class="text-sm font-bold text-rose-800">{error || saveError}</p>
         </div>
       {/if}
 
       <div class="space-y-5">
         <!-- Email Address -->
         <div>
-          <label for="email" class="block text-sm font-semibold text-neutral-700 mb-1.5">
+          <label for="email" class="block text-[11px] font-bold text-neutral-500 uppercase tracking-wider mb-1.5">
             E-Mail-Adresse *
           </label>
           <input
@@ -125,11 +131,11 @@
 
         <!-- SMTP Section -->
         <div class="pt-6 border-t border-neutral-100">
-          <h3 class="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-4">SMTP (E-Mails versenden)</h3>
+          <h3 class="text-[11px] font-black text-brand-600 bg-brand-50 border border-brand-100 px-3 py-1.5 rounded-lg inline-block uppercase tracking-widest mb-4">SMTP (E-Mails versenden)</h3>
 
           <div class="grid grid-cols-2 gap-4 mb-4">
             <div>
-              <label for="smtpHost" class="block text-sm font-semibold text-neutral-700 mb-1.5">
+              <label for="smtpHost" class="block text-[11px] font-bold text-neutral-500 uppercase tracking-wider mb-1.5">
                 Host *
               </label>
               <input
@@ -138,12 +144,12 @@
                 bind:value={smtpHost}
                 placeholder="smtp.ionos.de"
                 disabled={isSaving}
-                class="orga-input-clear w-full"
+                class="orga-input-clear w-full min-h-12"
               />
             </div>
 
             <div>
-              <label for="smtpPort" class="block text-sm font-semibold text-neutral-700 mb-1.5">
+              <label for="smtpPort" class="block text-[11px] font-bold text-neutral-500 uppercase tracking-wider mb-1.5">
                 Port *
               </label>
               <input
@@ -151,13 +157,13 @@
                 type="number"
                 bind:value={smtpPort}
                 disabled={isSaving}
-                class="orga-input-clear w-full"
+                class="orga-input-clear w-full min-h-12"
               />
             </div>
           </div>
 
           <div>
-            <label for="smtpUser" class="block text-sm font-semibold text-neutral-700 mb-1.5">
+            <label for="smtpUser" class="block text-[11px] font-bold text-neutral-500 uppercase tracking-wider mb-1.5">
               Benutzer *
             </label>
             <input
@@ -166,12 +172,12 @@
               bind:value={smtpUser}
               placeholder="deine.mail@ionos.com"
               disabled={isSaving}
-              class="orga-input-clear w-full mb-4"
+              class="orga-input-clear w-full mb-4 min-h-12"
             />
           </div>
 
           <div>
-            <label for="smtpPassword" class="block text-sm font-semibold text-neutral-700 mb-1.5">
+            <label for="smtpPassword" class="block text-[11px] font-bold text-neutral-500 uppercase tracking-wider mb-1.5">
               Passwort (Zentral) {currentConfig ? '(leer = behalten)' : '*'}
             </label>
             <input
@@ -180,19 +186,19 @@
               bind:value={smtpPassword}
               placeholder="Passwort eingeben"
               disabled={isSaving}
-              class="orga-input-clear w-full"
+              class="orga-input-clear w-full min-h-12"
             />
-            <p class="text-xs text-neutral-400 mt-1">Wird verschlüsselt gespeichert</p>
+            <p class="text-[10px] font-medium text-neutral-400 mt-1.5 flex items-center gap-1"><Lock class="w-3 h-3" /> Wird verschlüsselt gespeichert</p>
           </div>
         </div>
 
         <!-- IMAP Section -->
         <div class="pt-6 border-t border-neutral-100">
-          <h3 class="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-4">IMAP (E-Mails abrufen)</h3>
+          <h3 class="text-[11px] font-black text-brand-600 bg-brand-50 border border-brand-100 px-3 py-1.5 rounded-lg inline-block uppercase tracking-widest mb-4">IMAP (E-Mails abrufen)</h3>
 
           <div class="grid grid-cols-2 gap-4 mb-4">
             <div>
-              <label for="imapHost" class="block text-sm font-semibold text-neutral-700 mb-1.5">
+              <label for="imapHost" class="block text-[11px] font-bold text-neutral-500 uppercase tracking-wider mb-1.5">
                 Host *
               </label>
               <input
@@ -201,12 +207,12 @@
                 bind:value={imapHost}
                 placeholder="imap.ionos.de"
                 disabled={isSaving}
-                class="orga-input-clear w-full"
+                class="orga-input-clear w-full min-h-12"
               />
             </div>
 
             <div>
-              <label for="imapPort" class="block text-sm font-semibold text-neutral-700 mb-1.5">
+              <label for="imapPort" class="block text-[11px] font-bold text-neutral-500 uppercase tracking-wider mb-1.5">
                 Port *
               </label>
               <input
@@ -214,16 +220,16 @@
                 type="number"
                 bind:value={imapPort}
                 disabled={isSaving}
-                class="orga-input-clear w-full"
+                class="orga-input-clear w-full min-h-12"
               />
             </div>
           </div>
         </div>
 
         <!-- Ionos defaults hint -->
-        <div class="p-4 bg-indigo-50 border border-indigo-200 rounded-xl">
-          <p class="text-sm font-bold text-indigo-900 mb-2">Ionos Standard-Einstellungen:</p>
-          <ul class="text-xs font-medium text-indigo-800 space-y-1">
+        <div class="p-5 bg-brand-50 border border-brand-200 rounded-2xl shadow-inner">
+          <p class="text-sm font-black text-brand-900 mb-3 flex items-center gap-2"><AlertTriangle class="w-4 h-4 text-brand-600" /> Ionos Standard-Einstellungen:</p>
+          <ul class="text-sm font-medium text-brand-800 space-y-2">
             <li>• SMTP: smtp.ionos.de:587 (TLS)</li>
             <li>• IMAP: imap.ionos.de:993 (SSL)</li>
             <li>• Benutzer: Deine E-Mail-Adresse</li>
@@ -233,25 +239,27 @@
     </div>
 
     <!-- Footer -->
-    <div class="border-t border-neutral-100 p-4 sm:p-6 md:p-8 bg-white/95 backdrop-blur-md flex flex-row gap-2 sm:gap-3 shrink-0 justify-end sticky bottom-0 z-20 pb-[max(env(safe-area-inset-bottom,0px),1rem)]">
+    <div class="border-t border-neutral-100 p-4 sm:p-6 bg-white/95 backdrop-blur-md flex flex-col sm:flex-row gap-3 sm:gap-4 shrink-0 justify-end sticky bottom-0 z-20 pb-[max(env(safe-area-inset-bottom,0px),1rem)]">
       <button
         onclick={onClose}
         aria-label="Abbrechen"
         disabled={isSaving || isLoading}
-        class="orga-button-ghost flex-1 sm:flex-none py-3 sm:py-2.5 px-4 sm:px-6 active:scale-95 text-xs sm:text-sm flex justify-center items-center gap-1.5"
+        class="orga-button-ghost flex-1 sm:flex-none min-h-14 px-8"
       >
-        <span class="sm:hidden text-lg">❌</span>
-        <span class="hidden sm:inline">Abbrechen</span>
+        Abbrechen
       </button>
       <button
         onclick={handleSave}
         aria-label="Einstellungen speichern"
         disabled={isSaving || isLoading}
-        class="orga-button-primary shadow-indigo-600/20 flex-1 sm:flex-none py-3 sm:py-2.5 px-4 sm:px-6 active:scale-95 text-xs sm:text-sm flex justify-center items-center gap-1.5"
+        class="orga-button-primary shadow-brand-600/20 flex-1 sm:flex-none min-h-14 px-10"
       >
-        {#if isSaving || isLoading}<div class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>{/if}
-        <span class="sm:hidden text-lg">{isSaving || isLoading ? '' : '💾'}</span>
-        <span class="hidden sm:inline">{isSaving || isLoading ? 'Speichert...' : 'Speichern'}</span>
+        {#if isSaving || isLoading}
+          <Loader2 class="w-5 h-5 animate-spin" />
+        {:else}
+          <Save class="w-5 h-5" />
+        {/if}
+        {isSaving || isLoading ? 'Speichert...' : 'Speichern'}
       </button>
     </div>
   </div>

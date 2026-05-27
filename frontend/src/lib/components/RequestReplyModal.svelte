@@ -43,6 +43,9 @@
         orgaStore.retirement_homes?.data?.forEach((h: any) => {
             add(`${h.name} (Pflegeheim)`, h.email, h.phone, `Sehr geehrte Damen und Herren vom ${h.name},`);
         });
+        orgaStore.insurancies?.data?.forEach((i: any) => {
+            add(`${i.name} (Krankenkasse)`, i.email, i.phone, `Sehr geehrte Damen und Herren,`);
+        });
         const unique: any[] = [];
         const seen = new Set();
         for (const item of list) {
@@ -357,6 +360,7 @@
             if (pb.authStore.model) {
                 await pb.collection('mailbox_messages').create({
                     send_by: pb.authStore.model.id,
+                        user: pb.authStore.model.id,
                     company: companyId,
                     folder: 'Sent',
                     from_address: `${userName} <${userEmail}>`,

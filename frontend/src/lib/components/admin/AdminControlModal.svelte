@@ -3,9 +3,11 @@
     import { orgaStore } from "$lib/stores/orgaStore.svelte";
     import { toastStore } from "$lib/services/toastService.svelte";
     import { confirmStore } from "$lib/services/confirmService.svelte";
+    import FeedbackModal from "$lib/components/feedback/FeedbackModal.svelte";
 
     let dialog: HTMLDialogElement;
     let isTestingPush = $state(false);
+    let feedbackModal: ReturnType<typeof FeedbackModal>;
 
     export function open() {
         dialog?.showModal();
@@ -73,8 +75,18 @@
             <!-- Testbereich -->
             <div>
                 <h3 class="font-bold text-neutral-900 mb-3 text-sm uppercase tracking-wider">Test-Funktionen</h3>
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div class="border border-neutral-200 p-4 rounded-2xl bg-neutral-50 flex flex-col justify-between items-start gap-4"><p class="font-bold text-neutral-800 text-sm">Push-Benachrichtigungen</p><p class="text-xs text-neutral-500 mt-1 mb-4">Sendet ein Test-Signal an alle verbundenen Geräte dieses Accounts.</p><button onclick={testPush} disabled={isTestingPush} class="orga-button-primary w-full py-3 sm:py-2 shadow-sm text-sm justify-center">{isTestingPush ? 'Sendet...' : 'Push-Test senden'}</button></div>
+                    <div class="border border-neutral-200 p-4 rounded-2xl bg-amber-50 flex flex-col justify-between items-start gap-4">
+                        <p class="font-bold text-amber-800 text-sm">Feedback UI Test</p>
+                        <p class="text-xs text-amber-700 mt-1 mb-4">Öffnet die neue, interaktive Feedback-Komponente zum Testen der User Experience.</p>
+                        <button onclick={() => feedbackModal?.open()} class="orga-button-primary bg-amber-500 hover:bg-amber-600 shadow-amber-500/30 w-full py-3 sm:py-2 shadow-sm text-sm justify-center">Feedback testen</button>
+                    </div>
+                    <div class="border border-neutral-200 p-4 rounded-2xl bg-sky-50 flex flex-col justify-between items-start gap-4">
+                        <p class="font-bold text-sky-800 text-sm">Klienten-Portal</p>
+                        <p class="text-xs text-sky-700 mt-1 mb-4">Öffnet das Portal in einem neuen Tab, um die Ansicht aus Sicht eines Klienten zu prüfen.</p>
+                        <a href="/portal" target="_blank" onclick={close} class="orga-button-primary bg-sky-500 hover:bg-sky-600 shadow-sky-500/30 w-full py-3 sm:py-2 shadow-sm text-sm justify-center text-center">Portal öffnen</a>
+                    </div>
                 </div>
             </div>
 
@@ -91,3 +103,5 @@
         <div class="mt-8 pt-4 border-t border-neutral-100 flex justify-end"><button onclick={close} class="orga-button-ghost w-full sm:w-auto py-3 sm:py-2.5 px-6">Schließen</button></div>
     </div>
 </dialog>
+
+<FeedbackModal bind:this={feedbackModal} />

@@ -3,6 +3,12 @@
     import { orgaStore } from "$lib/stores/orgaStore.svelte";
     import { toastStore } from "$lib/services/toastService.svelte";
     import { confirmStore } from "$lib/services/confirmService.svelte";
+    import { slide, fade } from "svelte/transition";
+    import { 
+        X, Calendar, Clock, User, MapPin, AlignLeft, CheckSquare, 
+        Lock, CheckCircle, Ban, Eye, EyeOff, Save, Trash2, 
+        ChevronDown, Check, Repeat, Building2, UserCircle, BriefcaseMedical, Edit3
+    } from "lucide-svelte";
 
     // svelte-ignore non_reactive_update
     let dialog: HTMLDialogElement;
@@ -21,6 +27,7 @@
     let is_blocked = $state(false);
     let settled = $state(false);
     let is_series = $state(false);
+    let useClientAddress = $state(false);
     let is_visible = $state(false);
     let seriesEndDate = $state("");
     let series_id = $state("");
@@ -28,6 +35,10 @@
     let selectedContactId = $state("");
     // Holt sich live die Daten (inkl. Notizen) des aktuell gewählten Klienten
     let selectedClientRecord = $derived(orgaStore.clients?.data?.find((c: any) => c.id === selectedClientId));
+
+    let isClientDropdownOpen = $state(false);
+    let isUserDropdownOpen = $state(false);
+    let isContactDropdownOpen = $state(false);
     
     let isSuperAdmin = $state(pb.authStore.isSuperuser || pb.authStore.model?.role === 'superadmin' || pb.authStore.model?.role === 'admin');
     let users = $state<any[]>([]);
@@ -43,6 +54,21 @@
         const pad = (n: number) => n.toString().padStart(2, '0');
         return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
     }
+
+    // Beobachtet den Switch für die Klienten-Adresse
+    $effect(() => {
+        if (useClientAddress && selectedClientRecord) {
+            const street = selectedClientRecord.street || '';
+            const nr = selectedClientRecord.housenr || '';
+            const zip = selectedClientRecord.zip || '';
+            const city = selectedClientRecord.city || '';
+            
+            const line1 = (street + ' ' + nr).trim();
+            const line2 = (zip + ' ' + city).trim();
+            const fullAddr = [line1, line2].filter(Boolean).join(', ');
+            if (fullAddr) location_address = fullAddr;
+        }
+    });
 
     export async function open(data?: any) {
         if (isSuperAdmin && users.length === 0) {
@@ -75,6 +101,7 @@
             is_series = data.is_series || false;
             is_visible = data.is_visible || false;
             series_id = data.series_id || "";
+            useClientAddress = data.use_client_address || false;
             
             let cId = "";
             if (data.client) {
@@ -82,7 +109,8 @@
                 else if (typeof data.client === "string") cId = data.client;
             }
             selectedClientId = cId;
-            selectedUserId = data.user || pb.authStore.model?.id || "";
+            selectedUserId = data.user || (pb.authStore.model?.collectionName === '_superusers' ? "" : pb.authStore.model?.id) || "";
+            useClientAddress = false;
             internalNotes = data.notes || data.internal_notes || "";
             selectedTasks = Array.isArray(data.tasks) ? [...data.tasks] : (data.tasks ? [data.tasks] : []);
         } else {
@@ -105,7 +133,8 @@
             series_id = "";
             is_blocked = data?.is_blocked || false;
             selectedClientId = data?.preselectedClient || "";
-            selectedUserId = pb.authStore.model?.id || "";
+            useClientAddress = false;
+            selectedUserId = pb.authStore.model?.collectionName === '_superusers' ? "" : (pb.authStore.model?.id || "");
             internalNotes = "";
             selectedTasks = [];
         }
@@ -113,7 +142,7 @@
         initialDataHash = JSON.stringify({
             appDate, appStartTime, appEndTime, description, location_address,
             is_private, settled, is_series, is_visible, seriesEndDate,
-            is_blocked, selectedClientId, selectedUserId, internalNotes, selectedTasks, selectedContactId
+            is_blocked, selectedClientId, selectedUserId, internalNotes, selectedTasks, selectedContactId, useClientAddress
         });
         dialog?.showModal();
     }
@@ -126,7 +155,7 @@
         const currentHash = JSON.stringify({
             appDate, appStartTime, appEndTime, description, location_address,
             is_private, settled, is_series, is_visible, seriesEndDate,
-            is_blocked, selectedClientId, selectedUserId, internalNotes, selectedTasks, selectedContactId
+            is_blocked, selectedClientId, selectedUserId, internalNotes, selectedTasks, selectedContactId, useClientAddress
         });
         if (currentHash !== initialDataHash) {
             if (!(await confirmStore.ask("Sie haben ungespeicherte Änderungen. Möchten Sie wirklich abbrechen?", "Änderungen verwerfen?", "Verwerfen", "Abbrechen", true))) return;
@@ -135,6 +164,8 @@
     }
 
     function onContactSelect() {
+        useClientAddress = false;
+        selectedClientId = ""; // Reset client if contact is chosen to prevent confusion
         if (!selectedContactId) {
             // Wenn der Nutzer die Auswahl aufhebt, wird auch das Adressfeld geleert.
             location_address = "";
@@ -165,6 +196,18 @@
 
         if (!appDate) {
             errorMsg = "Bitte ein Datum wählen.";
+            isLoading = false;
+            return;
+        }
+        
+        if (!is_blocked && !appStartTime) {
+            errorMsg = "Bitte eine Startzeit wählen.";
+            isLoading = false;
+            return;
+        }
+
+        if (isSuperAdmin && !selectedUserId) {
+            errorMsg = "Bitte einen zuständigen Mitarbeiter wählen.";
             isLoading = false;
             return;
         }
@@ -205,10 +248,10 @@
                 is_series,
                 is_visible,
                 series_id: safeSeriesId,
-                user: selectedUserId || pb.authStore.model?.id,
+                user: selectedUserId,
                 client: selectedClientId ? [selectedClientId] : [],
+                use_client_address: useClientAddress,
                 notes: internalNotes,
-                internal_notes: internalNotes,
                 tasks: selectedTasks
             };
 
@@ -365,35 +408,40 @@
     }
 </script>
 
-<dialog bind:this={dialog} class="p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-full max-w-xl mx-auto my-auto rounded-3xl" onclick={(e) => { if (e.target === dialog) attemptClose(); }}>
-    <div class="bg-white rounded-3xl p-6 md:p-8 w-full max-h-[90vh] overflow-y-auto custom-scrollbar relative">
-        <button aria-label="Schließen" title="Schließen" onclick={attemptClose} class="absolute top-5 right-5 w-10 h-10 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-colors">
-            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-        </button>
-        <h2 class="text-2xl font-bold text-neutral-900 mb-6">{editId ? 'Termin bearbeiten' : 'Neuen Termin anlegen'}</h2>
-        {#if errorMsg}<div class="bg-red-50 text-red-600 p-4 rounded-xl mb-6 text-sm font-medium border border-red-100">{errorMsg}</div>{/if}
+<dialog bind:this={dialog} class="p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-full max-w-xl m-0 sm:m-auto rounded-none sm:rounded-3xl h-dvh sm:h-auto overflow-hidden" onclick={(e) => { if (e.target === dialog) attemptClose(); }}>
+    <div class="bg-white sm:rounded-3xl w-full h-full sm:max-h-[90dvh] flex flex-col relative overflow-hidden shadow-2xl">
+        <div class="px-5 sm:px-8 py-4 sm:py-5 border-b border-neutral-100 shrink-0 sticky top-0 bg-white/95 backdrop-blur-md z-20 flex justify-between items-center">
+            <h2 class="text-xl sm:text-2xl font-bold text-neutral-900">{editId ? 'Termin bearbeiten' : 'Neuen Termin anlegen'}</h2>
+            <button aria-label="Schließen" title="Schließen" onclick={attemptClose} class="w-11 h-11 sm:w-10 sm:h-10 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-colors">
+                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+        </div>
         
-        <form onsubmit={onSubmit} class="space-y-5">
+        <form id="appForm" onsubmit={onSubmit} novalidate class="flex flex-col flex-1 overflow-y-auto custom-scrollbar relative">
+            <div class="flex-1 p-6 md:p-8 shrink-0">
+                {#if errorMsg}<div class="bg-red-50 text-red-600 p-4 rounded-xl mb-6 text-sm font-medium border border-red-100">{errorMsg}</div>{/if}
+                
+                <div class="space-y-5 pb-2">
             <!-- Datum & Uhrzeit -->
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div class={is_blocked ? 'sm:col-span-3' : 'sm:col-span-1'}>
                     <label for="app-date" class="block text-sm font-semibold text-neutral-700 mb-1.5">Datum *</label>
-                    <input id="app-date" type="date" bind:value={appDate} class="orga-input-clear py-2.5 text-sm" required disabled={isLoading} />
+                    <input id="app-date" name="appDate" type="date" bind:value={appDate} class="orga-input-clear min-h-14 sm:min-h-12 py-2.5 text-base sm:text-sm" required disabled={isLoading} />
                 </div>
                 {#if !is_blocked}
                 <div class="sm:col-span-1">
                     <label for="app-start" class="block text-sm font-semibold text-neutral-700 mb-1.5">Startzeit *</label>
-                    <input id="app-start" type="time" bind:value={appStartTime} class="orga-input-clear py-2.5 text-sm" required disabled={isLoading} />
+                    <input id="app-start" name="appStartTime" type="time" bind:value={appStartTime} class="orga-input-clear min-h-14 sm:min-h-12 py-2.5 text-base sm:text-sm" required disabled={isLoading} />
                 </div>
                 <div class="sm:col-span-1">
                     <label for="app-end" class="block text-sm font-semibold text-neutral-700 mb-1.5">Endzeit <span class="text-xs text-neutral-400 font-normal">(optional)</span></label>
-                    <input id="app-end" type="time" bind:value={appEndTime} class="orga-input-clear py-2.5 text-sm" disabled={isLoading} />
+                    <input id="app-end" name="appEndTime" type="time" bind:value={appEndTime} class="orga-input-clear min-h-14 sm:min-h-12 py-2.5 text-base sm:text-sm" disabled={isLoading} />
                 </div>
                 {/if}
             </div>
 
             {#if !editId}
-            <div class="bg-indigo-50/50 p-4 rounded-xl border border-indigo-100 mt-2 space-y-3">
+            <div class="bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100 mt-2 space-y-3">
                 <label class="flex items-center gap-3 cursor-pointer">
                     <input type="checkbox" bind:checked={is_series} class="w-4 h-4 text-indigo-600 rounded border-indigo-300 focus:ring-indigo-500" disabled={isLoading} />
                     <span class="text-sm font-semibold text-indigo-900">Wöchentlicher Serientermin</span>
@@ -401,7 +449,7 @@
                 {#if is_series}
                     <div class="pt-3 border-t border-indigo-100 animate-enter">
                         <label for="app-series-end" class="block text-xs font-semibold text-indigo-800 mb-1.5">Wiederholen bis (Enddatum) *</label>
-                        <input id="app-series-end" type="date" bind:value={seriesEndDate} class="orga-input-clear py-2.5 text-sm bg-white border-indigo-200" disabled={isLoading} required />
+                        <input id="app-series-end" name="appSeriesEndDate" type="date" bind:value={seriesEndDate} class="orga-input-clear min-h-14 sm:min-h-12 py-2.5 text-base sm:text-sm bg-white border-indigo-200" disabled={isLoading} required />
                         <p class="text-[10px] text-indigo-600 mt-2 leading-relaxed">Es wird ab dem Startdatum jede Woche ein eigener Termin angelegt. So können Termine später einzeln abgerechnet, bearbeitet oder verschoben werden.</p>
                     </div>
                 {/if}
@@ -413,7 +461,7 @@
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                     <label for="app-client" class="block text-sm font-semibold text-neutral-700 mb-1.5">Klient (optional)</label>
-                    <select id="app-client" bind:value={selectedClientId} class="orga-input-clear py-2.5 text-sm cursor-pointer" disabled={isLoading}>
+                <select id="app-client" name="appClient" bind:value={selectedClientId} class="orga-input-clear min-h-14 sm:min-h-12 py-2.5 text-base sm:text-sm cursor-pointer" disabled={isLoading}>
                         <option value="">Kein Klient (z.B. Bürotätigkeit)</option>
                         {#each orgaStore.clients?.data || [] as client (client.id)}
                             <option value={client.id}>{client.name_first} {client.name_last}</option>
@@ -423,7 +471,8 @@
                 {#if isSuperAdmin}
                 <div>
                     <label for="app-user" class="block text-sm font-semibold text-neutral-700 mb-1.5">Zuständiger Mitarbeiter</label>
-                    <select id="app-user" bind:value={selectedUserId} class="orga-input-clear py-2.5 text-sm cursor-pointer" required disabled={isLoading}>
+                    <select id="app-user" name="appUser" bind:value={selectedUserId} class="orga-input-clear min-h-14 sm:min-h-12 py-2.5 text-base sm:text-sm cursor-pointer" required disabled={isLoading}>
+                        <option value="">Bitte wählen...</option>
                         {#each users as u (u.id)}
                             <option value={u.id}>{u.name_first} {u.name_last}</option>
                         {/each}
@@ -447,18 +496,43 @@
             <!-- Beschreibung -->
             <div>
                 <label for="app-desc" class="block text-sm font-semibold text-neutral-700 mb-1.5">Titel / Kurzbeschreibung</label>
-                <input id="app-desc" type="text" bind:value={description} class="orga-input-clear py-2.5 text-sm" placeholder={is_blocked ? "z.B. Urlaub / Abwesend" : "z.B. Arztbesuch Begleitung"} disabled={isLoading} />
+                <input id="app-desc" name="appDesc" type="text" bind:value={description} class="orga-input-clear min-h-14 sm:min-h-12 py-2.5 text-base sm:text-sm" placeholder={is_blocked ? "z.B. Urlaub / Abwesend" : "z.B. Arztbesuch Begleitung"} disabled={isLoading} />
             </div>
             
             {#if !is_blocked}
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                    <label for="app-location" class="block text-sm font-semibold text-neutral-700 mb-1.5">Ort / Zieladresse (optional)</label>
-                    <input id="app-location" type="text" bind:value={location_address} class="orga-input-clear py-2.5 text-sm" placeholder="z.B. Dr. Mustermann, Musterstr. 1, Halle" disabled={isLoading} />
+                    <div class="flex items-center justify-between mb-1.5">
+                        <label for="app-location" class="block text-sm font-semibold text-neutral-700">Ort / Zieladresse (optional)</label>
+                        {#if selectedClientId}
+                            <label class="flex items-center gap-2 cursor-pointer group">
+                                <span class="text-[10px] font-bold text-neutral-400 group-hover:text-indigo-600 transition-colors">Beim Klienten?</span>
+                                <!-- svelte-ignore a11y_role_supports_aria_props -->
+                                <!-- svelte-ignore a11y_consider_explicit_label -->
+                                <button 
+                                    type="button"
+                                    class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none {useClientAddress ? 'bg-indigo-600' : 'bg-neutral-200'}" 
+                                    role="switch" 
+                                    aria-checked={useClientAddress} 
+                                    onclick={() => useClientAddress = !useClientAddress}
+                                ><span class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out {useClientAddress ? 'translate-x-4' : 'translate-x-0'}"></span></button>
+                            </label>
+                        {/if}
+                    </div>
+                    <input 
+                        id="app-location" 
+                        name="appLocation" 
+                        type="text" 
+                        bind:value={location_address} 
+                        oninput={() => { selectedContactId = ""; }} 
+                        class="orga-input-clear min-h-14 sm:min-h-12 py-2.5 text-base sm:text-sm" 
+                        placeholder="z.B. Dr. Mustermann, Musterstr. 1, Halle" 
+                        disabled={isLoading} 
+                    />
                 </div>
                 <div>
                     <label for="app-contact-fill" class="block text-sm font-semibold text-neutral-700 mb-1.5">Aus Kontakten übernehmen</label>
-                    <select id="app-contact-fill" bind:value={selectedContactId} onchange={onContactSelect} class="orga-input-clear py-2.5 text-sm cursor-pointer bg-blue-50/40 border-blue-200 text-blue-900" disabled={isLoading}>
+                    <select id="app-contact-fill" name="appContactFill" bind:value={selectedContactId} onchange={onContactSelect} class="orga-input-clear min-h-14 sm:min-h-12 py-2.5 text-base sm:text-sm cursor-pointer bg-blue-50/40 border-blue-200 text-blue-900" disabled={isLoading}>
                         <option value="">+ Arzt / Kontakt wählen...</option>
                         {#each orgaStore.contacts?.data || [] as contact}
                             <option value={contact.id}>{#if contact.company_name}{contact.company_name} - {/if}{contact.name_first} {contact.name_last}</option>
@@ -473,8 +547,8 @@
             <div>
                 <!-- svelte-ignore a11y_label_has_associated_control -->
                 <label class="block text-sm font-semibold text-neutral-700 mb-2">Geplante Leistungen (Für die Abrechnung)</label>
-                <div class="flex flex-wrap gap-2">
-                    {#each orgaStore.tasks?.data || [] as t}
+                <div class="flex flex-wrap gap-2.5">
+                    {#each (orgaStore.tasks?.data || []).slice().sort((a: any, b: any) => a.title.localeCompare(b.title)) as t}
                         <button type="button" onclick={() => toggleTask(t.id)} class="px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all {selectedTasks.includes(t.id) ? 'bg-indigo-100 border-indigo-300 text-indigo-800 shadow-sm' : 'bg-white border-neutral-200 text-neutral-600 hover:border-indigo-200 hover:bg-indigo-50'}" disabled={isLoading}>{t.title}</button>
                     {/each}
                 </div>
@@ -483,7 +557,7 @@
             <!-- Interne Notizen -->
             <div>
                 <label for="app-notes" class="block text-sm font-semibold text-neutral-700 mb-1.5">Interne Notizen (fürs Team)</label>
-                <textarea id="app-notes" bind:value={internalNotes} rows="3" class="orga-input-clear py-2.5 text-sm resize-y custom-scrollbar" placeholder="Zusätzliche Infos, To-Dos oder Hinweise für den Mitarbeiter..." disabled={isLoading}></textarea>
+                <textarea id="app-notes" name="appNotes" bind:value={internalNotes} rows="3" class="orga-input-clear min-h-14 sm:min-h-12 py-2.5 text-base sm:text-sm resize-y custom-scrollbar" placeholder="Zusätzliche Infos, To-Dos oder Hinweise für den Mitarbeiter..." disabled={isLoading}></textarea>
             </div>
             {/if}
 
@@ -535,21 +609,24 @@
                 </button>
                 {/if}
             </div>
-            
-            <div class="pt-4 flex flex-col-reverse sm:flex-row justify-between gap-3 border-t border-neutral-100 mt-6">
-                {#if editId}
-                    <div class="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-                        <button type="button" onclick={deleteAppointment} class="orga-button-ghost text-rose-600 hover:text-rose-700 hover:bg-rose-50 w-full sm:w-auto py-3 sm:py-2.5" disabled={isLoading}>Termin löschen</button>
-                        {#if is_series && series_id}
-                            <button type="button" onclick={deleteSeries} class="orga-button-ghost text-rose-600 hover:text-rose-700 hover:bg-rose-50 border-rose-200 w-full sm:w-auto py-3 sm:py-2.5" disabled={isLoading}>Serie löschen</button>
-                        {/if}
+                </div>
+            </div>
+            <div class="p-4 sm:p-6 border-t border-neutral-100 bg-white/95 backdrop-blur-md shrink-0 sticky bottom-0 z-20 pb-[max(env(safe-area-inset-bottom,0px),1.25rem)]">
+                <div class="flex flex-col-reverse sm:flex-row justify-between gap-3">
+                    {#if editId}
+                        <div class="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+                            <button type="button" onclick={deleteAppointment} class="orga-button-ghost min-h-14 sm:min-h-12 text-rose-600 hover:text-rose-700 hover:bg-rose-50 w-full sm:w-auto py-3 sm:py-2.5" disabled={isLoading}>Termin löschen</button>
+                            {#if is_series && series_id}
+                                <button type="button" onclick={deleteSeries} class="orga-button-ghost min-h-14 sm:min-h-12 text-rose-600 hover:text-rose-700 hover:bg-rose-50 border-rose-200 w-full sm:w-auto py-3 sm:py-2.5" disabled={isLoading}>Serie löschen</button>
+                            {/if}
+                        </div>
+                    {:else}
+                        <div class="hidden sm:block"></div>
+                    {/if}
+                    <div class="flex flex-col-reverse sm:flex-row gap-3 w-full sm:w-auto">
+                        <button type="button" onclick={attemptClose} class="orga-button-ghost min-h-14 sm:min-h-12 w-full sm:w-auto py-3 sm:py-2.5" disabled={isLoading}>Abbrechen</button>
+                        <button type="submit" class="orga-button-primary min-h-14 sm:min-h-12 shadow-indigo-600/20 w-full sm:w-auto py-3 sm:py-2.5" disabled={isLoading}>{isLoading ? "Speichert..." : "Speichern"}</button>
                     </div>
-                {:else}
-                    <div class="hidden sm:block"></div>
-                {/if}
-                <div class="flex flex-col-reverse sm:flex-row gap-3 w-full sm:w-auto">
-                    <button type="button" onclick={attemptClose} class="orga-button-ghost w-full sm:w-auto py-3 sm:py-2.5" disabled={isLoading}>Abbrechen</button>
-                    <button type="submit" class="orga-button-primary w-full sm:w-auto py-3 sm:py-2.5" disabled={isLoading}>{isLoading ? "Speichert..." : "Speichern"}</button>
                 </div>
             </div>
         </form>

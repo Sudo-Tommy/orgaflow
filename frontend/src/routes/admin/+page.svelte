@@ -4,6 +4,7 @@
     import AdminRecordModal from "$lib/components/admin/AdminRecordModal.svelte";
     import AdminControlModal from "$lib/components/admin/AdminControlModal.svelte";
     import AdminLogsModal from "$lib/components/admin/AdminLogsModal.svelte";
+    import FlyerGenerator from "$lib/components/admin/FlyerGenerator.svelte";   
     import { confirmStore } from "$lib/services/confirmService.svelte";
     import { toastStore } from "$lib/services/toastService.svelte";
     import { pb } from "$lib/services/pocketbase";
@@ -16,7 +17,7 @@
     // svelte-ignore non_reactive_update
     let logsModal: ReturnType<typeof AdminLogsModal>;
 
-    let activeTab = $state<"dashboard" | "database" | "system_mails">("dashboard");
+    let activeTab = $state<"dashboard" | "database" | "system_mails" | "flyer">("dashboard");
 
     function handleEdit(record: any) {
         modal?.open(adminService.activeCollection, record);
@@ -101,7 +102,7 @@
             <h1 class="text-xl font-black text-neutral-900 flex items-center gap-2"><span>⚙️</span> Administration</h1>
             <p class="text-xs font-medium text-neutral-500 mt-1">System & God Mode</p>
         </div>
-
+        
         <div class="flex-1 overflow-x-auto md:overflow-y-auto custom-scrollbar flex md:flex-col p-2 md:p-4 gap-1 md:gap-2">
             <button onclick={() => activeTab = 'dashboard'} class="flex-1 md:flex-none flex items-center justify-center md:justify-start gap-2 md:gap-3 px-3 md:px-4 py-2 md:py-3 rounded-xl transition-all text-xs md:text-sm font-semibold whitespace-nowrap {activeTab === 'dashboard' ? 'bg-white text-indigo-700 shadow-sm border border-indigo-100' : 'text-neutral-600 hover:bg-neutral-100 border border-transparent'}">
                 <span class="text-base md:text-lg leading-none">📊</span> System-Status
@@ -111,6 +112,10 @@
                 <span class="text-base md:text-lg leading-none">🤖</span> System-Mails
             </button>
             
+            <button onclick={() => activeTab = 'flyer'} class="flex-1 md:flex-none flex items-center justify-center md:justify-start gap-2 md:gap-3 px-3 md:px-4 py-2 md:py-3 rounded-xl transition-all text-xs md:text-sm font-semibold whitespace-nowrap {activeTab === 'flyer' ? 'bg-white text-indigo-700 shadow-sm border border-indigo-100' : 'text-neutral-600 hover:bg-neutral-100 border border-transparent'}">
+                <span class="text-base md:text-lg leading-none">🖨️</span> Flyer
+            </button>
+
             <button onclick={() => activeTab = 'database'} class="flex-1 md:flex-none flex items-center justify-center md:justify-start gap-2 md:gap-3 px-3 md:px-4 py-2 md:py-3 rounded-xl transition-all text-xs md:text-sm font-semibold whitespace-nowrap {activeTab === 'database' ? 'bg-white text-indigo-700 shadow-sm border border-indigo-100' : 'text-neutral-600 hover:bg-neutral-100 border border-transparent'}">
                 <span class="text-base md:text-lg leading-none">🗄️</span> Datenbank
             </button>
@@ -138,8 +143,7 @@
     </div>
 
     <!-- === MAIN CONTENT === -->
-    <div class="flex-1 flex flex-col relative min-w-0 bg-neutral-50/30 overflow-hidden">
-        
+    <div class="flex-1 flex flex-col relative min-w-0 bg-neutral-50/30 overflow-hidden">        
         {#if activeTab === 'dashboard'}
             <div class="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-8 space-y-6 md:space-y-8 animate-enter">
                 <div>
@@ -291,9 +295,14 @@
                     </div>
                 </div>
             </div>
+        {:else if activeTab === 'flyer'}
+        <div class="flex-1 overflow-hidden flex flex-col animate-enter bg-white">
+            <FlyerGenerator />
+        </div>
         {/if}
     </div>
 </div>
+
 
 
 <AdminRecordModal bind:this={modal} onSave={adminService.saveRecord} />

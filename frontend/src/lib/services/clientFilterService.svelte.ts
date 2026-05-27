@@ -31,6 +31,15 @@ export function useClientFilter(clientsProvider: () => any[]) {
         });
     });
 
+    // Klienten alphabetisch nach Nachname, dann Vorname sortieren
+    let sorted = $derived.by(() => {
+        return [...filtered].sort((a, b) => {
+            const nameA = `${a.name_last || ''} ${a.name_first || ''}`.trim();
+            const nameB = `${b.name_last || ''} ${b.name_first || ''}`.trim();
+            return nameA.localeCompare(nameB);
+        });
+    });
+
     return {
         get searchQuery() { return searchQuery; },
         set searchQuery(v) { searchQuery = v; },
@@ -38,6 +47,7 @@ export function useClientFilter(clientsProvider: () => any[]) {
         set statusFilter(v) { statusFilter = v; },
         get companyFilter() { return companyFilter; },
         set companyFilter(v) { companyFilter = v; },
-        get filtered() { return filtered; }
+        get filtered() { return filtered; },
+        get sorted() { return sorted; }
     };
 }

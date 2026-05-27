@@ -1,6 +1,6 @@
 <script lang="ts">
     import { orgaStore } from "$lib/stores/orgaStore.svelte";
-    import ClientDetailModal from "$lib/components/ClientDetailModal.svelte";
+    import ClientDetailModal from "$lib/components/clients/ClientDetailModal.svelte";
 
     // svelte-ignore non_reactive_update
     let detailModal: ReturnType<typeof ClientDetailModal>;

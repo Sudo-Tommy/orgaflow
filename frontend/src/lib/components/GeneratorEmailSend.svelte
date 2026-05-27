@@ -1,8 +1,9 @@
 <script lang="ts">
 import { pb } from "$lib/services/pocketbase";
-import { sendEmail } from "$lib/services/emailService";
+import { sendEmail } from "$lib/services/emailService"; // FIX: No change needed, this is the utility file
 import { toastStore } from "$lib/services/toastService.svelte";
 import { orgaStore } from "$lib/stores/orgaStore.svelte";
+import PdfPreviewModal from "$lib/components/PdfPreviewModal.svelte";
 import { onMount } from "svelte";
 
 let { service, pdfBlob, tsBlob, pdfFilename, tsFilename, onClose, onDownload } = $props<{
@@ -14,6 +15,9 @@ let { service, pdfBlob, tsBlob, pdfFilename, tsFilename, onClose, onDownload } =
     onClose: () => void;
     onDownload: () => void;
 }>();
+
+// svelte-ignore non_reactive_update
+let pdfPreviewModal: ReturnType<typeof PdfPreviewModal>;
 
 let emailTo = $state("");
 let emailSubject = $state("");
@@ -36,17 +40,29 @@ let selectedFutureAppIds = $state<string[]>([]);
 let includeFutureApps = $state(false);
 
 function getRecipientEmail() {
-    if (service.recipientType === 'client') return service.client?.email || "";
-    if (service.recipientType === 'contact') {
+    let emails = [];
+    if (service.recipientType === 'caregiver') emails.push(service.client?.expand?.caregiver?.email || "");
+    else if (service.recipientType === 'client') emails.push(service.client?.expand?.caregiver?.email || service.client?.email || "");
+    else if (service.recipientType === 'contact') {
         const contact = service.client?.expand?.contacts?.find((c:any) => c.id === service.recipientId);
-        return contact?.email || "";
+        emails.push(contact?.email || "");
     }
-    if (service.recipientType === 'insurance') return service.client?.expand?.insurance?.email || "";
-    if (service.recipientType === 'home') {
+    else if (service.recipientType === 'insurance') emails.push(service.client?.expand?.insurance?.email || "");
+    else if (service.recipientType === 'home') {
         const home = service.client?.expand?.retirement_homes?.find((h:any) => h.id === service.recipientId);
-        return home?.email || "";
+        emails.push(home?.email || "");
     }
-    return "";
+    else if (service.recipientType === 'inheritor') {
+        const inheritors = Array.isArray(service.client?.expand?.inheritor) ? service.client.expand.inheritor : (service.client?.expand?.inheritor ? [service.client.expand.inheritor] : []);
+        const inheritor = inheritors.find((i:any) => i.id === service.recipientId) || inheritors[0] || {};
+        emails.push(inheritor?.email || "");
+    }
+    
+    if ((service.recipientType === 'client' || service.recipientType === 'caregiver') && service.client?.mailing_list && Array.isArray(service.client.mailing_list)) {
+        emails = [...emails, ...service.client.mailing_list];
+    }
+    
+    return [...new Set(emails)].filter(Boolean).join(", ");
 }
 
 function buildAvailableContacts() {
@@ -64,6 +80,9 @@ function buildAvailableContacts() {
     });
     orgaStore.retirement_homes?.data?.forEach((h: any) => {
         add(`${h.name} (Pflegeheim)`, h.email, h.phone, `Sehr geehrte Damen und Herren vom ${h.name},`, false);
+    });
+    orgaStore.insurancies?.data?.forEach((i: any) => {
+        add(`${i.name} (Krankenkasse)`, i.email, i.phone, `Sehr geehrte Damen und Herren,`, false);
     });
     const unique: any[] = [];
     const seen = new Set();
@@ -116,6 +135,13 @@ function updateMessage() {
     }
 }
 
+function previewDocument(e: Event, blob: Blob | null, filename: string) {
+    e.preventDefault();
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    pdfPreviewModal?.open(url, 'Dokumentenvorschau', filename);
+}
+
 onMount(() => {
     emailTo = getRecipientEmail();
     emailSubject = `Ihre Dokumente: ${pdfFilename.replace('.pdf', '')}`;
@@ -128,8 +154,14 @@ onMount(() => {
     }
     
     let initialSalutation = "Guten Tag,";
+    const emailsCount = emailTo.split(',').map(e => e.trim()).filter(Boolean).length;
     if (selectedContactRefs.length > 0) {
         initialSalutation = selectedContactRefs[0].salutation;
+    } else if (emailsCount > 1) {
+        initialSalutation = "Sehr geehrte Damen und Herren,";
+    } else if (service.client?.expand?.caregiver) {
+        const cg = service.client.expand.caregiver;
+        initialSalutation = cg.salutation === 'Herr' ? `Sehr geehrter Herr ${cg.name_last},` : (cg.salutation === 'Frau' ? `Sehr geehrte Frau ${cg.name_last},` : `Guten Tag ${cg.name_first} ${cg.name_last},`);
     } else if (service.client) {
         initialSalutation = service.client.salutation === 'Herr' ? `Sehr geehrter Herr ${service.client.name_last},` : (service.client.salutation === 'Frau' ? `Sehr geehrte Frau ${service.client.name_last},` : `Guten Tag ${service.client.name_first} ${service.client.name_last},`);
     }
@@ -527,13 +559,13 @@ async function sendPdfViaEmail() {
         </div>
 
         <div class="flex flex-wrap gap-2 pt-4 mt-2 border-t border-neutral-100">
-                <div class="flex items-center gap-2 bg-neutral-100 text-neutral-700 px-3 py-1.5 rounded-lg text-sm border border-neutral-200 shadow-sm animate-enter">
-                    <span class="truncate max-w-50 font-medium">📎 {pdfFilename}</span>
-                </div>
+                <button type="button" onclick={(e) => previewDocument(e, pdfBlob, pdfFilename)} class="flex items-center gap-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 hover:text-indigo-700 px-3 py-1.5 rounded-lg text-sm border border-neutral-200 hover:border-indigo-300 transition-colors shadow-sm animate-enter cursor-pointer">
+                    <span class="truncate max-w-50 font-medium flex items-center gap-2">📎 {pdfFilename}</span>
+                </button>
                 {#if tsBlob}
-                    <div class="flex items-center gap-2 bg-neutral-100 text-neutral-700 px-3 py-1.5 rounded-lg text-sm border border-neutral-200 shadow-sm animate-enter delay-100">
-                        <span class="truncate max-w-50 font-medium">📎 {tsFilename}</span>
-                    </div>
+                    <button type="button" onclick={(e) => previewDocument(e, tsBlob, tsFilename)} class="flex items-center gap-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 hover:text-indigo-700 px-3 py-1.5 rounded-lg text-sm border border-neutral-200 hover:border-indigo-300 transition-colors shadow-sm animate-enter delay-100 cursor-pointer">
+                        <span class="truncate max-w-50 font-medium flex items-center gap-2">📎 {tsFilename}</span>
+                    </button>
                 {/if}
             </div>
         </div>
@@ -557,3 +589,5 @@ async function sendPdfViaEmail() {
         </div>
     </div>
 {/if}
+
+<PdfPreviewModal bind:this={pdfPreviewModal} />

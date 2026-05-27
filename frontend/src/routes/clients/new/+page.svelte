@@ -1,6 +1,7 @@
 <script lang="ts">
     import { goto } from "$app/navigation";
     import { pb } from "$lib/services/pocketbase";
+    import { onMount } from "svelte";
     import { orgaStore } from "$lib/stores/orgaStore.svelte";
     import { toastStore } from "$lib/services/toastService.svelte";
 
@@ -9,22 +10,68 @@
 
     // Formular-Daten
     let formData = $state({
+        // Persönliche Daten
+        salutation: "Keine Angabe",
         name_first: "",
         name_last: "",
-        email: "",
-        phone: "",
-        status: "Aktiv",
-        level_of_care: "",
+        marital_status: "",
+        birthdate: "",
+        nationality: "",
         street: "",
         housenr: "",
         zip: "",
         city: "",
-        birthdate: "",
+        // Kontaktdaten
+        email: "",
+        phone: "",
+        handy: "",
+        // Pflege & Status
+        status: "Aktiv",
+        level_of_care: "",
         insurance_nr: "",
-        hourly_wage: 40,
+        // Relation fields that might be required by PocketBase
+        insurance: "", // Single-select relation (e.g., ID of an insurance record)
+        retirement_homes: "", // Single-select relation
+        contacts: [], // Multi-select relation (array of contact IDs)
+        caregiver: "", // Single-select relation
+        // Notizen
+        notes: "",
+        // Abrechnungskonditionen
+        hourly_rate: 40,
         km_rate: 0.3,
         tax_rate: "0",
-        default_template: ""
+        templates: "",
+        // Firmenzuordnung
+        company: "" // Added for company relation
+    });
+
+    // Determine if the current user is a superadmin
+    let isSuperAdmin = $state(false); // Initialize with default
+
+    // Reactive block to set isSuperAdmin and pre-fill company for non-superadmins
+    $effect(() => { // Use $effect for reactive updates
+        isSuperAdmin = pb.authStore.isSuperuser || pb.authStore.model?.role === 'superadmin';
+        if (!isSuperAdmin && pb.authStore.model?.company) {
+            const companyId = Array.isArray(pb.authStore.model.company) ? pb.authStore.model.company[0] : pb.authStore.model.company;
+            if (!formData.company) { // Only pre-fill if not already set
+                formData.company = companyId;
+            }
+        } else if (!isSuperAdmin && !pb.authStore.model?.company) {
+            // If a regular user has no company assigned, they cannot create clients
+            if (!errorMsg) { // Avoid overwriting other errors
+                errorMsg = "Ihr Benutzerkonto ist keiner Firma zugeordnet. Sie können keine Klienten anlegen. Bitte kontaktieren Sie Ihren Administrator.";
+                isLoading = true; // Disable form submission
+            }
+        }
+    });
+
+    onMount(async () => {
+        // Ensure company data is loaded for the dropdown, especially for superadmins
+        if (!orgaStore.company?.data || orgaStore.company.data.length === 0) {
+            await orgaStore.company?.init();
+            // Re-evaluate the company pre-fill after orgaStore.company is loaded
+            // The $effect above should handle this automatically when orgaStore.company.data changes.
+        }
     });
 
     // Signatur-Status
@@ -113,15 +160,47 @@
         errorMsg = "";
 
         try {
+            // Client-seitige Validierung für Pflichtfelder
+            if (!formData.name_first.trim()) {
+                errorMsg = "Bitte geben Sie einen Vornamen ein.";
+                isLoading = false;
+                return;
+            }
+            if (!formData.name_last.trim()) {
+                errorMsg = "Bitte geben Sie einen Nachnamen ein.";
+                isLoading = false;
+                return;
+            }
+            if (!formData.company) {
+                errorMsg = "Bitte wählen Sie eine zugehörige Firma aus.";
+                isLoading = false;
+                return;
+            }
+
             const pbFormData = new FormData();
             for (const [key, value] of Object.entries(formData)) {
-                if (key === 'tax_rate') {
-                    pbFormData.append(key, value === "0" ? "" : value.toString());
-                } else if (key === 'birthdate') {
+                if (key === 'birthdate' && value) {
                     const cleanVal = (value as string).trim();
-                    pbFormData.append(key, cleanVal ? `${cleanVal} 12:00:00.000Z` : "");
+                    // Nur anhängen, wenn tatsächlich ein Datum gewählt wurde
+                    if (cleanVal) pbFormData.append(key, `${cleanVal} 12:00:00.000Z`);
+                } else if (['company', 'templates', 'insurance', 'retirement_homes', 'caregiver', 'inheritor'].includes(key)) {
+                    // Single-select relations: append only if a value is selected
+                    if (value) pbFormData.append(key, value.toString());
+                } else if (key === 'contacts') {
+                    // Multi-select relations: append each item if array is not empty
+                    if (Array.isArray(value) && value.length > 0) {
+                        (value as any[]).forEach((item: any) => pbFormData.append(key, item.toString()));
+                    }
+                } else if (typeof value === 'boolean') {
+                    pbFormData.append(key, value.toString());
+                } else if (typeof value === 'object' && value !== null) {
+                    // JSON fields, convert to string
+                    pbFormData.append(key, JSON.stringify(value));
                 } else {
-                    pbFormData.append(key, (value ?? '').toString());
+                    // General case for other fields, append if not null/undefined/empty string
+                    if (value !== null && value !== undefined && value !== '') {
+                        pbFormData.append(key, value.toString());
+                    }
                 }
             }
 
@@ -175,12 +254,32 @@
         <div>
             <h3 class="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-3">Persönliche Daten</h3>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div><label for="new-firstname" class="block text-sm font-semibold text-neutral-700 mb-1.5">Vorname</label><input id="new-firstname" type="text" bind:value={formData.name_first} class="orga-input-clear" required disabled={isLoading} /></div>
-                <div><label for="new-lastname" class="block text-sm font-semibold text-neutral-700 mb-1.5">Nachname</label><input id="new-lastname" type="text" bind:value={formData.name_last} class="orga-input-clear" required disabled={isLoading} /></div>
-                <div><label for="new-birthdate" class="block text-sm font-semibold text-neutral-700 mb-1.5">Geburtsdatum</label><input id="new-birthdate" type="date" bind:value={formData.birthdate} class="orga-input-clear" disabled={isLoading} /></div>
-                <div class="hidden md:block"></div>
-                <div><label for="new-email" class="block text-sm font-semibold text-neutral-700 mb-1.5">E-Mail</label><input id="new-email" type="email" bind:value={formData.email} class="orga-input-clear" disabled={isLoading} /></div>
-                <div><label for="new-phone" class="block text-sm font-semibold text-neutral-700 mb-1.5">Telefon</label><input id="new-phone" type="text" bind:value={formData.phone} class="orga-input-clear" disabled={isLoading} /></div>
+                <div class="md:col-span-2">
+                    <label for="new-salutation" class="block text-sm font-semibold text-neutral-700 mb-1.5">Anrede</label>
+                    <select id="new-salutation" bind:value={formData.salutation} class="orga-input-clear min-h-14 sm:min-h-12 py-2.5 text-base sm:text-sm" disabled={isLoading}>
+                        <option value="Herr">Herr</option>
+                        <option value="Frau">Frau</option>
+                        <option value="Divers">Divers</option>
+                        <option value="Keine Angabe">Keine Angabe</option>
+                    </select>
+                </div>
+                <div><label for="new-firstname" class="block text-sm font-semibold text-neutral-700 mb-1.5">Vorname *</label><input id="new-firstname" type="text" bind:value={formData.name_first} class="orga-input-clear min-h-14 sm:min-h-12 py-2.5 text-base sm:text-sm" required disabled={isLoading} /></div>
+                <div><label for="new-lastname" class="block text-sm font-semibold text-neutral-700 mb-1.5">Nachname *</label><input id="new-lastname" type="text" bind:value={formData.name_last} class="orga-input-clear min-h-14 sm:min-h-12 py-2.5 text-base sm:text-sm" required disabled={isLoading} /></div>
+                <div><label for="new-birthdate" class="block text-sm font-semibold text-neutral-700 mb-1.5">Geburtsdatum</label><input id="new-birthdate" type="date" bind:value={formData.birthdate} class="orga-input-clear min-h-14 sm:min-h-12 py-2.5 text-base sm:text-sm" disabled={isLoading} /></div>
+                <div>
+                    <label for="new-marital-status" class="block text-sm font-semibold text-neutral-700 mb-1.5">Familienstand</label>
+                    <select id="new-marital-status" bind:value={formData.marital_status} class="orga-input-clear min-h-14 sm:min-h-12 py-2.5 text-base sm:text-sm" disabled={isLoading}>
+                        <option value="">Bitte wählen...</option>
+                        <option value="Ledig">Ledig</option>
+                        <option value="Verheiratet">Verheiratet</option>
+                        <option value="Geschieden">Geschieden</option>
+                        <option value="Verwitwet">Verwitwet</option>
+                    </select>
+                </div>
+                <div><label for="new-nationality" class="block text-sm font-semibold text-neutral-700 mb-1.5">Nationalität</label><input id="new-nationality" type="text" bind:value={formData.nationality} class="orga-input-clear min-h-14 sm:min-h-12 py-2.5 text-base sm:text-sm" disabled={isLoading} /></div>
+                <div><label for="new-email" class="block text-sm font-semibold text-neutral-700 mb-1.5">E-Mail</label><input id="new-email" type="email" bind:value={formData.email} class="orga-input-clear min-h-14 sm:min-h-12 py-2.5 text-base sm:text-sm" disabled={isLoading} /></div>
+                <div><label for="new-phone" class="block text-sm font-semibold text-neutral-700 mb-1.5">Telefon</label><input id="new-phone" type="text" bind:value={formData.phone} class="orga-input-clear min-h-14 sm:min-h-12 py-2.5 text-base sm:text-sm" disabled={isLoading} /></div>
+                <div><label for="new-handy" class="block text-sm font-semibold text-neutral-700 mb-1.5">Mobil</label><input id="new-handy" type="text" bind:value={formData.handy} class="orga-input-clear min-h-14 sm:min-h-12 py-2.5 text-base sm:text-sm" disabled={isLoading} /></div>
             </div>
         </div>
 
@@ -188,10 +287,10 @@
         <div class="pt-6 border-t border-neutral-100">
             <h3 class="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-3">Adresse</h3>
             <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div class="md:col-span-2"><label for="new-street" class="block text-sm font-semibold text-neutral-700 mb-1.5">Straße</label><input id="new-street" type="text" bind:value={formData.street} class="orga-input-clear" disabled={isLoading} /></div>
-                <div><label for="new-housenr" class="block text-sm font-semibold text-neutral-700 mb-1.5">Hausnr.</label><input id="new-housenr" type="text" bind:value={formData.housenr} class="orga-input-clear" disabled={isLoading} /></div>
-                <div><label for="new-zip" class="block text-sm font-semibold text-neutral-700 mb-1.5">PLZ</label><input id="new-zip" type="text" bind:value={formData.zip} class="orga-input-clear" disabled={isLoading} /></div>
-                <div class="md:col-span-4"><label for="new-city" class="block text-sm font-semibold text-neutral-700 mb-1.5">Stadt</label><input id="new-city" type="text" bind:value={formData.city} class="orga-input-clear" disabled={isLoading} /></div>
+                <div class="md:col-span-2"><label for="new-street" class="block text-sm font-semibold text-neutral-700 mb-1.5">Straße</label><input id="new-street" type="text" bind:value={formData.street} class="orga-input-clear min-h-14 sm:min-h-12 py-2.5 text-base sm:text-sm" disabled={isLoading} /></div>
+                <div><label for="new-housenr" class="block text-sm font-semibold text-neutral-700 mb-1.5">Hausnr.</label><input id="new-housenr" type="text" bind:value={formData.housenr} class="orga-input-clear min-h-14 sm:min-h-12 py-2.5 text-base sm:text-sm" disabled={isLoading} /></div>
+                <div><label for="new-zip" class="block text-sm font-semibold text-neutral-700 mb-1.5">PLZ</label><input id="new-zip" type="text" bind:value={formData.zip} class="orga-input-clear min-h-14 sm:min-h-12 py-2.5 text-base sm:text-sm" disabled={isLoading} /></div>
+                <div class="md:col-span-4"><label for="new-city" class="block text-sm font-semibold text-neutral-700 mb-1.5">Stadt</label><input id="new-city" type="text" bind:value={formData.city} class="orga-input-clear min-h-14 sm:min-h-12 py-2.5 text-base sm:text-sm" disabled={isLoading} /></div>
             </div>
         </div>
 
@@ -199,9 +298,9 @@
         <div class="pt-6 border-t border-neutral-100">
             <h3 class="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-3">Pflege & Status</h3>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div><label for="new-status" class="block text-sm font-semibold text-neutral-700 mb-1.5">Status</label><select id="new-status" bind:value={formData.status} class="orga-input-clear" disabled={isLoading}><option value="Aktiv">Aktiv</option><option value="Inaktiv">Inaktiv</option><option value="Verstorben">Verstorben</option></select></div>
-                <div><label for="new-carelevel" class="block text-sm font-semibold text-neutral-700 mb-1.5">Pflegegrad</label><select id="new-carelevel" bind:value={formData.level_of_care} class="orga-input-clear" disabled={isLoading}><option value="">Keiner</option><option value="0">Grad 0</option><option value="1">Grad 1</option><option value="2">Grad 2</option><option value="3">Grad 3</option><option value="4">Grad 4</option><option value="5">Grad 5</option></select></div>
-                <div><label for="new-ins-nr" class="block text-sm font-semibold text-neutral-700 mb-1.5">Versicherungsnummer</label><input id="new-ins-nr" type="text" bind:value={formData.insurance_nr} class="orga-input-clear" disabled={isLoading} /></div>
+                <div><label for="new-status" class="block text-sm font-semibold text-neutral-700 mb-1.5">Status</label><select id="new-status" bind:value={formData.status} class="orga-input-clear min-h-14 sm:min-h-12 py-2.5 text-base sm:text-sm" disabled={isLoading}><option value="Aktiv">Aktiv</option><option value="Inaktiv">Inaktiv</option><option value="Verstorben">Verstorben</option></select></div>
+                <div><label for="new-carelevel" class="block text-sm font-semibold text-neutral-700 mb-1.5">Pflegegrad</label><select id="new-carelevel" bind:value={formData.level_of_care} class="orga-input-clear min-h-14 sm:min-h-12 py-2.5 text-base sm:text-sm" disabled={isLoading}><option value="">Keiner</option><option value="0">Grad 0</option><option value="1">Grad 1</option><option value="2">Grad 2</option><option value="3">Grad 3</option><option value="4">Grad 4</option><option value="5">Grad 5</option></select></div>
+                <div><label for="new-ins-nr" class="block text-sm font-semibold text-neutral-700 mb-1.5">Versicherungsnummer</label><input id="new-ins-nr" type="text" bind:value={formData.insurance_nr} class="orga-input-clear min-h-14 sm:min-h-12 py-2.5 text-base sm:text-sm" disabled={isLoading} /></div>
             </div>
         </div>
 
@@ -209,17 +308,33 @@
         <div class="pt-6 border-t border-neutral-100">
             <h3 class="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-3">Abrechnungskonditionen & Vorlage</h3>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div><label for="new-wage" class="block text-sm font-semibold text-neutral-700 mb-1.5">Stundensatz (€)</label><input id="new-wage" type="number" step="0.01" bind:value={formData.hourly_wage} class="orga-input-clear" disabled={isLoading} /></div>
-                <div><label for="new-km" class="block text-sm font-semibold text-neutral-700 mb-1.5">Fahrtkosten (€/km)</label><input id="new-km" type="number" step="0.01" bind:value={formData.km_rate} class="orga-input-clear" disabled={isLoading} /></div>
-                <div><label for="new-tax" class="block text-sm font-semibold text-neutral-700 mb-1.5">Steuersatz (%)</label><select id="new-tax" bind:value={formData.tax_rate} class="orga-input-clear" disabled={isLoading}><option value="0">0%</option><option value="7">7%</option><option value="19">19%</option></select></div>
-                <div><label for="new-template" class="block text-sm font-semibold text-neutral-700 mb-1.5">Standard-Vorlage</label><select id="new-template" bind:value={formData.default_template} class="orga-input-clear" disabled={isLoading}><option value="">Keine Standard-Vorlage</option>{#each orgaStore.document_templates?.data || [] as t}<option value={t.id}>{t.title}</option>{/each}</select></div>
+                <div><label for="new-wage" class="block text-sm font-semibold text-neutral-700 mb-1.5">Stundensatz (€)</label><input id="new-wage" type="number" step="0.01" bind:value={formData.hourly_rate} class="orga-input-clear min-h-14 sm:min-h-12 py-2.5 text-base sm:text-sm" disabled={isLoading} /></div>
+                <div><label for="new-km" class="block text-sm font-semibold text-neutral-700 mb-1.5">Fahrtkosten (€/km)</label><input id="new-km" type="number" step="0.01" bind:value={formData.km_rate} class="orga-input-clear min-h-14 sm:min-h-12 py-2.5 text-base sm:text-sm" disabled={isLoading} /></div>
+                <div><label for="new-tax" class="block text-sm font-semibold text-neutral-700 mb-1.5">Steuersatz (%)</label><select id="new-tax" bind:value={formData.tax_rate} class="orga-input-clear min-h-14 sm:min-h-12 py-2.5 text-base sm:text-sm" disabled={isLoading}><option value="0">0%</option><option value="7">7%</option><option value="19">19%</option></select></div>
+                <div>
+                    <label for="new-company" class="block text-sm font-semibold text-neutral-700 mb-1.5">Zugehörige Firma *</label>
+                    <select id="new-company" bind:value={formData.company} class="orga-input-clear min-h-14 sm:min-h-12 py-2.5 text-base sm:text-sm" required disabled={isLoading || !isSuperAdmin}>
+                        {#if isSuperAdmin}<option value="">Bitte wählen...</option>{/if}
+                        {#each orgaStore.company?.data || [] as comp}<option value={comp.id}>{comp.name} ({comp.city})</option>{/each}
+                    </select>
+                </div>
+                <div><label for="new-template" class="block text-sm font-semibold text-neutral-700 mb-1.5">Standard-Vorlage</label><select id="new-template" bind:value={formData.templates} class="orga-input-clear min-h-14 sm:min-h-12 py-2.5 text-base sm:text-sm" disabled={isLoading}><option value="">Keine Standard-Vorlage</option>{#each orgaStore.document_templates?.data || [] as t}<option value={t.id}>{t.title}</option>{/each}</select></div>
+            </div>
+        </div>
+
+        <!-- Notizen -->
+        <div class="pt-6 border-t border-neutral-100">
+            <h3 class="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-3">Notizen</h3>
+            <div>
+                <label for="new-notes" class="block text-sm font-semibold text-neutral-700 mb-1.5">Interne Notizen</label>
+                <textarea id="new-notes" bind:value={formData.notes} rows="4" class="orga-input-clear min-h-14 sm:min-h-12 py-2.5 text-base sm:text-sm resize-y custom-scrollbar" placeholder="Wichtige Hinweise, Besonderheiten oder Aufgaben..." disabled={isLoading}></textarea>
             </div>
         </div>
 
         <!-- Signatur Bereich -->
         <div class="pt-6 border-t border-neutral-100">
             <h3 class="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-3">Unterschrift</h3>
-            <div class="border border-neutral-200 rounded-2xl p-4 md:p-6 bg-neutral-50/50">
+            <div class="border border-neutral-200 rounded-2xl p-4 sm:p-6 bg-neutral-50/50">
             <div class="flex items-center justify-between mb-4">
                 <span class="block text-sm font-semibold text-neutral-900">Unterschrift (Optional)</span>
                 <div class="flex bg-neutral-200/60 p-1 rounded-lg">

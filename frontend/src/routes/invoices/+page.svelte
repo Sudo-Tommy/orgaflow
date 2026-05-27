@@ -1,16 +1,71 @@
+<!-- src/routes/invoices/+page.svelte -->
 <script lang="ts">
     import { pb } from "$lib/services/pocketbase";
     import { orgaStore } from "$lib/stores/orgaStore.svelte";
     import { useInvoiceFilter } from "$lib/services/invoiceFilterService.svelte";
     import DocumentGeneratorModal from "$lib/components/DocumentGeneratorModal.svelte";
-    import InvoiceEmailModal from "$lib/components/InvoiceEmailModal.svelte";
+    import InvoiceEmailModal from "$lib/components/invoices/InvoiceEmailModal.svelte";
     import PdfPreviewModal from "$lib/components/PdfPreviewModal.svelte";
     import { onMount } from "svelte";
     import { toastStore } from "$lib/services/toastService.svelte";
     import { confirmStore } from "$lib/services/confirmService.svelte";
 
+    import InvoiceList from "$lib/components/invoices/InvoiceList.svelte";
+    import InvoiceMobileMenu from "$lib/components/invoices/InvoiceMobileMenu.svelte";
+    import InvoiceBottomBar from "$lib/components/invoices/InvoiceBottomBar.svelte";
+    import InvoicePaymentModal from "$lib/components/invoices/InvoicePaymentModal.svelte";
+    
+    import type { InvoicePayload, SyncAction } from "$lib/utils/invoice";
+    import { getPdfUrl } from "$lib/utils/invoiceHelpers";
+    // @ts-ignore
+    import { Plus, Mail, RefreshCw, Trash2, Search, Hourglass, Inbox } from "lucide-svelte";
+
     const invoicesStore = orgaStore.invoices;
     const filterService = useInvoiceFilter(() => invoicesStore?.data || []);
+
+    // --- 2. Offline-First & Optimistic UI: Sync Queue ---
+    let syncQueue = $state<SyncAction[]>([]);
+
+    // Rechnungen absteigend nach Rechnungsnummer sortieren (neueste oben)
+    let sortedInvoices = $derived(
+        [...filterService.filtered].sort((a, b) => {
+            const nrA = a.invoice_nr ?? '';
+            const nrB = b.invoice_nr ?? '';
+            return nrB.localeCompare(nrA, undefined, { numeric: true });
+        }) as InvoicePayload[]
+    );
+
+    // Rechnungen nach Firmen unterteilen
+    let groupedInvoices = $derived.by(() => {
+        const groups: Record<string, InvoicePayload[]> = {};
+        for (const inv of sortedInvoices) {
+            const companyName = inv.expand?.company?.name ?? 'Allgemein / Keine Firmenzuordnung';
+            if (!groups[companyName]) {
+                groups[companyName] = [];
+            }
+            groups[companyName].push(inv);
+        }
+        return Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0]));
+    });
+
+    // Status und Logik für die Mehrfachauswahl (Massen-E-Mail)
+    let selectedInvoiceIds = $state<string[]>([]);
+    let selectedInvoices = $derived(
+        (invoicesStore?.data || []).filter((inv: any) => selectedInvoiceIds.includes(inv.id))
+    );
+
+    function toggleSelection(id: string) {
+        if (selectedInvoiceIds.includes(id)) selectedInvoiceIds = selectedInvoiceIds.filter(i => i !== id);
+        else selectedInvoiceIds = [...selectedInvoiceIds, id];
+    }
+
+    function toggleAll() {
+        if (selectedInvoiceIds.length === filterService.filtered.length && filterService.filtered.length > 0) {
+            selectedInvoiceIds = [];
+        } else {
+            selectedInvoiceIds = filterService.filtered.map(inv => inv.id);
+        }
+    }
 
     // svelte-ignore non_reactive_update
     let generatorModal: ReturnType<typeof DocumentGeneratorModal>;
@@ -18,59 +73,97 @@
     let emailModal: ReturnType<typeof InvoiceEmailModal>;
     // svelte-ignore non_reactive_update
     let pdfPreviewModal: ReturnType<typeof PdfPreviewModal>;
+    
+    let mobileActionDialog: HTMLDialogElement | undefined = $state();
+    let activeMobileInvoice = $state<InvoicePayload | null>(null);
+    
+    // svelte-ignore non_reactive_update
+    let paymentModal: ReturnType<typeof InvoicePaymentModal>;
 
-    // Funktion für das direkte Aktualisieren des Status aus der Übersicht heraus
+    // --- Optimistic UI & Sync-Queue ---
     async function updateStatus(id: string, newStatus: string) {
-        try {
-            await pb.collection('invoices').update(id, { status: newStatus });
-            toastStore.success("Status erfolgreich aktualisiert.");
-        } catch (err) {
-            console.error("Fehler beim Status-Update:", err);
-            toastStore.error("Der Status konnte nicht aktualisiert werden.");
+        if (newStatus === 'Abgeschlossen') {
+            const invoice = orgaStore.invoices?.data.find((i: any) => i.id === id);
+            paymentModal?.open(id, async (invId, date) => {
+                await performStatusUpdate(invId, newStatus, date);
+            }, invoice?.paid_at);
+        } else {
+            await performStatusUpdate(id, newStatus, null);
         }
     }
 
-    // Funktion zum Löschen einer Rechnung
+    async function performStatusUpdate(id: string, newStatus: string, paidAtDate: string | null) {
+        const payload: any = { status: newStatus };
+        if (newStatus === 'Abgeschlossen' && paidAtDate) {
+            payload.paid_at = paidAtDate;
+        } else {
+            payload.paid_at = null;
+        }
+
+        // Optimistic Update
+        let previousStatus = "";
+        if (orgaStore.invoices) {
+            const idx = orgaStore.invoices.data.findIndex((i: any) => i.id === id);
+            if (idx !== -1) {
+                previousStatus = orgaStore.invoices.data[idx].status ?? "";
+                orgaStore.invoices.data[idx].status = newStatus as any;
+                orgaStore.invoices.data[idx].paid_at = payload.paid_at;
+            }
+        }
+
+        try {
+            await pb.collection('invoices').update(id, payload);
+            toastStore.success("Status erfolgreich aktualisiert.");
+        } catch (err) {
+            console.error("Fehler beim Status-Update (Offline?):", err);
+            toastStore.info("Offline: Status-Änderung in der Sync-Queue gespeichert.");
+            syncQueue.push({ id, action: 'updateStatus', payload, timestamp: Date.now() });
+        }
+    }
+
+    async function deleteSelected() {
+        if (selectedInvoiceIds.length === 0) return;
+        if (await confirmStore.ask(`Möchten Sie ${selectedInvoiceIds.length} Rechnungen wirklich unwiderruflich löschen?`, "Rechnungen löschen?", "Löschen", "Abbrechen", true)) {
+            // Optimistic Multi-Delete
+            const idsToDelete = [...selectedInvoiceIds];
+            if (orgaStore.invoices) {
+                orgaStore.invoices.data = orgaStore.invoices.data.filter((i: any) => !idsToDelete.includes(i.id));
+            }
+            selectedInvoiceIds = [];
+
+            try {
+                const promises = idsToDelete.map(id => pb.collection('invoices').delete(id));
+                for (let i = 0; i < promises.length; i += 20) await Promise.all(promises.slice(i, i + 20));
+                toastStore.success(`${idsToDelete.length} Rechnungen gelöscht.`);
+            } catch (err) {
+                console.error("Fehler beim Löschen:", err);
+                toastStore.info("Offline: Lösch-Aufträge in die Sync-Queue aufgenommen.");
+                idsToDelete.forEach(id => syncQueue.push({ id, action: 'delete', timestamp: Date.now() }));
+            }
+        }
+    }
+
     async function deleteInvoice(id: string) {
         if (await confirmStore.ask("Möchten Sie diese Rechnung wirklich unwiderruflich löschen?", "Rechnung löschen?", "Löschen", "Abbrechen", true)) {
+            // Optimistic Remove
+            if (orgaStore.invoices) {
+                const idx = orgaStore.invoices.data.findIndex((i: any) => i.id === id);
+                if (idx !== -1) orgaStore.invoices.data.splice(idx, 1);
+            }
+
             try {
                 await pb.collection('invoices').delete(id);
                 toastStore.info("Rechnung wurde gelöscht.");
             } catch (err) {
                 console.error("Fehler beim Löschen:", err);
-                toastStore.error("Die Rechnung konnte nicht gelöscht werden.");
+                toastStore.info("Offline: Löschung in der Sync-Queue gespeichert.");
+                syncQueue.push({ id, action: 'delete', timestamp: Date.now() });
             }
         }
     }
 
-    // Hilfsfunktion: Gibt eine schöne CSS-Klasse basierend auf dem Status zurück
-    function getStatusClass(status: string) {
-        switch (status) {
-            case 'Entwurf': return 'bg-neutral-100 text-neutral-600 border border-neutral-200';
-            case 'Eingereicht': return 'bg-blue-100 text-blue-700 border border-blue-200';
-            case 'In Bearbeitung': return 'bg-amber-100 text-amber-700 border border-amber-200';
-            case 'Abgeschlossen': return 'bg-emerald-100 text-emerald-700 border border-emerald-200';
-            case 'Abgelehnt':
-            case 'Storniert': return 'bg-rose-100 text-rose-700 border border-rose-200';
-            default: return 'bg-neutral-100 text-neutral-600 border border-neutral-200';
-        }
-    }
-
-    // Hilfsfunktion: Holt die korrekte URL für die PDF-Datei
-    function getPdfUrl(record: any, index: number = 0) {
-        if (!record.pdf || record.pdf.length === 0) return null;
-        
-        if (Array.isArray(record.pdf)) {
-            if (index < record.pdf.length) {
-                return pb.files.getURL(record, record.pdf[index]);
-            }
-            return null;
-        }
-        return index === 0 ? pb.files.getURL(record, record.pdf) : null;
-    }
-    
-    function previewPdf(record: any, index: number, prefix: string) {
-        const url = getPdfUrl(record, index);
+    function previewPdf(record: InvoicePayload, index: number, prefix: string) {
+        const url = getPdfUrl(record, index, pb);
         if (!url) return;
 
         let clientLastName = '';
@@ -79,7 +172,7 @@
             if (client?.name_last) clientLastName = `-${client.name_last}`;
         }
         
-        const safeNr = (record.invoice_nr || 'Unbekannt').replace(/\//g, '-');
+        const safeNr = (record.invoice_nr ?? 'Unbekannt').replace(/\//g, '-');
         let finalName = `${prefix}_${safeNr}.pdf`;
         
         if (index === 0 && record.invoice_nr !== 'Zeitnachweis') {
@@ -91,13 +184,19 @@
         pdfPreviewModal?.open(url, prefix, finalName);
     }
 
-    function getClient(record: any) {
-        return Array.isArray(record.expand?.client) ? record.expand.client[0] : record.expand?.client;
+    function openGenerator() {
+        const invoiceTemplate = orgaStore.document_templates?.data.find((t: any) => (t.type ?? '').toLowerCase() === 'rechnung');
+        generatorModal?.open(invoiceTemplate?.id, 1, '', 'rechnung');
     }
 
-    function openGenerator() {
-        const invoiceTemplate = orgaStore.document_templates?.data.find((t: any) => (t.type || '').toLowerCase() === 'rechnung');
-        generatorModal?.open(invoiceTemplate?.id, 1);
+    function openMobileActions(inv: InvoicePayload) {
+        activeMobileInvoice = inv;
+        mobileActionDialog?.showModal();
+    }
+    
+    function closeMobileActions() {
+        mobileActionDialog?.close();
+        setTimeout(() => activeMobileInvoice = null, 300);
     }
 
     onMount(() => {
@@ -111,186 +210,115 @@
     });
 </script>
 
-<div class="orga-page-header animate-enter">
-    <div>
-        <h1 class="orga-page-title">Rechnungen</h1>
-        <p class="orga-page-subtitle">Verwalten Sie hier alle generierten Rechnungen, Einnahmen und deren Status.</p>
-    </div>
-    <button onclick={openGenerator} class="orga-button-primary inline-flex w-full sm:w-auto justify-center py-3 sm:py-2.5 mt-4 sm:mt-0">
-        <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
-        Neue Rechnung
-    </button>
-</div>
-
-<div class="orga-filter-bar animate-enter delay-100 items-center">
-    <div class="flex-1 w-full">
-        <label for="search-inv" class="sr-only">Suchen</label>
-        <input 
-            id="search-inv"
-            type="text" 
-            bind:value={filterService.searchQuery} 
-            placeholder="Nach Rechnungsnummer oder Klient suchen..." 
-            class="orga-input-clear py-3 sm:py-2.5"
-        />
-    </div>
-    <div class="w-full md:w-64 shrink-0">
-        <label for="status-filter" class="sr-only">Status</label>
-        <select id="status-filter" bind:value={filterService.statusFilter} class="orga-input-clear py-3 sm:py-2.5 cursor-pointer">
-            <option value="all">Alle Status anzeigen</option>
-            <option value="Entwurf">Entwurf</option>
-            <option value="Eingereicht">Eingereicht</option>
-            <option value="In Bearbeitung">In Bearbeitung</option>
-            <option value="Abgeschlossen">Abgeschlossen (Bezahlt)</option>
-            <option value="Abgelehnt">Abgelehnt</option>
-            <option value="Storniert">Storniert</option>
-        </select>
+<div class="orga-page-header animate-enter pb-2 sm:pb-6">
+    <div class="flex justify-between items-center w-full gap-4">
+        <div class="min-w-0">
+            <h1 class="orga-page-title truncate">Rechnungen</h1>
+            <p class="orga-page-subtitle hidden sm:block">Verwalten Sie hier alle generierten Rechnungen, Einnahmen und deren Status.</p>
+        </div>
+        
+        <!-- Desktop Actions (Hidden on Mobile) -->
+        <div class="hidden md:flex items-center gap-2">
+            {#if selectedInvoiceIds.length > 0}
+                <button aria-label="Ausgewählte senden" onclick={() => emailModal?.open(selectedInvoices)} class="orga-button-primary bg-blue-600 hover:bg-blue-700 shadow-blue-600/20 py-2 px-4 min-h-12 text-sm flex items-center gap-1.5 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none">
+                    <Mail class="w-4 h-4" /> Senden ({selectedInvoiceIds.length})
+                </button>
+                <button aria-label="Layout neu generieren" onclick={() => generatorModal?.openForRegenerate(selectedInvoices)} class="orga-button-ghost bg-amber-50 text-amber-700 hover:bg-amber-100 border-amber-200 py-2 px-4 min-h-12 text-sm flex items-center gap-1.5 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none">
+                    <RefreshCw class="w-4 h-4" /> Refresh ({selectedInvoiceIds.length})
+                </button>
+                <button aria-label="Ausgewählte löschen" onclick={deleteSelected} class="orga-button-ghost bg-rose-50 text-rose-700 hover:bg-rose-100 border-rose-200 py-2 px-4 min-h-12 text-sm flex items-center gap-1.5 focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:outline-none">
+                    <Trash2 class="w-4 h-4" /> Löschen ({selectedInvoiceIds.length})
+                </button>
+            {/if}
+            <div class="w-px h-8 bg-neutral-200 mx-2" aria-hidden="true"></div>
+            <button aria-label="Neue Rechnung erstellen" onclick={openGenerator} class="orga-button-primary py-2 px-6 min-h-12 text-sm font-bold flex items-center gap-1.5 shadow-indigo-600/30 focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:outline-none">
+                <Plus class="w-4 h-4" /> Neue Rechnung
+            </button>
+        </div>
     </div>
 </div>
 
-<div class="animate-enter delay-200">
+<div class="px-4 sm:px-6 mb-4 animate-enter delay-100">
+    <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 bg-white p-2 rounded-2xl border border-neutral-200 shadow-sm w-full">
+        <div class="flex-1 relative">
+            <span class="absolute inset-y-0 left-3 flex items-center text-neutral-400 text-base" aria-hidden="true"><Search class="w-4 h-4" /></span>
+            <input 
+                id="search-inv"
+                type="text" 
+                aria-label="Rechnungen durchsuchen"
+                bind:value={filterService.searchQuery} 
+                placeholder="Rechnungsnummer, Klient..." 
+                class="w-full bg-transparent border-none py-3 min-h-12 pl-9 pr-3 text-sm focus:ring-0 outline-none text-neutral-800 placeholder:text-neutral-400 focus-visible:ring-2 focus-visible:ring-indigo-500 rounded-xl"
+            />
+        </div>
+        <div class="w-px h-8  hidden sm:block" aria-hidden="true"></div>
+        <div class="w-full sm:w-48 shrink-0 relative border-t sm:border-t-0 border-neutral-100 sm:border-transparent pt-2 sm:pt-0">
+            <span class="absolute inset-y-0 left-3 flex items-center text-neutral-400 text-base pt-2 sm:pt-0" aria-hidden="true"><Hourglass class="w-4 h-4" /></span>
+            <select id="status-filter" aria-label="Status Filter" bind:value={filterService.statusFilter} class="w-full min-h-12 bg-transparent border-none py-3 pl-9 pr-3 text-sm focus:ring-0 outline-none cursor-pointer font-semibold text-neutral-700 appearance-none focus-visible:ring-2 focus-visible:ring-indigo-500 rounded-xl">
+                <option value="all">Alle Status anzeigen</option>
+                <option value="Entwurf">Entwurf</option>
+                <option value="Eingereicht">Eingereicht</option>
+                <option value="In Bearbeitung">In Bearbeitung</option>
+                <option value="Abgeschlossen">Abgeschlossen (Bezahlt)</option>
+                <option value="Abgelehnt">Abgelehnt</option>
+                <option value="Storniert">Storniert</option>
+            </select>
+        </div>
+    </div>
+</div>
+
+<!-- pb-28 adds space for the mobile bottom bar -->
+<div class="animate-enter delay-200 sm:px-6 pb-28 md:pb-6">
+    <!-- 2. Offline-First & Optimistic UI: Skeleton Loaders -->
     {#if invoicesStore?.isLoading}
-        <div class="text-center py-12 text-neutral-500 font-medium animate-pulse">Lade Rechnungen...</div>
+        <div class="space-y-4" aria-busy="true" aria-label="Lade Rechnungen">
+            {#each Array(4) as _}
+                <div class="w-full h-24  animate-pulse rounded-2xl"></div>
+            {/each}
+        </div>
     {:else if filterService.filtered.length === 0}
-        <div class="orga-card-white p-12 text-center text-neutral-500 border border-neutral-100 shadow-sm">
-            <p class="text-lg font-bold text-neutral-900 mb-2">Keine Rechnungen gefunden</p>
-            <p>Passen Sie die Suche an oder generieren Sie eine neue Rechnung über die Vorlagen.</p>
+        <div class="rounded-3xl p-12 text-center text-neutral-500 border border-neutral-100 shadow-sm flex flex-col items-center justify-center">
+            <Inbox class="w-12 h-12 mb-4 opacity-50 text-neutral-400" />
+            <p class="text-lg font-bold text-neutral-900 mb-2">Keine Treffer</p>
+            <p class="text-sm">Passen Sie die Filter an oder erstellen Sie eine neue Rechnung.</p>
         </div>
     {:else}
-        <div class="orga-card-white overflow-hidden">
-            <!-- Desktop View -->
-            <div class="hidden lg:block overflow-x-auto custom-scrollbar">
-                <table class="w-full text-left border-collapse min-w-200">
-                    <thead class="bg-neutral-50 border-b border-neutral-100">
-                        <tr>
-                            <th class="p-4 font-bold text-neutral-500 text-xs uppercase tracking-wider">Rechnung</th>
-                            <th class="p-4 font-bold text-neutral-500 text-xs uppercase tracking-wider">Klient</th>
-                            <th class="p-4 font-bold text-neutral-500 text-xs uppercase tracking-wider text-right">Betrag</th>
-                            <th class="p-4 font-bold text-neutral-500 text-xs uppercase tracking-wider text-center">Status</th>
-                            <th class="p-4 font-bold text-neutral-500 text-xs uppercase tracking-wider text-right">Aktionen</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-neutral-50">
-                        {#each filterService.filtered as inv (inv.id)}
-                            <tr class="hover:bg-neutral-50/50 transition-colors group">
-                                <td class="p-4">
-                                    <div class="flex flex-col">
-                                        <span class="font-bold text-neutral-900">{inv.invoice_nr || 'RE-Unbekannt'}</span>
-                                        <span class="text-xs text-neutral-500 mt-0.5">{inv.issue_date ? new Date(inv.issue_date).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-'}</span>
-                                    </div>
-                                </td>
-                                <td class="p-4">
-                                    <div class="flex items-center gap-3">
-                                        <div class="w-9 h-9 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-sm shrink-0">{(getClient(inv)?.name_first?.charAt(0) || '')}{(getClient(inv)?.name_last?.charAt(0) || '?')}</div>
-                                        <div class="flex-1 min-w-0">
-                                            <p class="text-sm font-bold text-neutral-900 truncate">{getClient(inv) ? `${getClient(inv).name_first} ${getClient(inv).name_last}` : 'Ohne Klient'}</p>
-                                            <p class="text-xs text-neutral-500 mt-0.5 truncate">{Array.isArray(inv.appointments) ? inv.appointments.length : (inv.appointments ? 1 : 0)} Termin(e)</p>
-                                        </div>
-                                    </div>
-                                </td>
-                                <td class="p-4 text-right">
-                                    {#if inv.brutto > 0}
-                                        <span class="font-black text-indigo-700 text-lg">{inv.brutto.toFixed(2).replace('.', ',')} €</span>
-                                    {:else}
-                                        <span class="font-bold text-neutral-400 text-sm">Nachweis</span>
-                                    {/if}
-                                </td>
-                                <td class="p-4 text-center">
-                                    <select 
-                                        value={inv.status} 
-                                        onchange={(e) => updateStatus(inv.id, e.currentTarget.value)}
-                                        class="text-xs font-bold rounded-lg px-2.5 py-1.5 outline-none cursor-pointer shadow-sm transition-colors border {getStatusClass(inv.status)}"
-                                    >
-                                        <option value="Entwurf">Entwurf</option>
-                                        <option value="Eingereicht">Eingereicht</option>
-                                        <option value="In Bearbeitung">In Bearbeitung</option>
-                                        <option value="Abgeschlossen">Abgeschlossen</option>
-                                        <option value="Abgelehnt">Abgelehnt</option>
-                                        <option value="Storniert">Storniert</option>
-                                    </select>
-                                </td>
-                                <td class="p-4">
-                                    <div class="flex items-center justify-end gap-1.5 opacity-100 xl:opacity-0 xl:group-hover:opacity-100 transition-opacity">
-                                        {#if getPdfUrl(inv, 0)}
-                                            <button type="button" onclick={() => previewPdf(inv, 0, 'Rechnung')} class="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-neutral-600 bg-white border border-neutral-200 hover:bg-neutral-100 hover:text-neutral-900 rounded-lg transition-colors shadow-sm" title="Rechnung ansehen">
-                                                <span>📄</span> <span class="hidden 2xl:inline">Rechnung</span>
-                                            </button>
-                                        {/if}
-                                        
-                                        {#if getPdfUrl(inv, 1)}
-                                            <button type="button" onclick={() => previewPdf(inv, 1, 'Zeitnachweis')} class="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-neutral-600 bg-white border border-neutral-200 hover:bg-neutral-100 hover:text-neutral-900 rounded-lg transition-colors shadow-sm" title="Zeitnachweis ansehen">
-                                                <span>⏱️</span> <span class="hidden 2xl:inline">Zeiten</span>
-                                            </button>
-                                        {/if}
-                                        
-                                        {#if getPdfUrl(inv, 0) || getPdfUrl(inv, 1)}
-                                            <button type="button" onclick={() => emailModal?.open(inv)} class="p-2 text-blue-600 bg-blue-50 hover:bg-blue-600 hover:text-white rounded-lg transition-colors border border-blue-100" title="Per E-Mail versenden">
-                                                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
-                                            </button>
-                                        {/if}
-                                        
-                                        <button onclick={() => deleteInvoice(inv.id)} class="p-2 text-rose-500 bg-rose-50 hover:bg-rose-500 hover:text-white rounded-lg transition-colors border border-rose-100 ml-1" title="Rechnung löschen">
-                                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                        </button>
-                                    </div>
-                                </td>
-                            </tr>
-                        {/each}
-                    </tbody>
-                </table>
-            </div>
-
-            <!-- Mobile View -->
-            <div class="block lg:hidden divide-y divide-neutral-100">
-                {#each filterService.filtered as inv (inv.id)}
-                    <div class="p-4 flex flex-col gap-3">
-                        <div class="flex justify-between items-start">
-                            <div>
-                                <span class="font-bold text-neutral-900">{inv.invoice_nr || 'RE-Unbekannt'}</span>
-                                <span class="text-xs text-neutral-500 block mt-0.5">{inv.issue_date ? new Date(inv.issue_date).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-'}</span>
-                            </div>
-                            {#if inv.brutto > 0}
-                                <span class="font-black text-indigo-700 text-lg">{inv.brutto.toFixed(2).replace('.', ',')} €</span>
-                            {:else}
-                                <span class="font-bold text-neutral-400 text-sm">Nachweis</span>
-                            {/if}
-                        </div>
-                        
-                        <div class="flex items-center gap-3">
-                            <div class="w-9 h-9 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-sm shrink-0">{(getClient(inv)?.name_first?.charAt(0) || '')}{(getClient(inv)?.name_last?.charAt(0) || '?')}</div>
-                            <div class="flex-1 min-w-0">
-                                <p class="text-sm font-bold text-neutral-900 truncate">{getClient(inv) ? `${getClient(inv).name_first} ${getClient(inv).name_last}` : 'Ohne Klient'}</p>
-                                <p class="text-xs text-neutral-500 mt-0.5 truncate">{Array.isArray(inv.appointments) ? inv.appointments.length : (inv.appointments ? 1 : 0)} Termin(e)</p>
-                            </div>
-                        </div>
-
-                        <div class="flex items-center justify-between gap-2 mt-1 pt-3 border-t border-neutral-50">
-                            <select 
-                                value={inv.status} 
-                                onchange={(e) => updateStatus(inv.id, e.currentTarget.value)}
-                                class="text-xs font-bold rounded-lg px-2.5 py-1.5 outline-none cursor-pointer shadow-sm border {getStatusClass(inv.status)}"
-                            >
-                                <option value="Entwurf">Entwurf</option>
-                                <option value="Eingereicht">Eingereicht</option>
-                                <option value="In Bearbeitung">In Bearbeitung</option>
-                                <option value="Abgeschlossen">Abgeschlossen</option>
-                                <option value="Abgelehnt">Abgelehnt</option>
-                                <option value="Storniert">Storniert</option>
-                            </select>
-
-                            <div class="flex items-center gap-1.5">
-                                {#if getPdfUrl(inv, 0)}<button type="button" onclick={() => previewPdf(inv, 0, 'Rechnung')} class="p-2 text-neutral-600 bg-white border border-neutral-200 hover:bg-neutral-100 rounded-lg shadow-sm" title="Rechnung ansehen"><span>📄</span></button>{/if}
-                                {#if getPdfUrl(inv, 1)}<button type="button" onclick={() => previewPdf(inv, 1, 'Zeitnachweis')} class="p-2 text-neutral-600 bg-white border border-neutral-200 hover:bg-neutral-100 rounded-lg shadow-sm" title="Zeitnachweis ansehen"><span>⏱️</span></button>{/if}
-                                {#if getPdfUrl(inv, 0) || getPdfUrl(inv, 1)}<button type="button" onclick={() => emailModal?.open(inv)} class="p-2 text-blue-600 bg-blue-50 border border-blue-100 hover:bg-blue-600 hover:text-white rounded-lg" title="Per E-Mail versenden"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg></button>{/if}
-                                <button onclick={() => deleteInvoice(inv.id)} class="p-2 text-rose-500 bg-rose-50 border border-rose-100 hover:bg-rose-500 hover:text-white rounded-lg ml-1" title="Rechnung löschen"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
-                            </div>
-                        </div>
-                    </div>
-                {/each}
-            </div>
-        </div>
+        <InvoiceList 
+            {groupedInvoices}
+            {filterService}
+            selectedInvoiceIds={selectedInvoiceIds}
+            onToggleAll={toggleAll}
+            onToggleSelection={toggleSelection}
+            onUpdateStatus={updateStatus}
+            onRegenerate={(invs) => generatorModal?.openForRegenerate(invs)}
+            onPreviewPdf={previewPdf}
+            onEmail={(inv, isMahnung, mLevel) => emailModal?.open(inv, 'pdf', isMahnung, mLevel)}
+            onDelete={deleteInvoice}
+            onOpenMobileActions={openMobileActions}
+        />
     {/if}
 </div>
+
+<InvoiceBottomBar 
+    selectedCount={selectedInvoiceIds.length}
+    onClear={() => selectedInvoiceIds = []}
+    onEmail={() => emailModal?.open(selectedInvoices)}
+    onRegenerate={() => generatorModal?.openForRegenerate(selectedInvoices)}
+    onDelete={deleteSelected}
+    onNew={openGenerator}
+/>
+
+<InvoiceMobileMenu 
+    bind:dialog={mobileActionDialog}
+    bind:activeMobileInvoice
+    onUpdateStatus={updateStatus}
+    onPreviewPdf={previewPdf}
+    onEmail={(inv, isMahnung, mLevel) => emailModal?.open(inv, 'pdf', isMahnung, mLevel)}
+    onRegenerate={(invs) => generatorModal?.openForRegenerate(invs)}
+    onDelete={deleteInvoice}
+/>
 
 <DocumentGeneratorModal bind:this={generatorModal} />
 <InvoiceEmailModal bind:this={emailModal} />
 <PdfPreviewModal bind:this={pdfPreviewModal} />
+<InvoicePaymentModal bind:this={paymentModal} />

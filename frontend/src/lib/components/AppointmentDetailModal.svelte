@@ -7,13 +7,25 @@
     import AppointmentReminderModal from "$lib/components/AppointmentReminderModal.svelte";
     import TimeRecordModal from "$lib/components/TimeRecordModal.svelte";
     import AiReportModal from "$lib/components/AiReportModal.svelte";
-    import ClientDetailModal from "$lib/components/ClientDetailModal.svelte";
+    import ClientDetailModal from "$lib/components/clients/ClientDetailModal.svelte";
     import { toastStore } from "$lib/services/toastService.svelte";
     import { confirmStore } from "$lib/services/confirmService.svelte";
+    import { slide, fade } from "svelte/transition";
+    import { 
+        X, Calendar, Clock, User, MapPin, CheckCircle2, Lock, Eye, Repeat, Trash2, Edit3, MessageSquare, 
+        Stethoscope, Navigation, FileText, Play, Square, ListTodo, Car, Banknote, Paperclip, Bot, FileSignature, Mic,
+
+        Save
+
+    } from "lucide-svelte";
 
     let dialog: HTMLDialogElement;
     let appId = $state<string | null>(null);
     let appointment = $derived(appId ? orgaStore.appointments?.getById(appId) : null);
+
+    // States for editable appointment internal notes
+    let isEditingInternalNotes = $state(false);
+    let internalNotesValue = $state("");
 
     let client = $derived(appointment?.expand?.client?.[0] || null);
     let fullClient = $derived(client ? orgaStore.clients?.getById(client.id) : null);
@@ -55,7 +67,6 @@
 
     let currentAppIdForReport = $state<string | null>(null);
     let report = $state("");
-    let notes = $state("");
     let isReportSaving = $state(false);
     // svelte-ignore non_reactive_update
     let audioInput: HTMLInputElement;
@@ -71,14 +82,33 @@
     $effect(() => {
         if (appointment && appointment.id !== currentAppIdForReport) {
             report = appointment.report || "";
-            notes = appointment.notes || appointment.internal_notes || "";
             currentAppIdForReport = appointment.id;
+        }
+    });
+    
+    $effect(() => {
+        if (appointment && !isEditingInternalNotes) {
+            internalNotesValue = appointment.notes || "";
         }
     });
 
     export function open(id: string) {
         appId = id;
+        isEditingInternalNotes = false; // Reset edit state on open
         dialog?.showModal();
+    }
+
+    async function saveInternalNotes() {
+        if (!appointment) return;
+        try {
+            await pb.collection('appointments').update(appointment.id, { notes: internalNotesValue });
+            await updateAppointmentStore();
+            isEditingInternalNotes = false;
+            toastStore.success("Interne Notizen zum Termin gespeichert.");
+        } catch (err) {
+            console.error(err);
+            toastStore.error("Fehler beim Speichern der internen Notizen.");
+        }
     }
 
     async function updateAppointmentStore() {
@@ -90,11 +120,7 @@
         }, 400);
     }
 
-    export function close() {
-        dialog?.close();
-        appId = null;
-        currentAppIdForReport = null;
-    }
+    export function close() { dialog?.close(); appId = null; currentAppIdForReport = null; }
 
     async function startTracking() {
         if (!appointment) return;
@@ -176,12 +202,12 @@
         if (!appointment) return;
         isReportSaving = true;
         try {
-            await pb.collection('appointments').update(appointment.id, { report, notes, internal_notes: notes });
+            await pb.collection('appointments').update(appointment.id, { report });
             await updateAppointmentStore();
             toastStore.success("Notizen gespeichert.");
         } catch(err) {
             console.error(err);
-            toastStore.error("Fehler beim Speichern. Fehlt das Feld 'notes' in der DB?");
+            toastStore.error("Fehler beim Speichern.");
         } finally {
             isReportSaving = false;
         }
@@ -194,15 +220,20 @@
         if (type === 'family') {
             report = (report ? report.trim() : '') + formattedText;
         } else {
-            notes = (notes ? notes.trim() : '') + formattedText;
+            internalNotesValue = (internalNotesValue ? internalNotesValue.trim() : '') + formattedText;
         }
         
         if (!appointment) return;
         isReportSaving = true;
         try {
+            let payload: any = { report };
+            if (type === 'internal') {
+                payload.notes = internalNotesValue;
+            }
+
             if (blobs && blobs.length > 0) {
                 // Zuerst Text-Felder updaten
-                let currentApp = await pb.collection('appointments').update(appointment.id, { report, notes, internal_notes: notes });
+                let currentApp = await pb.collection('appointments').update(appointment.id, payload);
                 let currentVoiceRecords = currentApp.voice_records || [];
                 
                 // Dann Audio-Blobs einzeln hochladen
@@ -216,7 +247,11 @@
                     currentVoiceRecords = updated.voice_records || [];
                 }
             } else {
-                await pb.collection('appointments').update(appointment.id, { report, notes, internal_notes: notes });
+                await pb.collection('appointments').update(appointment.id, payload);
+            }
+
+            if (type === 'internal') {
+                isEditingInternalNotes = false;
             }
             
             await updateAppointmentStore();
@@ -373,43 +408,43 @@
     }
 </script>
 
-<dialog bind:this={dialog} class="p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-full max-w-5xl mx-auto my-auto rounded-3xl" onclick={(e) => { if (e.target === dialog) close(); }}>
-    <div class="bg-brand-50 rounded-3xl w-full max-h-[90vh] flex flex-col relative overflow-hidden shadow-2xl">
+<dialog bind:this={dialog} class="p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-full max-w-5xl m-0 sm:m-auto rounded-none sm:rounded-3xl h-dvh sm:h-auto overflow-hidden" onclick={(e) => { if (e.target === dialog) close(); }}>
+    <div class="bg-brand-50 sm:rounded-3xl w-full h-full sm:max-h-[90dvh] flex flex-col relative overflow-hidden shadow-2xl">
         
         <div class="bg-white px-4 sm:px-6 py-4 sm:py-5 border-b border-neutral-100 flex flex-col sm:flex-row sm:items-center justify-between shrink-0 sticky top-0 z-20 gap-3">
             <div class="flex items-center gap-3 sm:gap-4 min-w-0 pr-8 sm:pr-0">
-                <div class="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 hidden sm:flex items-center justify-center font-bold shadow-sm shrink-0">📅</div>
+                <div class="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-brand-50 text-brand-600 hidden sm:flex items-center justify-center font-bold shadow-sm shrink-0"><Calendar class="w-6 h-6" /></div>
                 <div class="min-w-0">
-                    <h2 class="text-lg sm:text-xl font-bold text-neutral-900 flex items-center gap-2 truncate">
-                        Termin-Details {#if appointment?.is_private}<span class="px-2 py-0.5 text-[10px] font-bold rounded-full bg-rose-100 text-rose-700 shrink-0">Privat</span>{/if}
-                        {#if appointment?.is_series}<span class="px-2 py-0.5 text-[10px] font-bold rounded-full bg-indigo-100 text-indigo-700 shrink-0">🔁 Serie</span>{/if}
-                        {#if appointment?.settled}<span class="px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-100 text-emerald-700 shrink-0">✓ Abgerechnet</span>{/if}
-                        {#if appointment?.is_visible}<span class="px-2 py-0.5 text-[10px] font-bold rounded-full bg-sky-100 text-sky-700 shrink-0">👁️ Öffentlich</span>{/if}
+                    <h2 class="text-lg sm:text-2xl font-black text-neutral-900 flex items-center gap-3 truncate">
+                        Termin-Details {#if appointment?.is_private}<span class="px-2.5 py-1 text-[10px] font-bold rounded-full bg-rose-100 text-rose-700 shrink-0 flex items-center gap-1"><Lock class="w-3 h-3" /> Privat</span>{/if}
+                        {#if appointment?.is_series}<span class="px-2.5 py-1 text-[10px] font-bold rounded-full bg-brand-100 text-brand-700 shrink-0 flex items-center gap-1"><Repeat class="w-3 h-3" /> Serie</span>{/if}
+                        {#if appointment?.settled}<span class="px-2.5 py-1 text-[10px] font-bold rounded-full bg-emerald-100 text-emerald-700 shrink-0 flex items-center gap-1"><CheckCircle2 class="w-3 h-3" /> Abgerechnet</span>{/if}
+                        {#if appointment?.is_visible}<span class="px-2.5 py-1 text-[10px] font-bold rounded-full bg-sky-100 text-sky-700 shrink-0 flex items-center gap-1"><Eye class="w-3 h-3" /> Öffentlich</span>{/if}
                     </h2>
-                    <p class="text-[10px] sm:text-xs text-neutral-500 font-medium truncate">
+                    <p class="text-[11px] sm:text-sm text-neutral-500 font-medium truncate mt-0.5">
                         {appointment?.appointment ? new Date(appointment.appointment as string).toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' }) : ''} 
                         {appointment?.appointment ? `um ${new Date(appointment.appointment as string).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr` : ''}
                     </p>
                 </div>
             </div>
-            <div class="flex items-center gap-1 sm:gap-2 shrink-0 self-end sm:self-auto">
+            <div class="flex items-center gap-1 sm:gap-2 shrink-0 sm:self-auto">
                 {#if appointment}
                     {#if appointment.is_series && appointment.series_id}
-                        <button onclick={deleteSeries} class="p-1.5 sm:p-2 text-rose-500 hover:text-white hover:bg-rose-600 rounded-lg transition-colors bg-rose-50 flex items-center gap-1.5 shadow-sm border border-rose-100 hover:border-rose-600" title="Serie löschen (Dieser & alle zukünftigen)">
-                            <svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                            <span class="text-[10px] sm:text-xs font-bold hidden md:block">Serie löschen</span>
+                        <button onclick={deleteSeries} class="p-2 sm:p-2.5 min-h-10 text-rose-500 hover:text-white hover:bg-rose-600 rounded-xl transition-all active:scale-95 bg-rose-50 flex items-center gap-1.5 shadow-sm border border-rose-100 hover:border-rose-600 focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:outline-none" title="Serie löschen (Dieser & alle zukünftigen)">
+                            <Trash2 class="w-4 h-4 sm:w-5 sm:h-5" />
+                            <span class="text-[11px] sm:text-xs font-bold hidden md:block">Serie löschen</span>
                         </button>
                     {/if}
-                    <button onclick={() => reminderModal?.open(appointment, fullClient)} class="p-1.5 sm:p-2 text-neutral-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors bg-neutral-100 sm:bg-transparent" title="Nachricht / Erinnerung senden"><svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg></button>
-                    <button onclick={() => editModal?.open(appointment)} class="p-1.5 sm:p-2 text-neutral-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors bg-neutral-100 sm:bg-transparent" title="Termin bearbeiten"><svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg></button>
-                    <button onclick={deleteAppointment} class="p-1.5 sm:p-2 text-neutral-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors bg-neutral-100 sm:bg-transparent" title="Einzelnen Termin löschen"><svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
+                    <button onclick={() => reminderModal?.open(appointment, fullClient)} class="w-9 h-9 sm:w-12 sm:h-12 flex items-center justify-center text-neutral-500 hover:text-brand-600 hover:bg-brand-50 rounded-xl transition-all active:scale-95 bg-neutral-100 sm:bg-transparent focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:outline-none" title="Nachricht / Erinnerung senden"><MessageSquare class="w-5 h-5" /></button>
+                    <button onclick={() => editModal?.open(appointment)} class="w-9 h-9 sm:w-12 sm:h-12 flex items-center justify-center text-neutral-500 hover:text-brand-600 hover:bg-brand-50 rounded-xl transition-all active:scale-95 bg-neutral-100 sm:bg-transparent focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:outline-none" title="Termin bearbeiten"><Edit3 class="w-5 h-5" /></button>
+                    <button onclick={deleteAppointment} class="w-9 h-9 sm:w-12 sm:h-12 flex items-center justify-center text-neutral-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all active:scale-95 bg-neutral-100 sm:bg-transparent focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:outline-none" title="Einzelnen Termin löschen"><Trash2 class="w-5 h-5" /></button>
                 {/if}
                 <div class="w-px h-6 bg-neutral-200 mx-0 sm:mx-1 hidden sm:block"></div>
-                <button aria-label="Schließen" onclick={close} class="absolute top-4 right-4 sm:relative sm:top-0 sm:right-0 w-8 h-8 sm:w-8 sm:h-8 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-colors shadow-sm sm:shadow-none"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
+                <button aria-label="Schließen" onclick={close} class="absolute top-4 right-4 sm:relative sm:top-0 sm:right-0 w-9 h-9 sm:w-12 sm:h-12 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-all active:scale-95 shadow-sm sm:shadow-none focus-visible:ring-2 focus-visible:ring-neutral-500 focus-visible:outline-none"><X class="w-5 h-5" /></button>
             </div>
         </div>
 
-        <div class="p-6 overflow-y-auto custom-scrollbar">
+        <div class="p-4 sm:p-6 overflow-y-auto custom-scrollbar flex-1">
             {#if !appointment}
                 <div class="flex justify-center py-12"><div class="w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div></div>
             {:else}
@@ -419,12 +454,12 @@
                      {#if client}
                          <div class="orga-card-white p-5 relative overflow-hidden group">
                              <div class="absolute top-0 right-0 w-24 h-24 bg-emerald-50 rounded-full blur-2xl -mr-8 -mt-8 z-0"></div>
-                             <h3 class="text-sm font-bold text-neutral-900 mb-3 border-b border-neutral-100 pb-2 relative z-10">Zugeordneter Klient</h3>
+                             <h3 class="text-[11px] font-bold text-neutral-500 uppercase tracking-wider mb-4 border-b border-neutral-100 pb-2 relative z-10 flex items-center gap-1.5"><User class="w-3.5 h-3.5" /> Zugeordneter Klient</h3>
                              <div class="relative z-10">
                                  <div class="flex items-center gap-3 mb-4">
-                                     <div class="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 font-bold flex items-center justify-center text-sm shadow-inner shrink-0">{(client.name_first?.charAt(0) || '')}{(client.name_last?.charAt(0) || '')}</div>
+                                     <div class="w-12 h-12 rounded-xl bg-emerald-100 text-emerald-700 font-black flex items-center justify-center text-sm shadow-inner shrink-0 border border-emerald-200/50">{(client.name_first?.charAt(0) || '')}{(client.name_last?.charAt(0) || '')}</div>
                                      <div class="min-w-0">
-                                         <p class="text-sm font-bold text-neutral-900 leading-tight truncate">{client.name_first} {client.name_last}</p>
+                                         <p class="text-base font-bold text-neutral-900 leading-tight truncate">{client.name_first} {client.name_last}</p>
                                          {#if fullClient?.street || fullClient?.city}
                                              <p class="text-xs text-neutral-600 mt-0.5 truncate">{fullClient.street || ''} {fullClient.housenr || ''}, {fullClient.zip || ''} {fullClient.city || ''}</p>
                                          {/if}
@@ -432,19 +467,46 @@
                                  </div>
                                  
                                  {#if fullClient?.notes || client?.notes}
-                                     <div class="bg-amber-50 border border-amber-200 px-3 py-2.5 rounded-xl shadow-sm mb-4">
-                                         <p class="text-[10px] font-bold text-amber-700 uppercase tracking-wider mb-1">Notizen zum Klienten</p>
-                                         <p class="text-xs text-amber-900 font-medium leading-relaxed whitespace-pre-wrap">{fullClient?.notes || client?.notes}</p>
+                                     <div transition:slide class="bg-amber-50 border border-amber-200 px-4 py-3 rounded-2xl shadow-inner mb-4">
+                                         <p class="text-[10px] font-black text-amber-800 uppercase tracking-widest mb-1">Wichtige Notizen zum Klienten</p>
+                                         <p class="text-sm text-amber-900 font-medium leading-relaxed whitespace-pre-wrap">{fullClient?.notes || client?.notes}</p>
                                      </div>
                                  {/if}
+
+                                 <div class="bg-rose-50 border border-rose-200 px-4 py-3 rounded-2xl shadow-sm mb-5 transition-all">
+                                     <div class="flex justify-between items-center mb-1">
+                                         <p class="text-[10px] font-black text-rose-800 uppercase tracking-widest">Interne Termin-Notizen</p>
+                                        {#if !isEditingInternalNotes}
+                                            <button onclick={() => isEditingInternalNotes = true} class="text-rose-700 hover:text-rose-900 text-[11px] font-bold flex items-center gap-1 transition-colors bg-white/50 px-2 py-1 rounded-md">
+                                                 <Edit3 class="w-3.5 h-3.5" />
+                                                 Bearbeiten
+                                             </button>
+                                         {/if}
+                                     </div>
+                                    {#if isEditingInternalNotes}
+                                        <div transition:slide>
+                                            <textarea bind:value={internalNotesValue} class="orga-input-clear w-full text-sm min-h-24 bg-white/80 border-rose-300 focus:border-rose-500 focus:ring-rose-500/20" placeholder="Zusätzliche Infos, Aufgaben für das Team..."></textarea>
+                                            <div class="flex gap-2 mt-3 justify-end">
+                                                <button onclick={() => { isEditingInternalNotes = false; internalNotesValue = appointment?.notes || ""; }} class="text-xs font-bold text-neutral-600 hover:text-neutral-900 px-3 py-1.5 bg-white rounded-lg shadow-sm">Abbrechen</button>
+                                                <button onclick={saveInternalNotes} class="text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 px-4 py-1.5 rounded-lg shadow-sm shadow-rose-600/20">Speichern</button>
+                                            </div>
+                                         </div>
+                                     {:else}
+                                        {#if internalNotesValue}
+                                            <p transition:fade class="text-sm text-rose-900 font-medium leading-relaxed whitespace-pre-wrap mt-1.5">{internalNotesValue}</p>
+                                         {:else}
+                                             <p transition:fade class="text-xs text-rose-400/80 italic mt-1">Keine internen Notizen vorhanden.</p>
+                                         {/if}
+                                     {/if}
+                                 </div>
                                  
-                                 <div class="flex flex-col gap-2">
-                                     <button type="button" onclick={() => clientDetailModal?.open(client.id)} class="w-full flex justify-center items-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold py-2.5 px-4 rounded-xl transition-colors text-xs border border-emerald-200 shadow-sm active:scale-95">
-                                         📂 Klienten-Akte öffnen
+                                 <div class="flex flex-col gap-2.5">
+                                     <button type="button" onclick={() => clientDetailModal?.open(client.id)} class="w-full min-h-12 flex justify-center items-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold px-4 rounded-xl transition-all text-sm border border-emerald-200 shadow-sm active:scale-95 focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none">
+                                         <FileSignature class="w-4 h-4" /> Klienten-Akte öffnen
                                      </button>
                                      {#if fullClient?.street || fullClient?.city}
-                                         <a href="https://www.google.com/maps/search/?api=1&query={encodeURIComponent(`${fullClient.name_first} ${fullClient.name_last}, ${fullClient.street || ''} ${fullClient.housenr || ''}, ${fullClient.zip || ''} ${fullClient.city || ''}`)}" target="_blank" rel="noopener noreferrer" class="w-full flex justify-center items-center gap-2 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold py-2.5 px-4 rounded-xl transition-colors text-xs border border-blue-200 shadow-sm active:scale-95">
-                                             🗺️ Navigation zum Klienten
+                                         <a href="https://www.google.com/maps/search/?api=1&query={encodeURIComponent(`${fullClient.name_first} ${fullClient.name_last}, ${fullClient.street || ''} ${fullClient.housenr || ''}, ${fullClient.zip || ''} ${fullClient.city || ''}`)}" target="_blank" rel="noopener noreferrer" class="w-full min-h-12 flex justify-center items-center gap-2 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold px-4 rounded-xl transition-all text-sm border border-blue-200 shadow-sm active:scale-95 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none">
+                                             <Navigation class="w-4 h-4" /> Navigation zum Klienten
                                          </a>
                                      {/if}
                                  </div>
@@ -456,15 +518,15 @@
                          {#each appointment.expand.appointment_at as contact}
                              <div class="orga-card-white p-5 relative overflow-hidden group">
                                  <div class="absolute top-0 right-0 w-24 h-24 bg-blue-50 rounded-full blur-2xl -mr-8 -mt-8 z-0 pointer-events-none transition-transform duration-500 group-hover:scale-150"></div>
-                                 <h3 class="text-sm font-bold text-neutral-900 mb-3 border-b border-neutral-100 pb-2 relative z-10 flex items-center gap-2">
-                                     <span class="text-blue-600">🩺</span> Arzt / Anlaufstelle
+                                 <h3 class="text-[11px] font-bold text-neutral-500 uppercase tracking-wider mb-4 border-b border-neutral-100 pb-2 relative z-10 flex items-center gap-1.5">
+                                     <Stethoscope class="w-3.5 h-3.5" /> Arzt / Anlaufstelle
                                  </h3>
                                  <div class="relative z-10">
-                                     <p class="text-sm font-bold text-neutral-900 leading-tight">
+                                     <p class="text-base font-bold text-neutral-900 leading-tight">
                                          {#if contact.company_name}{contact.company_name}<br>{/if}
                                          {contact.name_first} {contact.name_last}
                                      </p>
-                                     <p class="text-xs text-neutral-600 mt-1 mb-3">
+                                     <p class="text-sm text-neutral-600 mt-1 mb-4">
                                          {contact.street || ''} {contact.housenr || ''}<br>
                                          {contact.zip || ''} {contact.city || ''}
                                      </p>
@@ -473,8 +535,8 @@
                                          {#if contact.email}<a href="mailto:{contact.email}" class="text-xs text-neutral-600 hover:text-emerald-600 flex items-center gap-1.5"><span class="text-emerald-400">✉️</span> {contact.email}</a>{/if}
                                      </div>
                                      <a href="https://www.google.com/maps/search/?api=1&query={encodeURIComponent(`${contact.company_name ? contact.company_name + ' ' : ''}${contact.name_first} ${contact.name_last}, ${contact.street || ''} ${contact.housenr || ''}, ${contact.zip || ''} ${contact.city || ''}`)}" 
-                                        target="_blank" rel="noopener noreferrer" class="w-full flex justify-center items-center gap-2 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold py-2.5 px-4 rounded-xl transition-colors text-xs border border-blue-200 shadow-sm active:scale-95">
-                                         🗺️ Navigation starten
+                                        target="_blank" rel="noopener noreferrer" class="w-full min-h-12 flex justify-center items-center gap-2 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold px-4 rounded-xl transition-all text-sm border border-blue-200 shadow-sm active:scale-95 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none">
+                                         <Navigation class="w-4 h-4" /> Navigation starten
                                      </a>
                                  </div>
                              </div>
@@ -482,26 +544,26 @@
                      {:else if appointment?.location_address}
                          <div class="orga-card-white p-5 relative overflow-hidden">
                              <div class="absolute top-0 right-0 w-24 h-24 bg-blue-50 rounded-full blur-2xl -mr-8 -mt-8 z-0 pointer-events-none"></div>
-                             <h3 class="text-sm font-bold text-neutral-900 mb-3 border-b border-neutral-100 pb-2 relative z-10 flex items-center gap-2">
-                                 <span class="text-blue-600">📍</span> Zieladresse / Ort
+                             <h3 class="text-[11px] font-bold text-neutral-500 uppercase tracking-wider mb-4 border-b border-neutral-100 pb-2 relative z-10 flex items-center gap-1.5">
+                                 <MapPin class="w-3.5 h-3.5" /> Zieladresse / Ort
                              </h3>
                              <div class="relative z-10">
-                                 <p class="text-sm text-neutral-900 font-bold leading-snug">{appointment.location_address.split(',')[0]}</p>
+                                 <p class="text-base text-neutral-900 font-bold leading-snug">{appointment.location_address.split(',')[0]}</p>
                                  {#if appointment.location_address.includes(',')}
-                                     <p class="text-xs text-neutral-600 mt-1 mb-4">{appointment.location_address.substring(appointment.location_address.indexOf(',') + 1).trim()}</p>
+                                     <p class="text-sm text-neutral-600 mt-1 mb-5">{appointment.location_address.substring(appointment.location_address.indexOf(',') + 1).trim()}</p>
                                  {:else}
-                                     <div class="mb-4"></div>
+                                     <div class="mb-5"></div>
                                  {/if}
-                                 <a href="https://www.google.com/maps/search/?api=1&query={encodeURIComponent(appointment.location_address)}" target="_blank" rel="noopener noreferrer" class="w-full flex justify-center items-center gap-2 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold py-2.5 px-4 rounded-xl transition-colors text-xs border border-blue-200 shadow-sm active:scale-95">
-                                     🗺️ Auf Karte anzeigen
+                                 <a href="https://www.google.com/maps/search/?api=1&query={encodeURIComponent(appointment.location_address)}" target="_blank" rel="noopener noreferrer" class="w-full min-h-12 flex justify-center items-center gap-2 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold px-4 rounded-xl transition-all text-sm border border-blue-200 shadow-sm active:scale-95 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none">
+                                     <MapPin class="w-4 h-4" /> Auf Karte anzeigen
                                  </a>
                              </div>
                          </div>
                      {/if}
                      
                         <div class="orga-card-white p-5">
-                            <h3 class="text-sm font-bold text-neutral-900 mb-2 border-b border-neutral-100 pb-2">Beschreibung</h3>
-                            <p class="text-sm text-neutral-700">{appointment.description || 'Keine Beschreibung vorhanden.'}</p>
+                            <h3 class="text-[11px] font-bold text-neutral-500 uppercase tracking-wider mb-3 border-b border-neutral-100 pb-2 flex items-center gap-1.5"><FileText class="w-3.5 h-3.5" /> Beschreibung</h3>
+                            <p class="text-sm text-neutral-800 leading-relaxed font-medium">{appointment.description || 'Keine Beschreibung vorhanden.'}</p>
                         </div>
 
                         
@@ -511,104 +573,111 @@
 
                     <div class="lg:col-span-2 space-y-6">
                         <div class="orga-card-white p-5">
-                            <div class="flex items-center justify-between mb-4 border-b border-neutral-100 pb-2"><h3 class="text-sm font-bold text-neutral-900 flex items-center gap-2"><span class="text-indigo-600">⏱️</span> Zeiterfassung</h3><button onclick={() => timeModal?.open()} class="orga-button-primary py-1.5 px-3 text-xs shadow-indigo-600/20">+ Manuell eintragen</button></div>
+                            <div class="flex items-center justify-between mb-4 border-b border-neutral-100 pb-2"><h3 class="text-[11px] font-bold text-neutral-500 uppercase tracking-wider flex items-center gap-1.5"><Clock class="w-3.5 h-3.5" /> Zeiterfassung</h3><button onclick={() => timeModal?.open()} class="orga-button-ghost bg-white min-h-10 px-4 text-xs font-bold shadow-sm focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:outline-none">+ Manuell eintragen</button></div>
                             
                             {#if runningTimeRecord}
-                                <div class="mb-5 bg-emerald-50 p-4 rounded-xl border border-emerald-200 shadow-sm flex items-center justify-between animate-pulse"><div><p class="text-sm font-bold text-emerald-800">Zeiterfassung läuft...</p><p class="text-xs text-emerald-600">Gestartet um {new Date(runningTimeRecord.start).toLocaleTimeString('de-DE', {hour:'2-digit', minute:'2-digit'})} Uhr</p></div><button type="button" onclick={() => stopTracking(runningTimeRecord.id)} disabled={isTimeLoading} class="orga-button-primary bg-rose-600 hover:bg-rose-700 shadow-rose-600/20 py-2 px-4 text-sm">Stopp</button></div>
+                                <div transition:slide class="mb-6 bg-emerald-50 p-5 rounded-2xl border border-emerald-200 shadow-sm flex items-center justify-between"><div><p class="text-sm font-black text-emerald-900 flex items-center gap-2"><span class="relative flex h-3 w-3"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span></span> Zeiterfassung läuft...</p><p class="text-sm text-emerald-700 font-medium mt-1">Gestartet um {new Date(runningTimeRecord.start).toLocaleTimeString('de-DE', {hour:'2-digit', minute:'2-digit'})} Uhr</p></div><button type="button" onclick={() => stopTracking(runningTimeRecord.id)} disabled={isTimeLoading} class="orga-button-primary bg-rose-600 hover:bg-rose-700 shadow-rose-600/20 min-h-14 px-6 text-sm flex items-center gap-2"><Square class="w-4 h-4 fill-current" /> Stopp</button></div>
                             {:else}
-                                <div class="mb-5 flex justify-center"><button type="button" onclick={startTracking} disabled={isTimeLoading} class="orga-button-primary py-3 px-6 text-base shadow-indigo-600/20">⏱️ Zeiterfassung starten</button></div>
+                                <div transition:slide class="mb-6 flex justify-center"><button type="button" onclick={startTracking} disabled={isTimeLoading} class="orga-button-primary min-h-16 w-full md:w-auto md:px-10 text-lg sm:text-sm shadow-brand-600/20"><Play class="w-6 h-6 sm:w-5 sm:h-5 fill-current" /> Zeiterfassung starten</button></div>
                             {/if}
 
                             {#if timeRecords.filter((r: any) => r.start && r.end).length > 0}
-                                <h4 class="text-xs font-bold text-neutral-500 uppercase tracking-wider mb-2">Abgeschlossene Zeiten</h4>
-                                <div class="space-y-2">
+                                <h4 class="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mb-3 pl-1">Abgeschlossene Zeiten</h4>
+                                <div class="space-y-3 pb-2">
                                     {#each timeRecords.filter((r: any) => r.start && r.end) as record}
-                                    <div class="flex items-center justify-between p-3 rounded-lg border border-neutral-100 bg-white hover:border-indigo-200 transition-colors group">
-                                        <div><p class="text-sm font-bold text-neutral-900 flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-indigo-400"></span> {record.start ? new Date(record.start).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : '...'} - {record.end ? new Date(record.end).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : '...'} Uhr</p></div>
-                                        <div class="text-right flex items-center gap-3"><p class="text-indigo-700 font-bold text-sm">{getDuration(record.start, record.end)}</p><div class="flex gap-2 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity"><button onclick={() => timeModal?.open(record)} class="text-xs text-indigo-600 hover:text-indigo-800 font-semibold" title="Bearbeiten">✎</button><button onclick={() => deleteTime(record.id)} class="text-xs text-rose-500 hover:text-rose-700 font-semibold" title="Löschen">✕</button></div></div>
+                                    <div class="flex items-center justify-between p-4 rounded-xl border border-neutral-200 bg-neutral-50 hover:border-brand-300 transition-all shadow-sm group">
+                                        <div><p class="text-sm font-bold text-neutral-900 flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-brand-400"></span> {record.start ? new Date(record.start).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : '...'} - {record.end ? new Date(record.end).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : '...'} Uhr</p></div>
+                                        <div class="text-right flex items-center gap-4"><p class="text-brand-700 font-black text-sm bg-brand-100/50 px-3 py-1 rounded-lg border border-brand-200/50">{getDuration(record.start, record.end)}</p>
+                                            <div class="flex gap-1.5 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
+                                                <button onclick={() => timeModal?.open(record)} class="w-10 h-10 flex items-center justify-center text-neutral-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-all active:scale-95 focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:outline-none" title="Bearbeiten"><Edit3 class="w-4 h-4" /></button>
+                                                <button onclick={() => deleteTime(record.id)} class="w-10 h-10 flex items-center justify-center text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all active:scale-95 focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:outline-none" title="Löschen"><Trash2 class="w-4 h-4" /></button>
+                                            </div>
+                                        </div>
                                     </div>
                                     {/each}
                                 </div>
                             {:else if !runningTimeRecord}
-                                <p class="text-center text-xs text-neutral-400 italic py-2">Keine Zeiten erfasst.</p>
+                                <p class="text-center text-sm font-medium text-neutral-400 py-6 bg-neutral-50 rounded-xl border border-dashed border-neutral-200">Noch keine Zeiten erfasst.</p>
                             {/if}
                         </div>
 
                         <div class="orga-card-white p-5">
-                            <div class="flex items-center justify-between mb-4 border-b border-neutral-100 pb-2"><h3 class="text-sm font-bold text-neutral-900 flex items-center gap-2"><span class="text-amber-500">📋</span> Leistungen</h3></div>
-                            <div class="flex flex-wrap gap-1.5 mb-4">
-                                {#each orgaStore.tasks?.data || [] as t}
-                                    <div class="flex items-center rounded-md border transition-all {tasks.some((pt: any) => pt.id === t.id) ? 'bg-amber-100 border-amber-300 shadow-sm' : 'bg-white border-neutral-200 hover:border-amber-200 hover:bg-amber-50'} overflow-hidden">
-                                        <button onclick={() => toggleTask(t.id)} class="px-2.5 py-1 text-xs font-semibold {tasks.some((pt: any) => pt.id === t.id) ? 'text-amber-800' : 'text-neutral-600'}">{t.title}</button>
+                            <div class="flex items-center justify-between mb-4 border-b border-neutral-100 pb-2"><h3 class="text-[11px] font-bold text-neutral-500 uppercase tracking-wider flex items-center gap-1.5"><ListTodo class="w-3.5 h-3.5" /> Leistungen</h3></div>
+                            <div class="flex flex-wrap gap-2.5 mb-6">
+                                {#each (orgaStore.tasks?.data || []).slice().sort((a: any, b: any) => a.title.localeCompare(b.title)) as t}
+                                    <div class="flex items-center rounded-xl border-2 transition-all active:scale-95 focus-within:ring-2 focus-within:ring-amber-500 {tasks.some((pt: any) => pt.id === t.id) ? 'bg-amber-100 border-amber-400 shadow-sm ring-1 ring-amber-500/20' : 'bg-white border-neutral-200 hover:border-amber-300 hover:bg-amber-50'} overflow-hidden h-12 sm:h-10">
+                                        <button onclick={() => toggleTask(t.id)} class="px-5 sm:px-4 h-full text-sm sm:text-xs font-bold {tasks.some((pt: any) => pt.id === t.id) ? 'text-amber-900' : 'text-neutral-700'} focus:outline-none">{t.title}</button>
                                         {#if isSuperAdmin}
-                                            <button onclick={() => deleteTask(t.id)} disabled={isTaskLoading} class="px-1.5 py-1 text-xs text-neutral-400 hover:text-rose-600 hover:bg-rose-50 transition-colors border-l {tasks.some((pt: any) => pt.id === t.id) ? 'border-amber-300' : 'border-neutral-200'}" title="Leistung komplett aus dem System löschen">✕</button>
+                                            <button onclick={() => deleteTask(t.id)} disabled={isTaskLoading} class="w-11 sm:w-10 h-full flex items-center justify-center text-neutral-400 hover:text-rose-600 hover:bg-rose-100 transition-colors border-l {tasks.some((pt: any) => pt.id === t.id) ? 'border-amber-300' : 'border-neutral-200'} focus:outline-none" title="Leistung komplett aus dem System löschen"><X class="w-4 h-4 sm:w-3.5 sm:h-3.5" /></button>
                                         {/if}
                                     </div>
                                 {/each}
                             </div>
-                            <div class="flex gap-2"><input type="text" bind:value={newTaskTitle} placeholder="Neue Leistung anlegen..." class="orga-input-clear py-3 sm:py-1.5 text-xs flex-1" onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); openTaskModal(); } }} disabled={isTaskLoading} /><button type="button" onclick={openTaskModal} disabled={!newTaskTitle.trim() || isTaskLoading} class="orga-button-primary bg-amber-500 hover:bg-amber-600 shadow-amber-500/20 py-3 sm:py-1.5 px-3 text-xs shrink-0">+</button></div>
+                            <div class="flex gap-2.5"><div class="relative flex-1"><input type="text" bind:value={newTaskTitle} placeholder="Neue Leistung anlegen..." class="orga-input-clear min-h-14 sm:min-h-12 text-base sm:text-sm w-full" onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); openTaskModal(); } }} disabled={isTaskLoading} /></div><button type="button" onclick={openTaskModal} disabled={!newTaskTitle.trim() || isTaskLoading} class="orga-button-primary bg-amber-500 hover:bg-amber-600 shadow-amber-500/20 min-h-14 sm:min-h-12 px-5 text-sm shrink-0">Hinzufügen</button></div>
                         </div>
 
                         <div class="orga-card-white p-5">
-                            <div class="flex items-center justify-between mb-4 border-b border-neutral-100 pb-2"><h3 class="text-sm font-bold text-neutral-900 flex items-center gap-2"><span class="text-emerald-500">🚗</span> Fahrten</h3><button onclick={() => driveModal?.open()} class="orga-button-primary bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20 py-1.5 px-3 text-xs">+ Hinzufügen</button></div>
-                            {#if driveRecords.length === 0}<p class="text-center text-xs text-neutral-400 italic py-2">Keine Fahrten hinterlegt.</p>{:else}<div class="space-y-2 mb-3">{#each driveRecords as drive}<div class="flex items-center justify-between p-3 rounded-lg border border-neutral-100 bg-neutral-50 hover:border-emerald-200 transition-colors group"><div><p class="text-sm font-bold text-neutral-900 flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> {drive.type || 'Fahrt'}</p>{#if drive.lump_sum}<p class="text-xs text-neutral-500 pl-3.5">Pauschale: {drive.lump_sum} €</p>{/if}</div><div class="text-right flex items-center gap-3"><p class="text-emerald-700 font-bold text-sm">{drive.km || 0} km</p><div class="flex gap-2 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity"><button onclick={() => driveModal?.open(drive)} class="text-xs text-neutral-400 hover:text-emerald-600 font-semibold" title="Bearbeiten">✎</button><button onclick={() => deleteDrive(drive.id)} class="text-xs text-rose-500 hover:text-rose-700 font-semibold" title="Löschen">✕</button></div></div></div>{/each}</div>
-                                <div class="bg-emerald-50 rounded-lg p-3 flex justify-between items-center"><p class="text-xs font-bold text-emerald-900">Gesamte Strecke</p><p class="text-sm font-bold text-emerald-700">{totalKm} km</p></div>
+                            <div class="flex items-center justify-between mb-4 border-b border-neutral-100 pb-2"><h3 class="text-[11px] font-bold text-neutral-500 uppercase tracking-wider flex items-center gap-1.5"><Car class="w-3.5 h-3.5" /> Fahrten</h3><button onclick={() => driveModal?.open()} class="orga-button-ghost bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:text-emerald-800 border-emerald-200 min-h-10 px-4 text-xs font-bold shadow-sm focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none">+ Fahrt eintragen</button></div>
+                            {#if driveRecords.length === 0}<p class="text-center text-sm font-medium text-neutral-400 py-6 bg-neutral-50 rounded-xl border border-dashed border-neutral-200">Keine Fahrten hinterlegt.</p>{:else}<div class="space-y-3 mb-4">{#each driveRecords as drive}<div class="flex items-center justify-between p-4 rounded-xl border border-neutral-200 bg-neutral-50 hover:border-emerald-300 transition-all shadow-sm group"><div><p class="text-sm font-bold text-neutral-900 flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-emerald-400"></span> {drive.type || 'Fahrt'}</p>{#if drive.lump_sum}<p class="text-xs font-medium text-neutral-500 pl-4 mt-0.5">Pauschale: {drive.lump_sum.toFixed(2).replace('.', ',')} €</p>{/if}</div><div class="text-right flex items-center gap-4"><p class="text-emerald-700 font-black text-sm bg-emerald-100/50 px-3 py-1 rounded-lg border border-emerald-200/50">{drive.km || 0} km</p>
+                                <div class="flex gap-1.5 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
+                                    <button onclick={() => driveModal?.open(drive)} class="w-10 h-10 flex items-center justify-center text-neutral-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all active:scale-95 focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none" title="Bearbeiten"><Edit3 class="w-4 h-4" /></button>
+                                    <button onclick={() => deleteDrive(drive.id)} class="w-10 h-10 flex items-center justify-center text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all active:scale-95 focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:outline-none" title="Löschen"><Trash2 class="w-4 h-4" /></button>
+                                </div></div></div>{/each}</div>
+                                <div class="bg-emerald-50 border border-emerald-100 rounded-xl p-4 flex justify-between items-center shadow-inner"><p class="text-xs font-bold text-emerald-800 uppercase tracking-wider">Gesamte Strecke</p><p class="text-lg font-black text-emerald-700">{totalKm} km</p></div>
                             {/if}
                         </div>
 
                         <div class="orga-card-white p-5">
-                            <div class="flex items-center justify-between mb-4 border-b border-neutral-100 pb-2"><h3 class="text-sm font-bold text-neutral-900 flex items-center gap-2"><span class="text-rose-500">💶</span> Sonderausgaben</h3><button onclick={() => expenditureModal?.open()} class="orga-button-primary bg-rose-600 hover:bg-rose-700 shadow-rose-600/20 py-1.5 px-3 text-xs">+ Hinzufügen</button></div>
-                            {#if expenditures.length === 0}<p class="text-center text-xs text-neutral-400 italic py-2">Keine Ausgaben hinterlegt.</p>{:else}
-                                <div class="space-y-2 mb-3">{#each expenditures as exp}<div class="flex items-center justify-between p-3 rounded-lg border border-neutral-100 bg-neutral-50 hover:border-rose-200 transition-colors group"><p class="text-sm font-bold text-neutral-900 flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span> {exp.titel || 'Ausgabe'}</p><div class="text-right flex items-center gap-3"><p class="text-rose-700 font-bold text-sm">{exp.sum ? exp.sum.toFixed(2).replace('.', ',') : '0,00'} €</p><div class="flex gap-2 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity"><button onclick={() => expenditureModal?.open(exp)} class="text-xs text-neutral-400 hover:text-rose-600 font-semibold" title="Bearbeiten">✎</button><button onclick={() => deleteExpenditure(exp.id)} class="text-xs text-rose-500 hover:text-rose-700 font-semibold" title="Löschen">✕</button></div></div></div>{/each}</div>
-                                <div class="bg-rose-50 rounded-lg p-3 flex justify-between items-center"><p class="text-xs font-bold text-rose-900">Gesamtsumme</p><p class="text-sm font-bold text-rose-700">{totalExpenditure.toFixed(2).replace('.', ',')} €</p></div>
+                            <div class="flex items-center justify-between mb-4 border-b border-neutral-100 pb-2"><h3 class="text-[11px] font-bold text-neutral-500 uppercase tracking-wider flex items-center gap-1.5"><Banknote class="w-3.5 h-3.5" /> Sonderausgaben</h3><button onclick={() => expenditureModal?.open()} class="orga-button-ghost bg-rose-50 text-rose-700 hover:bg-rose-100 hover:text-rose-800 border-rose-200 min-h-10 px-4 text-xs font-bold shadow-sm focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:outline-none">+ Ausgabe eintragen</button></div>
+                            {#if expenditures.length === 0}<p class="text-center text-sm font-medium text-neutral-400 py-6 bg-neutral-50 rounded-xl border border-dashed border-neutral-200">Keine Ausgaben hinterlegt.</p>{:else}
+                                <div class="space-y-3 mb-4">{#each expenditures as exp}<div class="flex items-center justify-between p-4 rounded-xl border border-neutral-200 bg-neutral-50 hover:border-rose-300 transition-all shadow-sm group"><p class="text-sm font-bold text-neutral-900 flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-rose-400"></span> {exp.titel || 'Ausgabe'}</p><div class="text-right flex items-center gap-4"><p class="text-rose-700 font-black text-sm bg-rose-100/50 px-3 py-1 rounded-lg border border-rose-200/50">{exp.sum ? exp.sum.toFixed(2).replace('.', ',') : '0,00'} €</p>
+                                <div class="flex gap-1.5 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
+                                    <button onclick={() => expenditureModal?.open(exp)} class="w-10 h-10 flex items-center justify-center text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all active:scale-95 focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:outline-none" title="Bearbeiten"><Edit3 class="w-4 h-4" /></button>
+                                    <button onclick={() => deleteExpenditure(exp.id)} class="w-10 h-10 flex items-center justify-center text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all active:scale-95 focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:outline-none" title="Löschen"><Trash2 class="w-4 h-4" /></button>
+                                </div></div></div>{/each}</div>
+                                <div class="bg-rose-50 border border-rose-100 rounded-xl p-4 flex justify-between items-center shadow-inner"><p class="text-xs font-bold text-rose-800 uppercase tracking-wider">Gesamtsumme</p><p class="text-lg font-black text-rose-700">{totalExpenditure.toFixed(2).replace('.', ',')} €</p></div>
                             {/if}
                         </div>
 
                         <!-- Besuchsbericht / Report -->
                         <div class="orga-card-white p-5">
                             <div class="flex items-center justify-between mb-4 border-b border-neutral-100 pb-2">
-                                <h3 class="text-sm font-bold text-neutral-900 flex items-center gap-2">
-                                <span class="text-indigo-600">📝</span> Besuchsbericht & Notizen
+                                <h3 class="text-[11px] font-bold text-neutral-500 uppercase tracking-wider flex items-center gap-1.5">
+                                <FileText class="w-3.5 h-3.5" /> Besuchsbericht
                                 </h3>
                             <div class="flex items-center gap-2">
                                 <input type="file" accept="audio/*,.m4a,audio/mp4,audio/x-m4a,video/mp4" multiple class="hidden" bind:this={audioInput} onchange={uploadAudio} />
-                                <button onclick={() => audioInput.click()} class="text-xs font-bold text-neutral-600 hover:text-indigo-600 bg-neutral-100 hover:bg-neutral-200 px-2 sm:px-3 py-1.5 rounded-lg transition-colors shadow-sm" title="Audio-Datei hochladen">
-                                    📎 Audio
+                                <button onclick={() => audioInput.click()} class="text-xs font-bold text-neutral-700 hover:text-brand-700 bg-neutral-100 hover:bg-brand-50 border border-transparent hover:border-brand-200 min-h-10 px-3 sm:px-4 rounded-xl transition-all shadow-sm flex items-center gap-1.5 active:scale-95 focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:outline-none" title="Audio-Datei hochladen">
+                                    <Paperclip class="w-3.5 h-3.5" /> <span class="hidden sm:inline">Audio anheften</span>
                                 </button>
-                                <button onclick={() => aiModal?.open('family', appointment, fullClient)} class="text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2 sm:px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors shadow-sm">
-                                    <span>🤖</span> Gemini
+                                <button onclick={() => aiModal?.open('family', appointment, fullClient)} class="text-xs font-bold text-white bg-brand-600 hover:bg-brand-700 shadow-brand-600/20 min-h-10 px-3 sm:px-4 rounded-xl flex items-center gap-1.5 transition-all shadow-sm active:scale-95 focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:outline-none">
+                                    <Bot class="w-3.5 h-3.5" /> <span class="hidden sm:inline">KI-Assistent</span>
                                 </button>
                             </div>
                             </div>
                             <div class="flex flex-col gap-5">
                             
-                            <div class="bg-amber-50/50 border border-amber-200 rounded-xl p-3 sm:p-4 shadow-sm relative overflow-hidden group">
-                                <div class="absolute top-0 right-0 w-16 h-16 bg-amber-100 rounded-full blur-xl -mr-4 -mt-4 z-0 pointer-events-none"></div>
-                                <h4 class="text-xs font-bold text-amber-900 uppercase tracking-wider mb-2 flex items-center gap-1.5 relative z-10"><span>🔒</span> Interne Notizen (Team)</h4>
-                                <textarea bind:value={notes} class="orga-input-clear resize-y min-h-20 text-xs sm:text-sm bg-white/60 focus:bg-white border-amber-200 relative z-10" placeholder="Interne Infos, Todo's, Auffälligkeiten für das Team..." disabled={isReportSaving}></textarea>
-                            </div>
-
                             <div>
-                                <h4 class="text-xs font-bold text-neutral-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><span>📄</span> Offizieller Besuchsbericht</h4>
-                                <textarea bind:value={report} class="orga-input-clear resize-y min-h-30 text-sm" placeholder="Ausführlicher Bericht für Angehörige / Pflegekasse..." disabled={isReportSaving}></textarea>
+                                <h4 class="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mb-2.5 flex items-center gap-1.5 pl-1"><FileText class="w-3.5 h-3.5" /> Offizieller Bericht</h4>
+                                <textarea bind:value={report} class="orga-input-clear resize-y min-h-32 text-sm leading-relaxed" placeholder="Ausführlicher Bericht für Angehörige / Pflegekasse..." disabled={isReportSaving}></textarea>
                             </div>
                             
                             {#if appointment?.voice_records && appointment.voice_records.length > 0}
-                                <div class="bg-indigo-50/50 rounded-xl p-3 border border-indigo-100 mt-1">
-                                    <h4 class="text-[10px] font-bold text-indigo-800 uppercase tracking-wider mb-2 flex items-center gap-1"><span>🎙️</span> Gespeicherte Sprachnotizen</h4>
-                                    <div class="flex flex-col gap-2">
+                                <div transition:slide class="bg-brand-50/50 rounded-2xl p-4 border border-brand-100 mt-2 shadow-inner">
+                                    <h4 class="text-[10px] font-black text-brand-800 uppercase tracking-widest mb-3 flex items-center gap-1.5"><Mic class="w-3.5 h-3.5" /> Gespeicherte Sprachnotizen</h4>
+                                    <div class="flex flex-col gap-3">
                                         {#each appointment.voice_records as vr}
-                                            <div class="flex items-center justify-between bg-white p-2 rounded-lg border border-indigo-100 shadow-sm">
+                                            <div class="flex items-center justify-between bg-white p-3 rounded-xl border border-brand-100 shadow-sm">
                                                 <audio controls src={pb.files.getURL(appointment, vr)} class="h-8 max-w-50 sm:max-w-62.5"></audio>
-                                                <button onclick={() => deleteVoiceRecord(vr)} class="w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-rose-500 hover:bg-rose-50 rounded-full transition-colors" title="Sprachnotiz löschen">✕</button>
+                                                <button onclick={() => deleteVoiceRecord(vr)} class="w-10 h-10 flex items-center justify-center text-neutral-400 hover:text-rose-500 hover:bg-rose-50 rounded-full transition-all active:scale-95 focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:outline-none" title="Sprachnotiz löschen"><Trash2 class="w-4 h-4" /></button>
                                             </div>
                                         {/each}
                                     </div>
                                 </div>
                             {/if}
-                                <div class="flex justify-end mt-1">
-                                <button onclick={saveReport} disabled={isReportSaving || (report === (appointment?.report || '') && notes === (appointment?.notes || appointment?.internal_notes || ''))} class="orga-button-primary py-2 px-5 text-xs w-full sm:w-auto">
-                                        {isReportSaving ? 'Speichert...' : 'Speichern'}
+                                <div class="flex justify-end mt-2">
+                                <button onclick={saveReport} disabled={isReportSaving || report === (appointment?.report || '')} class="orga-button-primary min-h-12 px-8 text-sm w-full sm:w-auto shadow-brand-600/20">
+                                        <Save class="w-4 h-4" /> {isReportSaving ? 'Speichert...' : 'Bericht speichern'}
                                     </button>
                                 </div>
                             </div>
@@ -630,17 +699,21 @@
     
     
     <dialog bind:this={taskDialog} class="p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-full max-w-sm mx-auto my-auto rounded-3xl" onclick={(e) => { if (e.target === taskDialog) taskDialog?.close(); }}>
-        <div class="bg-white rounded-3xl p-6 w-full relative">
-            <button aria-label="Schließen" onclick={() => taskDialog?.close()} class="absolute top-4 right-4 w-8 h-8 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-colors">✕</button>
-            <h2 class="text-lg font-bold text-neutral-900 mb-2">Details zur Leistung</h2>
-            <p class="text-xs text-neutral-500 mb-4">"{newTaskTitle}" genauer beschreiben?</p>
-            <form onsubmit={(e) => { e.preventDefault(); createAndLinkTask(); }} class="space-y-3">
-                <textarea bind:value={newTaskDescription} rows="3" class="orga-input-clear resize-none text-sm" placeholder="Optionale Beschreibung..."></textarea>
-                <div class="flex justify-end gap-2 mt-2">
-                    <button type="button" onclick={() => taskDialog?.close()} class="orga-button-ghost py-3 sm:py-1.5 px-3 text-xs" disabled={isTaskLoading}>Abbrechen</button>
-                    <button type="submit" class="orga-button-primary bg-amber-500 hover:bg-amber-600 shadow-amber-500/20 py-3 sm:py-1.5 px-4 text-xs" disabled={isTaskLoading}>{isTaskLoading ? "Speichert..." : "Speichern"}</button>
+        <div class="bg-white rounded-3xl w-full relative overflow-hidden shadow-2xl flex flex-col">
+            <div class="bg-white px-6 py-5 border-b border-neutral-100 flex items-center justify-between shrink-0 sticky top-0 z-10 gap-3">
+                <h2 class="text-xl font-bold text-neutral-900 truncate">Details zur Leistung</h2>
+                <button aria-label="Schließen" onclick={() => taskDialog?.close()} class="w-10 h-10 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-all active:scale-95 focus-visible:ring-2 focus-visible:ring-neutral-500 focus-visible:outline-none shrink-0"><X class="w-5 h-5" /></button>
+            </div>
+            <div class="p-6 overflow-y-auto custom-scrollbar">
+            <p class="text-sm text-neutral-500 mb-5 font-medium leading-relaxed">Möchten Sie für <strong>"{newTaskTitle}"</strong> noch weitere Details oder Abrechnungshinweise hinterlegen?</p>
+            <form onsubmit={(e) => { e.preventDefault(); createAndLinkTask(); }} class="space-y-5 pb-2">
+                <textarea bind:value={newTaskDescription} rows="4" class="orga-input-clear resize-none text-sm" placeholder="Optionale, genauere Beschreibung..."></textarea>
+                <div class="flex flex-col-reverse sm:flex-row justify-end gap-3 mt-4 pt-4 border-t border-neutral-100">
+                    <button type="button" onclick={() => taskDialog?.close()} class="orga-button-ghost min-h-12 px-6 w-full sm:w-auto" disabled={isTaskLoading}>Abbrechen</button>
+                    <button type="submit" class="orga-button-primary bg-amber-500 hover:bg-amber-600 shadow-amber-500/20 min-h-12 px-8 w-full sm:w-auto" disabled={isTaskLoading}><Save class="w-4 h-4" /> {isTaskLoading ? "Speichert..." : "Speichern"}</button>
                 </div>
             </form>
+            </div>
         </div>
     </dialog>
 </dialog>

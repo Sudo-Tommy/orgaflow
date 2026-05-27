@@ -1,6 +1,6 @@
 <script lang="ts">
     import { orgaStore } from "$lib/stores/orgaStore.svelte";
-    import ContactModal from "$lib/components/ContactModal.svelte";
+    import ContactModal from "$lib/components/contacts/ContactModal.svelte";
     import RetirementHomeModal from "$lib/components/RetirementHomeModal.svelte";
 
     let activeTab = $state<"contacts" | "homes">("contacts");
@@ -32,8 +32,8 @@
         const q = searchQuery.toLowerCase();
         return list.filter(h => 
             (h.name || '').toLowerCase().includes(q) ||
-            (h.city || '').toLowerCase().includes(q) ||
-            (h.street || '').toLowerCase().includes(q)
+            (h.address || '').toLowerCase().includes(q) ||
+            (h.address_addition || '').toLowerCase().includes(q)
         );
     });
 </script>
@@ -206,6 +206,7 @@
                                 <th class="p-4 font-bold text-neutral-500 text-xs uppercase tracking-wider">Einrichtung</th>
                                 <th class="p-4 font-bold text-neutral-500 text-xs uppercase tracking-wider">Adresse</th>
                                 <th class="p-4 font-bold text-neutral-500 text-xs uppercase tracking-wider">Ansprechpartner</th>
+                                <th class="p-4 font-bold text-neutral-500 text-xs uppercase tracking-wider text-right">Schnellzugriff</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-neutral-50">
@@ -222,8 +223,8 @@
                                         </div>
                                     </td>
                                     <td class="p-4 text-sm text-neutral-600">
-                                        <p>{home.street || '-'}</p>
-                                        <p>{home.zip || ''} {home.city || ''}</p>
+                                        <p>{home.address || '-'}</p>
+                                        {#if home.address_addition}<p class="text-xs text-neutral-400 mt-0.5">{home.address_addition}</p>{/if}
                                     </td>
                                     <td class="p-4">
                                         {#if home.expand?.contacts && home.expand.contacts.length > 0}
@@ -243,6 +244,22 @@
                                             <p class="text-xs text-neutral-400 italic">Keine</p>
                                         {/if}
                                     </td>
+                                    <td class="p-4">
+                                        <div class="flex items-center justify-end gap-1 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity">
+                                            {#if home.phone}
+                                                <a href="tel:{home.phone}" onclick={(e) => e.stopPropagation()} class="p-2 text-neutral-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="Anrufen"><span class="text-lg">📞</span></a>
+                                            {/if}
+                                            {#if home.email}
+                                                <a href="mailto:{home.email}" onclick={(e) => e.stopPropagation()} class="p-2 text-neutral-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors" title="E-Mail senden"><span class="text-lg">✉️</span></a>
+                                            {/if}
+                                            {#if home.website}
+                                                <a href={home.website} target="_blank" rel="noopener noreferrer" onclick={(e) => e.stopPropagation()} class="p-2 text-neutral-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Webseite öffnen"><span class="text-lg">🌐</span></a>
+                                            {/if}
+                                            {#if home.address}
+                                                <a href="https://www.google.com/maps/search/?api=1&query={encodeURIComponent(`${home.name}, ${home.address}`)}" target="_blank" rel="noopener noreferrer" onclick={(e) => e.stopPropagation()} class="p-2 text-neutral-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors" title="In Google Maps öffnen"><span class="text-lg">🗺️</span></a>
+                                            {/if}
+                                        </div>
+                                    </td>
                                 </tr>
                             {/each}
                         </tbody>
@@ -260,11 +277,11 @@
                                     </div>
                                     <div class="flex-1 min-w-0">
                                         <h2 class="text-[15px] font-bold text-neutral-900 truncate hover:text-indigo-600 transition-colors">{home.name || 'Unbekannt'}</h2>
-                                        <p class="text-[10px] font-semibold text-neutral-500 mt-0.5 truncate">{home.street ? `${home.street}, ` : ''}{home.zip || ''} {home.city || ''}</p>
+                                        <p class="text-[10px] font-semibold text-neutral-500 mt-0.5 truncate">{home.address || 'Keine Adresse'}</p>
                                     </div>
                                 </div>
                             </div>
-                            <div class="flex items-center justify-between gap-4 pl-13 pt-1 border-t border-neutral-100 mt-1">
+                            <div class="flex items-center justify-between gap-4 pl-13 pt-2 border-t border-neutral-100 mt-2">
                                 {#if home.expand?.contacts && home.expand.contacts.length > 0}
                                     <div class="flex items-center gap-2">
                                         <p class="text-[10px] text-neutral-500 font-semibold uppercase tracking-wider">Ansprechpartner:</p>
@@ -273,6 +290,20 @@
                                 {:else}
                                     <p class="text-[10px] text-neutral-400 italic">Keine Ansprechpartner</p>
                                 {/if}
+                                <div class="flex items-center gap-1">
+                                    {#if home.phone}
+                                        <a href="tel:{home.phone}" onclick={(e) => e.stopPropagation()} class="p-1.5 text-neutral-400 hover:text-indigo-600 transition-colors" title="Anrufen"><span class="text-base">📞</span></a>
+                                    {/if}
+                                    {#if home.email}
+                                        <a href="mailto:{home.email}" onclick={(e) => e.stopPropagation()} class="p-1.5 text-neutral-400 hover:text-emerald-600 transition-colors" title="E-Mail senden"><span class="text-base">✉️</span></a>
+                                    {/if}
+                                    {#if home.website}
+                                        <a href={home.website} target="_blank" rel="noopener noreferrer" onclick={(e) => e.stopPropagation()} class="p-1.5 text-neutral-400 hover:text-blue-600 transition-colors" title="Webseite öffnen"><span class="text-base">🌐</span></a>
+                                    {/if}
+                                    {#if home.address}
+                                        <a href="https://www.google.com/maps/search/?api=1&query={encodeURIComponent(`${home.name}, ${home.address}`)}" target="_blank" rel="noopener noreferrer" onclick={(e) => e.stopPropagation()} class="p-1.5 text-neutral-400 hover:text-amber-600 transition-colors" title="In Google Maps öffnen"><span class="text-base">🗺️</span></a>
+                                    {/if}
+                                </div>
                             </div>
                         </button>
                     {/each}

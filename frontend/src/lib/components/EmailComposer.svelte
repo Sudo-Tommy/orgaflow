@@ -1,6 +1,6 @@
 <script lang="ts">
     import { pb } from '$lib/services/pocketbase';
-    import { sendEmail } from '$lib/services/emailService';
+    import { sendEmail } from '$lib/services/emailService'; // FIX: No change needed, this is the utility file
     import { onMount } from 'svelte';
     import { orgaStore } from "$lib/stores/orgaStore.svelte";
     
@@ -23,16 +23,18 @@
 
     onMount(async () => {
         try {
-            const [clients, contacts, users] = await Promise.all([
+            const [clients, contacts, users, insurancies, homes] = await Promise.all([
                 pb.collection('clients').getFullList({ fields: 'name_first,name_last,email', requestKey: null }).catch(()=>[]),
                 pb.collection('contacts').getFullList({ fields: 'name_first,name_last,email', requestKey: null }).catch(()=>[]),
-                pb.collection('users').getFullList({ fields: 'name_first,name_last,email', requestKey: null }).catch(()=>[])
+                pb.collection('users').getFullList({ fields: 'name_first,name_last,email', requestKey: null }).catch(()=>[]),
+                pb.collection('insurancies').getFullList({ fields: 'name,email', requestKey: null }).catch(()=>[]),
+                pb.collection('retirement_homes').getFullList({ fields: 'name,email', requestKey: null }).catch(()=>[])
             ]);
 
-            const all = [...clients, ...contacts, ...users]
+            const all = [...clients, ...contacts, ...users, ...insurancies, ...homes]
                 .filter(record => record.email)
                 .map(record => ({
-                    name: `${record.name_first || ''} ${record.name_last || ''}`.trim() || 'Unbekannt',
+                    name: `${record.name_first || ''} ${record.name_last || ''}`.trim() || record.name || 'Unbekannt',
                     email: record.email
                 }));
 

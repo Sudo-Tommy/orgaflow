@@ -12,7 +12,12 @@ export function useAdminService() {
     let activeData = $derived.by(() => {
         const store = (orgaStore as any)[activeCollection];
         if (!store || !store.data) return [];
-        let list = store.data;
+        let list = [...store.data];
+        
+        // Leistungen (Tasks) immer alphabetisch sortieren, falls diese Collection aktiv ist
+        if (activeCollection === 'tasks') {
+            list.sort((a: any, b: any) => (a.title || "").localeCompare(b.title || ""));
+        }
         
         if (searchQuery) {
             const q = searchQuery.toLowerCase();

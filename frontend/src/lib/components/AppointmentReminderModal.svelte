@@ -1,6 +1,6 @@
 <script lang="ts">
     import { pb } from "$lib/services/pocketbase";
-    import { sendEmail } from "$lib/services/emailService";
+    import { sendEmail } from "$lib/services/emailService"; // FIX: No change needed, this is the utility file
     import { toastStore } from "$lib/services/toastService.svelte";
   import { orgaStore } from "$lib/stores/orgaStore.svelte";
 
@@ -89,10 +89,15 @@
         } else if (selectedContactRefs.length >= 3) {
             newSalutation = "Sehr geehrte Damen und Herren,";
         } else {
+            const emailsCount = recipient.split(',').map(e => e.trim()).filter(Boolean).length;
+            if (method === 'email' && emailsCount > 1) {
+                newSalutation = "Sehr geehrte Damen und Herren,";
+            } else {
             const recipientRecord = client?.expand?.caregiver || client;
             newSalutation = recipientRecord?.salutation === 'Herr' ? `Sehr geehrter Herr ${recipientRecord.name_last},` : 
                             (recipientRecord?.salutation === 'Frau' ? `Sehr geehrte Frau ${recipientRecord.name_last},` : 
                             `Guten Tag ${recipientRecord?.name_first || ''} ${recipientRecord?.name_last || ''},`.trim());
+            }
         }
         
         const isClientOnly = selectedContactRefs.length > 0 ? selectedContactRefs.every(c => c.isClient) : (client?.expand?.caregiver ? false : true);
@@ -115,8 +120,17 @@
         client = cl;
         
         // Automatische Vorwahl der Methode: Hat der Klient kein E-Mail, aber eine Handynummer, wird direkt WhatsApp vorgeschlagen
-        method = cl?.email ? 'email' : (cl?.handy || cl?.phone ? 'whatsapp' : 'email');
-        recipient = method === 'email' ? (cl?.email || "") : (cl?.handy || cl?.phone || "");
+        const caregiver = cl?.expand?.caregiver;
+        let emails = [];
+        if (caregiver?.email) emails.push(caregiver.email);
+        else if (cl?.email) emails.push(cl.email);
+        if (cl?.mailing_list && Array.isArray(cl.mailing_list)) {
+            emails = [...emails, ...cl.mailing_list];
+        }
+        const emailStr = [...new Set(emails)].filter(Boolean).join(", ");
+        const phoneStr = caregiver?.handy || caregiver?.phone || cl?.handy || cl?.phone || "";
+        method = emailStr ? 'email' : (phoneStr ? 'whatsapp' : 'email');
+        recipient = method === 'email' ? emailStr : phoneStr;
         
         const dateStr = app?.appointment ? new Date(app.appointment).toLocaleDateString('de-DE') : 'Unbekannt';
         const timeStr = app?.appointment ? new Date(app.appointment).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : 'Unbekannt';
@@ -185,7 +199,15 @@
 
     function changeMethod(newMethod: 'email' | 'whatsapp') {
         method = newMethod;
-        recipient = method === 'email' ? (client?.email || "") : (client?.handy || client?.phone || "");
+        if (method === 'email') {
+            let emails = [];
+            if (client?.expand?.caregiver?.email) emails.push(client.expand.caregiver.email);
+            else if (client?.email) emails.push(client.email);
+            if (client?.mailing_list && Array.isArray(client.mailing_list)) emails = [...emails, ...client.mailing_list];
+            recipient = [...new Set(emails)].filter(Boolean).join(", ");
+        } else {
+            recipient = client?.expand?.caregiver?.handy || client?.expand?.caregiver?.phone || client?.handy || client?.phone || "";
+        }
         selectedContactRefs = [];
         if (recipient) {
             const isEmail = method === 'email';
@@ -458,6 +480,7 @@ WICHTIG: Beginne NICHT mit einer Anrede ("Sehr geehrte..."), da diese schon vorh
                     
                     await pb.collection('mailbox_messages').create({
                         send_by: pb.authStore.model.id,
+                        user: pb.authStore.model.id,
                         company: companyId,
                         folder: 'Sent',
                         from_address: `${finalUserName} <${finalUserEmail}>`,

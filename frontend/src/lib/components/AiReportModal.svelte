@@ -1,8 +1,10 @@
 <script lang="ts">
     import { pb } from "$lib/services/pocketbase";
     import { env } from '$env/dynamic/public';
+    import { slide, fade } from "svelte/transition";
     import { toastStore } from "$lib/services/toastService.svelte";
     import { orgaStore } from "$lib/stores/orgaStore.svelte";
+    import { Bot, Mic, Pencil, CheckCircle, Paperclip, FileText, AudioLines, X, RefreshCw, Square, ChevronDown, Sparkles, Loader2, Trash2 } from "lucide-svelte";
 
     // svelte-ignore non_reactive_update
     let dialog: HTMLDialogElement;
@@ -23,6 +25,7 @@
     
     let availableRecipients = $state<{name: string, role: string}[]>([]);
     let selectedRecipientName = $state("");
+    let isRecipientDropdownOpen = $state(false);
 
     let attachedDocuments = $state<{ id: number, blob: Blob, name: string, mimeType: string, url: string }[]>([]);
     // svelte-ignore non_reactive_update
@@ -79,7 +82,7 @@ Schreibe KEINE Floskeln davor oder danach. Formuliere professionell im "Sie"-For
     let audioInput: HTMLInputElement;
 
     // Nutzt relativ zur aktuellen Domain (verhindert www. vs non-www Weiterleitungs-Fehler)
-    const microserviceUrl = import.meta.env.DEV ? 'http://localhost:3000' : '';
+    const microserviceUrl = (import.meta as any).env?.DEV ? 'http://localhost:3000' : '';
 
     export function open(defaultType: 'family' | 'internal' | 'standard' = 'family', app: any = null, cl: any = null) {
         reportType = defaultType;
@@ -120,6 +123,11 @@ Schreibe KEINE Floskeln davor oder danach. Formuliere professionell im "Sie"-For
     }
 
     export function close() {
+        if (isRecording) {
+            cancelRecording();
+        }
+        // Ressourcen-Cleanup
+        errorMsg = "";
         cancelRecording();
         recordings.forEach(r => URL.revokeObjectURL(r.url));
         attachedDocuments.forEach(d => URL.revokeObjectURL(d.url));
@@ -130,7 +138,12 @@ Schreibe KEINE Floskeln davor oder danach. Formuliere professionell im "Sie"-For
         try {
             errorMsg = "";
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            mediaRecorder = new MediaRecorder(stream);
+            
+            // Prüfe unterstützte MIME-Types für bessere Kompatibilität (iOS/Chrome)
+            const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') 
+                ? 'audio/webm;codecs=opus' 
+                : 'audio/mp4';
+            mediaRecorder = new MediaRecorder(stream, { mimeType });
             audioChunks = [];
 
             mediaRecorder.ondataavailable = (e) => {
@@ -139,14 +152,13 @@ Schreibe KEINE Floskeln davor oder danach. Formuliere professionell im "Sie"-For
 
             mediaRecorder.onstop = () => {
                 if (audioChunks.length > 0 && !errorMsg) {
-                    const mimeType = mediaRecorder?.mimeType || 'audio/webm';
-                    const audioBlob = new Blob(audioChunks, { type: mimeType });
+                    const finalBlob = new Blob(audioChunks, { type: mediaRecorder?.mimeType || 'audio/webm' });
                     recordings = [...recordings, {
                         id: Date.now(),
-                        blob: audioBlob,
-                        mimeType,
+                        blob: finalBlob,
+                        mimeType: mediaRecorder?.mimeType || 'audio/webm',
                         duration: recordingTime,
-                        url: URL.createObjectURL(audioBlob)
+                        url: URL.createObjectURL(finalBlob)
                     }];
                 }
                 stream.getTracks().forEach(track => track.stop());
@@ -252,11 +264,13 @@ Schreibe KEINE Floskeln davor oder danach. Formuliere professionell im "Sie"-For
         });
     }
 
-    async function generateReport() {
+    async function generateReport(attempt: any = 0) {
+        const retryCount = typeof attempt === 'number' ? attempt : 0;
         isGenerating = true;
         errorMsg = "";
+        const startTime = Date.now();
         try {
-            const payload: any = {};
+            const payload: Record<string, any> = {};
 
             let contextText = "Kontext für den Bericht:\n";
             if (client) {
@@ -327,6 +341,9 @@ Schreibe KEINE Floskeln davor oder danach. Formuliere professionell im "Sie"-For
                 })));
             }
             
+            // Signal an den Microservice für einen Neuversuch (ermöglicht Model-Switching auf Server-Seite)
+            payload.retryAttempt = retryCount;
+
             const response = await fetch(`${microserviceUrl}/api/emails/ai/transcribe`, {
                 method: 'POST',
                 headers: { 
@@ -336,9 +353,32 @@ Schreibe KEINE Floskeln davor oder danach. Formuliere professionell im "Sie"-For
                 body: JSON.stringify(payload)
             });
             
-            const data = await response.json();
-            if (!response.ok || data.error) throw new Error(data.error || "Server-Fehler");
+            let data;
+            const contentType = response.headers.get("content-type");
+            if (contentType && contentType.includes("application/json")) {
+                data = await response.json();
+            } else {
+                const errorText = await response.text();
+                throw new Error(`Unerwartete Antwort vom Server (Content-Type: ${contentType}). Status: ${response.status}. Antwort: ${errorText.substring(0, 200)}...`);
+            }
+
+            if (!response.ok || data.error) {
+                const errorStr = (data.error || "").toLowerCase();
+                const isOverloaded = response.status === 503 || response.status === 429 || errorStr.includes("high demand") || errorStr.includes("overloaded");
+                
+                if (isOverloaded && retryCount < 2) {
+                    const waitTime = (retryCount + 1) * 3000;
+                    toastStore.info(`KI-Dienst ausgelastet. Automatischer Neuversuch (${retryCount + 1}/2) in ${waitTime/1000}s...`);
+                    await new Promise(r => setTimeout(r, waitTime));
+                    return await generateReport(retryCount + 1);
+                }
+                throw new Error(data.error || "Server-Fehler bei der KI-Anfrage.");
+            }
             
+            // Mindestens 1 Sekunde Lade-Animation für ruhigeres UI
+            const wait = Math.max(0, 1000 - (Date.now() - startTime));
+            if (wait > 0) await new Promise(r => setTimeout(r, wait));
+
             generatedText = data.text;
             toastStore.success("Bericht erfolgreich generiert!");
         } catch (err: any) {
@@ -360,9 +400,9 @@ Schreibe KEINE Floskeln davor oder danach. Formuliere professionell im "Sie"-For
     let formattedTime = $derived(formatTime(recordingTime));
 </script>
 
-<dialog bind:this={dialog} class="p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-full max-w-lg mx-auto my-auto rounded-3xl" onclick={(e) => { if (e.target === dialog) close(); }}>
-    <div class="bg-white rounded-3xl p-6 md:p-8 w-full max-h-[90vh] overflow-y-auto custom-scrollbar relative shadow-2xl">
-        <button aria-label="Schließen" onclick={close} class="absolute top-5 right-5 w-10 h-10 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-colors">✕</button>
+<dialog bind:this={dialog} class="p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-full max-w-lg m-0 sm:m-auto rounded-none sm:rounded-3xl h-dvh sm:h-auto overflow-hidden" onclick={(e) => { if (e.target === dialog) close(); }}>
+    <div class="bg-white sm:rounded-3xl p-6 md:p-8 w-full h-full sm:max-h-[90vh] overflow-y-auto custom-scrollbar relative shadow-2xl">
+        <button aria-label="Schließen" onclick={close} class="absolute top-4 right-4 sm:top-5 sm:right-5 w-10 h-10 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-all z-20">✕</button>
         
         <h2 class="text-2xl font-bold text-neutral-900 mb-2 flex items-center gap-2">
             <span class="w-8 h-8 flex items-center justify-center bg-indigo-100 text-indigo-600 rounded-lg shadow-inner text-sm">🤖</span> KI Sprach-Notiz
@@ -474,7 +514,7 @@ Schreibe KEINE Floskeln davor oder danach. Formuliere professionell im "Sie"-For
                                 </div>
                             </div>
                         {/if}
-                        <div class="flex flex-col items-center justify-center py-8 bg-neutral-50/50 rounded-2xl border border-neutral-100 border-dashed">
+                        <div class="flex flex-col items-center justify-center py-10 bg-neutral-50/50 rounded-2xl border border-neutral-100 border-dashed">
                         {#if isRecording}
                             <div class="text-3xl font-mono font-black text-rose-600 mb-6 animate-pulse">{formattedTime}</div>
                             <div class="flex gap-4"><button type="button" onclick={cancelRecording} class="w-14 h-14 bg-white border border-neutral-200 text-neutral-600 hover:bg-neutral-100 rounded-full flex items-center justify-center transition-colors shadow-sm" title="Abbrechen">✕</button><button type="button" onclick={stopRecording} class="w-16 h-16 bg-rose-500 hover:bg-rose-600 text-white rounded-full flex items-center justify-center transition-colors shadow-lg shadow-rose-500/30" title="Aufnahme beenden"><div class="w-5 h-5 bg-white rounded-sm"></div></button></div>

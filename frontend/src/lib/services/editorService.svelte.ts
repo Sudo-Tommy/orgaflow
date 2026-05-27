@@ -18,6 +18,8 @@ export interface CanvasField {
         padding: number;
         textAlign: string;
         verticalAlign?: string;
+        dynamicHeight?: boolean;
+        repeatOnAllPages?: boolean;
     };
     tableConfig?: any;
 }
@@ -30,6 +32,8 @@ export function useEditor(initialDocId: string | null) {
     // Das gesamte Canvas-Dokument-Objekt
     let fields = $state<CanvasField[]>([]);
     let orientation = $state("portrait");
+    let marginTop = $state(250);
+    let marginBottom = $state(150);
     
     let isSaving = $state(false);
     let saveMessage = $state("");
@@ -47,6 +51,8 @@ export function useEditor(initialDocId: string | null) {
                 if (data && typeof data === 'object' && Array.isArray(data.fields)) {
                     fields = data.fields;
                     orientation = data.orientation || "portrait";
+                    marginTop = data.marginTop ?? 250;
+                    marginBottom = data.marginBottom ?? 150;
                 }
             } catch (err) {
                 console.error("Vorlage konnte nicht geladen werden", err);
@@ -61,7 +67,7 @@ export function useEditor(initialDocId: string | null) {
             content: type === 'text' ? "Neuer Text" : (type === 'logo' ? "Firmenlogo" : ""),
             x: 100, y: 100, w: type === 'table' ? 600 : 200, h: type === 'table' ? 200 : 60,
             createdAt: Date.now(),
-            style: { backgroundColor: "transparent", color: "#000000", fontSize: 12, fontWeight: "normal", padding: 0, textAlign: "left", verticalAlign: "top" }
+            style: { backgroundColor: "transparent", color: "#000000", fontSize: 12, fontWeight: "normal", padding: 0, textAlign: "left", verticalAlign: "top", dynamicHeight: false, repeatOnAllPages: true }
         };
         
         if (type === 'table') {
@@ -85,7 +91,9 @@ export function useEditor(initialDocId: string | null) {
                 includeTotalBrutto: true,
                 headerTextAlign: "",
                 rowVerticalAlign: "top",
-                footerTextAlign: "right"
+                footerTextAlign: "right",
+                firstPageLimit: 6,
+                nextPageLimit: 12
             };
         }
         
@@ -105,6 +113,8 @@ export function useEditor(initialDocId: string | null) {
             const documentPayload = {
                 fields,
                 orientation,
+                marginTop,
+                marginBottom,
                 version: 2
             };
             
@@ -136,6 +146,10 @@ export function useEditor(initialDocId: string | null) {
         set title(v) { title = v; },
         get type() { return type; },
         set type(v) { type = v; },
+        get marginTop() { return marginTop; },
+        set marginTop(v) { marginTop = v; },
+        get marginBottom() { return marginBottom; },
+        set marginBottom(v) { marginBottom = v; },
         get fields() { return fields; },
         get selectedFieldId() { return selectedFieldId; },
         set selectedFieldId(v) { selectedFieldId = v; },

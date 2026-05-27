@@ -4,7 +4,24 @@
     import { pb } from "$lib/services/pocketbase";
     import { onMount } from "svelte";
 
-    let team = $state(getTeamMembers());
+    // Dynamischer Import aller lokalen Bilder (falls vorhanden), ansonsten kein Fehler!
+    const localAvatarsGlob = import.meta.glob('$lib/assets/team/*.{jpg,jpeg,png,webp}', { 
+        eager: true, 
+        query: { enhanced: true } 
+    });
+
+    // 1. Lokale Bilder SOFORT beim Start zuweisen, falls sie gefunden wurden
+    let team = $state(getTeamMembers().map(member => {
+        const firstName = member.name.split(' ')[0].toLowerCase();
+        let enhancedAvatar = null;
+        for (const path in localAvatarsGlob) {
+            if (path.toLowerCase().includes(`/${firstName}.`)) {
+                enhancedAvatar = (localAvatarsGlob[path] as any).default;
+                break;
+            }
+        }
+        return { ...member, enhancedAvatar };
+    }));
 
     onMount(async () => {
         try {
@@ -32,6 +49,7 @@
                 if (dbUser && dbUser.avatar) {
                     return {
                         ...member,
+                        ...dbUser,
                         id: dbUser.id,
                         collectionId: dbUser.collectionId,
                         avatar: dbUser.avatar
@@ -40,7 +58,7 @@
                 return member;
             });
         } catch (err) {
-            console.log("Hinweis: Bilder konnten nicht geladen werden. Bitte PocketBase API-Regeln prüfen.");
+            console.log("Hinweis: Live-Profilbilder aus der Datenbank wurden aufgrund von Gast-Rechten übersprungen.");
         }
     });
 </script>
@@ -60,16 +78,24 @@
                         <div class="absolute -bottom-20 -right-20 w-40 h-40 bg-amber-100 rounded-full blur-3xl group-hover:bg-amber-200 transition-colors duration-700"></div>
                     </div>
                     <div class="relative z-10 w-full flex flex-col items-center">
-                        <div class="relative z-20 w-24 h-24 bg-linear-to-br from-amber-100 to-amber-50 text-brand-800 rounded-full flex items-center justify-center text-4xl font-bold mb-5 shadow-md border-2 border-white overflow-hidden transition-all duration-500 group-hover:scale-[2] group-hover:-translate-y-6 group-hover:shadow-2xl group-hover:z-50">
-                            {#if (member as any).avatar && ((member as any).avatar.startsWith('http') || (member as any).avatar.startsWith('/'))}
-                                <img src={(member as any).avatar} alt={member.name} class="w-full h-full object-cover" style="image-rendering: high-quality;" />
-                            {:else if (member as any).avatar && (member as any).collectionId && (member as any).id}
-                                <img src={pb.files.getURL(member as any, (member as any).avatar, { thumb: '500x500' })} alt={member.name} class="w-full h-full object-cover" style="image-rendering: high-quality;" />
-                            {:else if (member as any).avatarUrl}
-                                <img src={(member as any).avatarUrl} alt={member.name} class="w-full h-full object-cover" style="image-rendering: high-quality;" />
-                            {:else}
-                                {member.initial}
-                            {/if}
+                        <!-- Statischer Platzhalter, damit das Layout nicht springt -->
+                        <div class="relative z-20 w-24 h-24 mb-5 flex items-center justify-center">
+                            <!-- Hardwarebeschleunigter Container: Wird in max. Größe (192x192px) gerendert und per CSS-Transform herunterskaliert. Garantiert 100% scharfe Bilder ohne Artefakte beim Vergrößern! -->
+                            <div class="absolute -inset-12 scale-50 group-hover:scale-100 group-hover:-translate-y-6 transition-transform duration-500 ease-out z-50 origin-center" style="will-change: transform;">
+                                <div class="w-full h-full bg-linear-to-br from-amber-100 to-amber-50 text-brand-800 rounded-full flex items-center justify-center text-[72px] font-bold shadow-[0_10px_30px_rgba(0,0,0,0.15)] group-hover:shadow-[0_20px_50px_rgba(0,0,0,0.25)] border-4 border-white overflow-hidden transition-shadow duration-500">
+                                {#if (member as any).enhancedAvatar}
+                                    <enhanced:img src={(member as any).enhancedAvatar} alt={member.name} class="w-full h-full object-cover" />
+                                {:else if (member as any).avatar && ((member as any).avatar.startsWith('http') || (member as any).avatar.startsWith('/'))}
+                                    <img src={(member as any).avatar} alt={member.name} class="w-full h-full object-cover" />
+                                {:else if (member as any).avatar && (member as any).collectionId && (member as any).id}
+                                    <img src={pb.files.getURL(member as any, (member as any).avatar)} alt={member.name} class="w-full h-full object-cover" />
+                                {:else if (member as any).avatarUrl}
+                                    <img src={(member as any).avatarUrl} alt={member.name} class="w-full h-full object-cover" />
+                                {:else}
+                                    {member.initial}
+                                {/if}
+                                </div>
+                            </div>
                         </div>
                         <h3 class="text-2xl font-bold mb-1 text-neutral-900">{member.name}</h3>
                         <p class="text-neutral-500 font-medium mb-8 text-sm uppercase tracking-wider">{member.region}</p>

@@ -21,11 +21,17 @@ export function useInsuranceFilter(provider: () => any[]) {
         });
     });
 
+    // Krankenkassen alphabetisch nach Name sortieren
+    let sorted = $derived.by(() => {
+        return [...filtered].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    });
+
     return {
         get searchQuery() { return searchQuery; },
         set searchQuery(v) { searchQuery = v; },
         get typeFilter() { return typeFilter; },
         set typeFilter(v) { typeFilter = v; },
-        get filtered() { return filtered; }
+        get filtered() { return filtered; },
+        get sorted() { return sorted; }
     };
 }

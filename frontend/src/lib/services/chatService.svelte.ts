@@ -54,7 +54,7 @@ export function useChat() {
                     } else if (e.action === 'delete') {
                         messages = messages.filter(m => m.id !== e.record.id);
                     }
-                });
+                }, { requestKey: null }); // Added requestKey: null
                 isSubscribed = true;
             } catch (err) {
                 console.error("Fehler beim Chat-Subscribe:", err);

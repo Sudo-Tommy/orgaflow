@@ -13,6 +13,8 @@ export function useBwaService() {
         
         (orgaStore.invoices?.data || []).forEach((inv: any) => {
             if (inv.issue_date) years.add(new Date(inv.issue_date).getFullYear());
+            if (inv.due_date) years.add(new Date(inv.due_date).getFullYear());
+            if (inv.paid_at) years.add(new Date(inv.paid_at).getFullYear());
         });
         (orgaStore.appointments?.data || []).forEach((app: any) => {
             if (app.appointment) years.add(new Date(app.appointment).getFullYear());
@@ -24,9 +26,9 @@ export function useBwaService() {
     async function loadExpenses() {
         isLoadingExpenses = true;
         try {
-            let filter = `date >= '${selectedYear}-01-01 00:00:00' && date <= '${selectedYear}-12-31 23:59:59'`;
+            let filter = "";
             if (selectedCompanyId !== "all") {
-                filter += ` && company = '${selectedCompanyId}'`;
+                filter = `company = '${selectedCompanyId}'`;
             }
             const res = await pb.collection('company_expenses').getFullList({ filter, sort: '-date' });
             companyExpenses = res;
@@ -50,8 +52,8 @@ export function useBwaService() {
 
     let stats = $derived.by(() => {
         const months = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
-        const monthly = months.map(m => ({ month: m, revenue: 0, appExpenses: 0, compExpenses: 0, profit: 0 }));
-        let totals = { revenue: 0, appExpenses: 0, compExpenses: 0, profit: 0, appointments: 0, hours: 0, km: 0 };
+        const monthly = months.map(m => ({ month: m, revenue: 0, revenuePaid: 0, revenueOpen: 0, unbilledRevenue: 0, appExpenses: 0, compExpenses: 0, profit: 0, categories: {} as Record<string, number>, umsatzsteuer: 0, vorsteuer: 0 }));
+        let totals = { revenue: 0, revenuePaid: 0, revenueOpen: 0, unbilledRevenue: 0, currentTotalUnbilled: 0, appExpenses: 0, compExpenses: 0, profit: 0, appointments: 0, hours: 0, km: 0, categories: {} as Record<string, number>, umsatzsteuer: 0, vorsteuer: 0 };
         
         let clientStats: Record<string, { name: string, revenue: number, hours: number, appts: number }> = {};
         let userStats: Record<string, { name: string, hours: number, appts: number, km: number }> = {};
@@ -68,17 +70,42 @@ export function useBwaService() {
 
         // Rechnungen (Umsätze) aggregieren
         (orgaStore.invoices?.data || []).forEach((inv: any) => {
-            if (!inv.issue_date || inv.status === 'Entwurf' || inv.status === 'Storniert' || inv.status === 'Abgelehnt') return;
-            const d = new Date(inv.issue_date);
+            if (inv.status === 'Entwurf' || inv.status === 'Storniert' || inv.status === 'Abgelehnt') return;
+
+            const rev = inv.netto || 0;
+            const ust = inv.tax_sum || 0;
+
+            // OFFENE Rechnungen (nicht bezahlt) - fließen NICHT in die reale BWA ein!
+            if (inv.status !== 'Abgeschlossen') {
+                const dateForOpen = inv.due_date || inv.issue_date;
+                if (dateForOpen) {
+                    const dOpen = new Date(dateForOpen);
+                    if (dOpen.getFullYear() === selectedYear) {
+                        if (selectedCompanyId !== "all" && inv.company !== selectedCompanyId) return;
+                        monthly[dOpen.getMonth()].revenueOpen += rev;
+                        totals.revenueOpen += rev;
+                    }
+                }
+                return; // WICHTIG: Hier abbrechen, damit offene Beträge nicht in den echten Gewinn fließen
+            }
+
+            // BEZAHLTE Rechnungen (EÜR - Zuflussprinzip)
+            const dateToUse = inv.paid_at || inv.issue_date; // Fallback auf Rechnungsdatum für alte Rechnungen
+            if (!dateToUse) return;
+            const d = new Date(dateToUse);
+            
             if (d.getFullYear() === selectedYear) {
-                // Check Company Filter
                 if (selectedCompanyId !== "all" && inv.company !== selectedCompanyId) return;
 
                 const mIdx = d.getMonth();
-                const rev = inv.netto || 0; // Für BWAs nutzen wir in der Regel den Netto-Umsatz
                 
                 monthly[mIdx].revenue += rev;
+                monthly[mIdx].umsatzsteuer += ust;
+                monthly[mIdx].revenuePaid += rev;
+
                 totals.revenue += rev;
+                totals.umsatzsteuer += ust;
+                totals.revenuePaid += rev;
 
                 const cId = Array.isArray(inv.client) ? inv.client[0] : inv.client;
                 if (cId) {
@@ -92,44 +119,67 @@ export function useBwaService() {
         (orgaStore.appointments?.data || []).forEach((app: any) => {
             if (!app.appointment) return;
             const d = new Date(app.appointment);
-            if (d.getFullYear() === selectedYear) {
-                // Check Company Filter
-                const uCompId = app.expand?.user?.company;
-                let matchesCompany = true;
-                if (selectedCompanyId !== "all") {
-                    if (Array.isArray(uCompId)) matchesCompany = uCompId.includes(selectedCompanyId);
-                    else if (typeof uCompId === 'string') matchesCompany = uCompId.includes(selectedCompanyId);
-                    else matchesCompany = false;
-                }
-                if (!matchesCompany) return;
+            
+            // Check Company Filter
+            const uCompId = app.expand?.user?.company;
+            let matchesCompany = true;
+            if (selectedCompanyId !== "all") {
+                if (Array.isArray(uCompId)) matchesCompany = uCompId.includes(selectedCompanyId);
+                else if (typeof uCompId === 'string') {
+                    if (uCompId.startsWith('[')) {
+                        try { matchesCompany = JSON.parse(uCompId).includes(selectedCompanyId); } catch {}
+                    } else matchesCompany = uCompId === selectedCompanyId || uCompId.includes(selectedCompanyId);
+                } else matchesCompany = false;
+            }
+            if (!matchesCompany) return;
 
+            const cId = Array.isArray(app.client) ? app.client[0] : app.client;
+            
+            let appHours = 0;
+            if (app.expand?.time_record) {
+                app.expand.time_record.forEach((tr: any) => {
+                    if (tr.start && tr.end) {
+                        const diffMs = new Date(tr.end).getTime() - new Date(tr.start).getTime();
+                        if (diffMs > 0) appHours += diffMs / 3600000;
+                    }
+                });
+            }
+
+            let appKm = 0;
+            let appDriveLump = 0;
+            if (app.expand?.drive_record) {
+                app.expand.drive_record.forEach((dr: any) => { 
+                    appKm += (dr.km || 0);
+                    appDriveLump += (dr.lump_sum || 0);
+                });
+            }
+            
+            let appExp = 0;
+            if (app.expand?.expenditures) app.expand.expenditures.forEach((ex: any) => { appExp += (ex.sum || 0); });
+
+            // Global Unbilled Revenue (WIP) berechnen, unabhängig vom selektierten Jahr/Monat
+            if (!app.settled && !app.description?.includes('[BLOCK]')) {
+                const clientObj = orgaStore.clients?.data?.find((c:any) => c.id === cId);
+                if (clientObj) {
+                    const wage = clientObj.hourly_wage ?? 40;
+                    const kmRate = clientObj.km_rate ?? 0.3;
+                    const unbilled = (appHours * wage) + (appKm * kmRate) + appDriveLump + appExp;
+                    totals.currentTotalUnbilled += unbilled;
+                }
+            }
+            
+            if (d.getFullYear() === selectedYear) {
                 const monthIdx = d.getMonth();
                 totals.appointments++;
 
-                let appHours = 0;
-                if (app.expand?.time_record) {
-                    app.expand.time_record.forEach((tr: any) => {
-                        if (tr.start && tr.end) {
-                            const diffMs = new Date(tr.end).getTime() - new Date(tr.start).getTime();
-                            if (diffMs > 0) {
-                                appHours += diffMs / 3600000;
-                            }
-                        }
-                    });
-                }
                 totals.hours += appHours;
 
-                let appKm = 0;
-                if (app.expand?.drive_record) app.expand.drive_record.forEach((dr: any) => { appKm += (dr.km || 0); });
                 totals.km += appKm;
                 
-                let appExp = 0;
-                if (app.expand?.expenditures) app.expand.expenditures.forEach((ex: any) => { appExp += (ex.sum || 0); });
                 monthly[monthIdx].appExpenses += appExp;
                 totals.appExpenses += appExp;
 
                 // Client Stats
-                const cId = app.expand?.client?.[0]?.id;
                 if (cId) {
                     if (!clientStats[cId]) clientStats[cId] = { name: getClientName(cId), revenue: 0, hours: 0, appts: 0 };
                     clientStats[cId].hours += appHours;
@@ -152,8 +202,16 @@ export function useBwaService() {
             const d = new Date(exp.date);
             if (d.getFullYear() === selectedYear) {
                 const mIdx = d.getMonth();
-                monthly[mIdx].compExpenses += (exp.amount || 0);
-                totals.compExpenses += (exp.amount || 0);
+                const amt = exp.netto > 0 ? exp.netto : (exp.amount || 0);
+                const vst = exp.tax_sum || 0;
+                monthly[mIdx].compExpenses += amt;
+                monthly[mIdx].vorsteuer += vst;
+                totals.compExpenses += amt;
+                totals.vorsteuer += vst;
+
+                const cat = exp.category || 'Sonstiges';
+                totals.categories[cat] = (totals.categories[cat] || 0) + amt;
+                monthly[mIdx].categories[cat] = (monthly[mIdx].categories[cat] || 0) + amt;
             }
         });
 

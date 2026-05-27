@@ -24,7 +24,9 @@ export interface MailboxMessage extends RecordModel {
   body_html?: string;
   date: string;
   is_read: boolean;
+  is_starred: boolean; // FIX: Fehlendes Feld hinzugefügt
   client?: string; // Optional relation to client
+  attachments?: string[]; // E-Mail Anhänge (PocketBase File Array)
   created: string;
   updated: string;
 }
@@ -44,7 +46,7 @@ export interface EmailFilter {
   isRead?: boolean;
   fromAddress?: string;
   search?: string;
-  userEmail?: string;
+  userId?: string;
 }
 
 function fileToBase64(file: File): Promise<string> {
@@ -57,6 +59,17 @@ function fileToBase64(file: File): Promise<string> {
         };
         reader.onerror = error => reject(error);
     });
+}
+
+// Wandelt Base64 sicher in eine Datei um (Verhindert Abstürze bei großen Dateien durch Browser-URL-Limits)
+function base64ToFile(base64: string, filename: string, mimeType: string): File {
+    const byteCharacters = atob(base64);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    return new File([byteArray], filename, { type: mimeType });
 }
 
 export function createEmailService() {
@@ -114,9 +127,14 @@ export function createEmailService() {
 
         let filterStr = `folder = "${filter.folder}"`;
         
-        // Filtert konsequent nach der E-Mail des Nutzers (außer der Superadmin wählt "Alle")
-        if (filter.userEmail && filter.userEmail !== "all") {
-          filterStr += ` && (to_address ~ "${filter.userEmail}" || from_address ~ "${filter.userEmail}")`;
+        if (filter.userId && filter.userId !== "all") {
+          filterStr += ` && user = "${filter.userId}"`;
+        } else {
+          const user = pb.authStore.model;
+          const isSuperAdmin = pb.authStore.isSuperuser || user?.role === 'superadmin';
+          if (!isSuperAdmin) {
+            filterStr += ` && user = "${user?.id}"`;
+          }
         }
 
         if (filter.isRead !== undefined) {
@@ -145,7 +163,7 @@ export function createEmailService() {
     },
 
     // Search emails
-    async searchEmails(query: string, folder: string, userEmail?: string): Promise<MailboxMessage[]> {
+    async searchEmails(query: string, folder: string, userId?: string): Promise<MailboxMessage[]> {
       isLoading = true;
       error = null;
       try {
@@ -155,8 +173,14 @@ export function createEmailService() {
         }
 
       let filterStr = `folder = "${folder}" && (subject ~ "${query}" || body_text ~ "${query}" || from_address ~ "${query}")`;
-      if (userEmail && userEmail !== "all") {
-          filterStr += ` && (to_address ~ "${userEmail}" || from_address ~ "${userEmail}")`;
+      if (userId && userId !== "all") {
+          filterStr += ` && user = "${userId}"`;
+      } else {
+          const user = pb.authStore.model;
+          const isSuperAdmin = pb.authStore.isSuperuser || user?.role === 'superadmin';
+          if (!isSuperAdmin) {
+              filterStr += ` && user = "${user?.id}"`;
+          }
       }
 
         const records = await pb.collection('mailbox_messages').getFullList<MailboxMessage>({
@@ -220,10 +244,12 @@ export function createEmailService() {
           
           // Wenn sich der Status geändert hat, Glöckchen-Badge aktualisieren!
           if (wasRead !== isRead) {
-              getMailboxService().loadFolders(pb.authStore.model?.email);
+              const currentUserId = pb.authStore.model?.id || "all";
+              getMailboxService().loadFolders(currentUserId);
           }
         } else {
-          getMailboxService().loadFolders(pb.authStore.model?.email);
+          const currentUserId = pb.authStore.model?.id || "all";
+          getMailboxService().loadFolders(currentUserId);
         }
 
         return updated;
@@ -233,6 +259,22 @@ export function createEmailService() {
         throw err;
       } finally {
         isLoading = false;
+      }
+    },
+
+    // FIX: toggleStar Funktion implementiert
+    async toggleStar(emailId: string): Promise<void> {
+      try {
+        const email = emails.find(e => e.id === emailId);
+        if (!email) return;
+        const newStarred = !email.is_starred;
+        await pb.collection('mailbox_messages').update(emailId, { is_starred: newStarred });
+        
+        // Lokalen State aktualisieren
+        const index = emails.findIndex(e => e.id === emailId);
+        if (index !== -1) emails[index] = { ...emails[index], is_starred: newStarred };
+      } catch (err) {
+        console.error('[Email] Toggle star error:', err);
       }
     },
 
@@ -255,7 +297,7 @@ export function createEmailService() {
           method: 'POST',
           headers: { 
               'Content-Type': 'application/json',
-              'Authorization': `Bearer ${pb.authStore.token}` 
+              'Authorization': `Bearer ${pb.authStore.token}`
           },
           body: JSON.stringify({
             to: input.to,
@@ -277,19 +319,27 @@ export function createEmailService() {
         // Gesendete E-Mail in der Datenbank speichern, damit sie im Ordner "Gesendet" auftaucht
         const companyId = authData?.company ? (Array.isArray(authData.company) ? authData.company[0] : authData.company) : null;
         
-        await pb.collection('mailbox_messages').create({
-            folder: "Sent",
-            message_id: result.messageId || "sent-" + Date.now(),
-            subject: input.subject,
-            from_address: authData?.email || "Ich",
-            to_address: input.to,
-            date: new Date().toISOString(),
-            body_text: input.body,
-            body_html: input.body_html || input.body.replace(/\n/g, '<br>'),
-            is_read: true,
-            send_by: authData?.id || null,
-            company: companyId
-        });
+        const formData = new FormData();
+        formData.append('folder', 'Sent');
+        formData.append('message_id', result.messageId || "sent-" + Date.now());
+        formData.append('subject', input.subject);
+        formData.append('from_address', authData?.email || "Ich");
+        formData.append('to_address', input.to);
+        formData.append('date', new Date().toISOString());
+        formData.append('body_text', input.body);
+        formData.append('body_html', input.body_html || input.body.replace(/\n/g, '<br>'));
+        formData.append('is_read', 'true');
+        if (authData?.id) formData.append('send_by', authData.id);
+        if (companyId) formData.append('company', companyId);
+        if (authData?.id) formData.append('user', authData.id);
+
+        if (input.attachments) {
+            for (const file of input.attachments) {
+                formData.append('attachments', file);
+            }
+        }
+        
+        await pb.collection('mailbox_messages').create(formData);
         
         return { success: true, messageId: result.messageId };
       } catch (err) {
@@ -340,27 +390,45 @@ export function createEmailService() {
       try {
         const newMails = await fetchInbox();
         
+        const currentUser = pb.authStore.model;
+        
         const existing = await pb.collection('mailbox_messages').getFullList({
-            filter: `folder = "INBOX"`,
+            filter: `folder = "INBOX" && user = "${currentUser?.id}"`,
             fields: 'message_id',
             requestKey: null
         });
         const existingUids = new Set(existing.map((e: any) => e.message_id));
         
+        const companyId = currentUser?.company ? (Array.isArray(currentUser.company) ? currentUser.company[0] : currentUser.company) : null;
+        
         let added = 0;
         for (const mail of newMails) {
             if (!existingUids.has(mail.uid.toString())) {
-                await pb.collection('mailbox_messages').create({
-                    folder: "INBOX",
-                    message_id: mail.uid.toString(),
-                    subject: mail.subject,
-                    from_address: mail.from,
-                    to_address: mail.to,
-                    date: new Date(mail.date || Date.now()).toISOString(),
-                    body_text: mail.text,
-                    body_html: mail.html,
-                    is_read: false
-                });
+                const formData = new FormData();
+                formData.append('folder', 'INBOX');
+                formData.append('message_id', mail.uid.toString());
+                formData.append('subject', mail.subject || '');
+                formData.append('from_address', mail.from || '');
+                formData.append('to_address', mail.to || '');
+                formData.append('date', new Date(mail.date || Date.now()).toISOString());
+                formData.append('body_text', mail.text || '');
+                formData.append('body_html', mail.html || '');
+                formData.append('is_read', 'false');
+                if (companyId) formData.append('company', companyId);
+                if (currentUser?.id) formData.append('user', currentUser.id);
+
+                if (mail.attachments && Array.isArray(mail.attachments)) {
+                    for (const att of mail.attachments) {
+                        try {
+                            const file = base64ToFile(att.content, att.filename || 'anhang', att.contentType || 'application/octet-stream');
+                            formData.append('attachments', file);
+                        } catch (e) {
+                            console.error("Fehler beim Verarbeiten des Anhangs", e);
+                        }
+                    }
+                }
+
+                await pb.collection('mailbox_messages').create(formData);
                 added++;
             }
         }

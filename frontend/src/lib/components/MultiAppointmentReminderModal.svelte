@@ -42,6 +42,9 @@
         orgaStore.retirement_homes?.data?.forEach((h: any) => {
             add(`${h.name} (Pflegeheim)`, h.email, h.phone, `Sehr geehrte Damen und Herren vom ${h.name},`, false);
         });
+        orgaStore.insurancies?.data?.forEach((i: any) => {
+            add(`${i.name} (Krankenkasse)`, i.email, i.phone, `Sehr geehrte Damen und Herren,`, false);
+        });
         const unique: any[] = [];
         const seen = new Set();
         for (const item of list) {
@@ -78,8 +81,16 @@
 
         const caregiver = cl?.expand?.caregiver;
 
-        method = (caregiver?.email || cl?.email) ? 'email' : (caregiver?.handy || caregiver?.phone || cl?.handy || cl?.phone ? 'whatsapp' : 'email');
-        recipient = method === 'email' ? (caregiver?.email || cl?.email || "") : (caregiver?.handy || caregiver?.phone || cl?.handy || cl?.phone || "");
+        let emails = [];
+        if (caregiver?.email) emails.push(caregiver.email);
+        else if (cl?.email) emails.push(cl.email);
+        if (cl?.mailing_list && Array.isArray(cl.mailing_list)) {
+            emails = [...emails, ...cl.mailing_list];
+        }
+        const emailStr = [...new Set(emails)].filter(Boolean).join(", ");
+        const phoneStr = caregiver?.handy || caregiver?.phone || cl?.handy || cl?.phone || "";
+        method = emailStr ? 'email' : (phoneStr ? 'whatsapp' : 'email');
+        recipient = method === 'email' ? emailStr : phoneStr;
 
         cc = "";
         bcc = "";
@@ -107,7 +118,15 @@
 
     function changeMethod(newMethod: 'email' | 'whatsapp') {
         method = newMethod;
-        recipient = method === 'email' ? (client?.email || "") : (client?.handy || client?.phone || "");
+        if (method === 'email') {
+            let emails = [];
+            if (client?.expand?.caregiver?.email) emails.push(client.expand.caregiver.email);
+            else if (client?.email) emails.push(client.email);
+            if (client?.mailing_list && Array.isArray(client.mailing_list)) emails = [...emails, ...client.mailing_list];
+            recipient = [...new Set(emails)].filter(Boolean).join(", ");
+        } else {
+            recipient = client?.expand?.caregiver?.handy || client?.expand?.caregiver?.phone || client?.handy || client?.phone || "";
+        }
         selectedContactRefs = [];
         if (recipient) {
             const isEmail = method === 'email';
@@ -128,11 +147,16 @@
         } else if (selectedContactRefs.length >= 3) {
             newSalutation = "Sehr geehrte Damen und Herren,";
         } else {
+            const emailsCount = recipient.split(',').map(e => e.trim()).filter(Boolean).length;
+            if (method === 'email' && emailsCount > 1) {
+                newSalutation = "Sehr geehrte Damen und Herren,";
+            } else {
             // Fallback auf Klient
             const recipientRecord = client?.expand?.caregiver || client;
             newSalutation = recipientRecord?.salutation === 'Herr' ? `Sehr geehrter Herr ${recipientRecord.name_last},` : 
                             (recipientRecord?.salutation === 'Frau' ? `Sehr geehrte Frau ${recipientRecord.name_last},` : 
                             `Guten Tag ${recipientRecord?.name_first || ''} ${recipientRecord?.name_last || ''},`.trim());
+            }
         }
 
         if (generatedBody) {
@@ -386,6 +410,7 @@ WICHTIG: Beginne NICHT mit einer Anrede ("Sehr geehrte..."), da diese schon vorh
                     
                     await pb.collection('mailbox_messages').create({
                         send_by: pb.authStore.model.id,
+                        user: pb.authStore.model.id,
                         company: companyId,
                         folder: 'Sent',
                         from_address: `${finalUserName} <${finalUserEmail}>`,

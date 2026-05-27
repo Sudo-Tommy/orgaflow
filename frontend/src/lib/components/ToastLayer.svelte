@@ -1,7 +1,7 @@
 <script lang="ts">
     import { toastStore } from "$lib/services/toastService.svelte";
-    import { fly, fade } from "svelte/transition";
     import { onMount } from "svelte";
+    import { elasticOut, cubicIn } from "svelte/easing";
 
     let popoverEl: HTMLElement;
     
@@ -13,38 +13,82 @@
 
     let lastToastId = "";
 
+    // Gruppiert identische Toasts, die direkt nacheinander kommen
+    let groupedToasts = $derived.by(() => {
+        const groups: any[] = [];
+        for (const toast of toastStore.toasts) {
+            const last = groups[groups.length - 1];
+            if (last && last.message === toast.message && last.type === toast.type) {
+                last.count += 1;
+                last.ids.push(toast.id);
+            } else {
+                groups.push({ ...toast, count: 1, ids: [toast.id] });
+            }
+        }
+        return groups;
+    });
+
     $effect(() => {
-        const toasts = toastStore.toasts;
-        if (toasts.length > 0) {
-            const newest = toasts[toasts.length - 1];
+        if (groupedToasts.length > 0) {
+            const newest = groupedToasts[groupedToasts.length - 1];
             // Sobald ein neuer Toast auftaucht, rücken wir den Container wieder nach ganz oben
-            if (newest.id !== lastToastId && popoverEl && typeof popoverEl.showPopover === 'function') {
+            if (newest.ids[0] !== lastToastId && popoverEl && typeof popoverEl.showPopover === 'function') {
                 try {
                     if (popoverEl.matches(':popover-open')) popoverEl.hidePopover();
                     popoverEl.showPopover();
                 } catch (e) {}
-                lastToastId = newest.id;
+                lastToastId = newest.ids[0];
             }
         }
     });
+
+    // Witzige Animation: Klatscht an die Scheibe (Splat) wie ein Ei
+    function splatIn(node: Element, { duration = 700 } = {}) {
+        return {
+            duration,
+            css: (t: number) => {
+                const ease = elasticOut(t);
+                const scale = 1 + (1 - ease) * 3; // Startet riesig (4x) und "knallt" federnd auf Normalgröße
+                return `transform: scale(${scale}); opacity: ${t < 0.2 ? t * 5 : 1};`;
+            }
+        };
+    }
+
+    // Witzige Animation: Läuft wie ein zermatschtes Ei die Scheibe runter (Drip)
+    function dripOut(node: Element, { duration = 1200 } = {}) {
+        return {
+            duration,
+            css: (t: number, u: number) => {
+                const ease = cubicIn(u); // Beschleunigt exponentiell nach unten
+                return `transform: translateY(${ease * 800}px) scaleY(${1 + ease * 0.8}); opacity: ${t};`;
+            }
+        };
+    }
 </script>
 
 <div bind:this={popoverEl} popover="manual" class="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-8 sm:bottom-8 z-9999 flex flex-col items-center sm:items-end gap-4 pointer-events-none bg-transparent border-none m-0 p-0 overflow-visible w-auto h-auto outline-none">
-    {#each toastStore.toasts as toast (toast.id)}
+    {#each groupedToasts as toast (toast.ids[0])}
         <!-- Der ECHTE Kawaii-Toast! 🍞 -->
         <div 
-            in:fly={{ y: 50, duration: 600, opacity: 0, easing: (t) => --t * t * t + 1 }} 
-            out:fade={{ duration: 200 }}
+            in:splatIn 
+            out:dripOut
             class="pointer-events-auto relative flex flex-col items-center justify-center p-6 pt-10 pb-6
                    rounded-4xl rounded-t-[3.5rem] border-[6px] sm:border-8 w-full max-w-sm sm:w-72 shadow-2xl 
                    transform transition-transform hover:scale-105 cursor-pointer overflow-hidden
                    {toast.type === 'error' ? 'bg-[#D2A679] border-[#6D4222] text-[#4A2C16]' : 'bg-[#FDEBD0] border-[#D98A44] text-[#8C5220]'}"
-            onclick={() => toastStore.remove(toast.id)}
+            onclick={() => toast.ids.forEach((id: string) => toastStore.remove(id))}
             role="button"
             tabindex="0"
-            onkeydown={(e) => e.key === 'Enter' && toastStore.remove(toast.id)}
+            onkeydown={(e) => e.key === 'Enter' && toast.ids.forEach((id: string) => toastStore.remove(id))}
             title="Klicken zum Schließen"
         >
+            {#if toast.count > 1}
+                <!-- Multi-Hit Combo Zähler -->
+                <div class="absolute top-2 right-2 bg-rose-500 text-white font-black text-sm px-2 py-0.5 rounded-full shadow-md z-50 border-2 border-white animate-pulse">
+                    {toast.count}x
+                </div>
+            {/if}
+
             <!-- Der Belag (Honig, Marmelade, Blaubeere...) -->
             {#if toast.type === 'success'}
                 <!-- Honig 🍯 -->

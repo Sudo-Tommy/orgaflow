@@ -28,6 +28,31 @@ export function useInvoiceFilter(invoicesProvider: () => any[]) {
         });
     });
 
+    // Rechnungen nach Rechnungsnummer sortieren (neueste oben)
+    let sorted = $derived.by(() => {
+        return [...filtered].sort((a, b) => {
+            const nrA = a.invoice_nr || '';
+            const nrB = b.invoice_nr || '';
+            return nrB.localeCompare(nrA, undefined, { numeric: true });
+        });
+    });
+
+    // Nach Firma gruppieren inkl. Gesamtsummen der Beträge
+    let grouped = $derived.by(() => {
+        const groups: Record<string, { invoices: any[], totalBrutto: number, totalNetto: number }> = {};
+        for (const inv of sorted) {
+            const companyName = inv.expand?.company?.name || 'Allgemein / Keine Firmenzuordnung';
+            if (!groups[companyName]) {
+                groups[companyName] = { invoices: [], totalBrutto: 0, totalNetto: 0 };
+            }
+            groups[companyName].invoices.push(inv);
+            groups[companyName].totalBrutto += (inv.brutto || 0);
+            groups[companyName].totalNetto += (inv.netto || 0);
+        }
+        // Alphabetisch nach Firmenname sortieren
+        return Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0]));
+    });
+
     return {
         get searchQuery() { return searchQuery; },
         set searchQuery(v) { searchQuery = v; },
@@ -35,6 +60,8 @@ export function useInvoiceFilter(invoicesProvider: () => any[]) {
         set statusFilter(v) { statusFilter = v; },
         get companyFilter() { return companyFilter; },
         set companyFilter(v) { companyFilter = v; },
-        get filtered() { return filtered; }
+        get filtered() { return filtered; },
+        get sorted() { return sorted; },
+        get grouped() { return grouped; }
     };
 }

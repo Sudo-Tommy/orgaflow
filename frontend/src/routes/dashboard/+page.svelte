@@ -18,6 +18,8 @@
 	// svelte-ignore non_reactive_update
 	let followUpsModal: ReturnType<typeof MissingFollowUpsModal>;
 
+	let isSuperAdmin = $state(pb.authStore.isSuperuser || pb.authStore.model?.role === 'superadmin' || pb.authStore.model?.role === 'admin');
+
 	// 1. Heutige Termine herausfiltern
 	let todaysAppointments = $derived.by(() => {
 		const today = new Date();
@@ -25,28 +27,21 @@
 			if (!app.appointment) return false;
 			const d = new Date(app.appointment);
 			const isToday = d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
-			return isToday && app.user === pb.authStore.model?.id;
+			return isToday && (isSuperAdmin || app.user === pb.authStore.model?.id);
 		}).sort((a: any, b: any) => new Date(a.appointment).getTime() - new Date(b.appointment).getTime());
 	});
 
 	// 2. Offene Rechnungen & Summe berechnen
 	let openInvoices = $derived((orgaStore.invoices?.data || []).filter((inv: any) => {
-		const isMyInvoice = inv.user === pb.authStore.model?.id || (Array.isArray(inv.user) && inv.user.includes(pb.authStore.model?.id));
+		const isMyInvoice = isSuperAdmin || inv.user === pb.authStore.model?.id || (Array.isArray(inv.user) && inv.user.includes(pb.authStore.model?.id));
 		return isMyInvoice && inv.status !== 'Abgeschlossen' && inv.status !== 'Storniert' && inv.status !== 'Abgelehnt';
 	}));
 	let openInvoicesSum = $derived(openInvoices.reduce((sum: number, inv: any) => sum + (inv.brutto || 0), 0));
 
-	// 3. Aktive Klienten zählen (nur die eigenen, mit denen man Termine verknüpft hat)
+	// 3. Aktive Klienten zählen (Alle sichtbaren aktiven Klienten)
 	let activeClientsCount = $derived.by(() => {
-		const myUserId = pb.authStore.model?.id;
-		const myClientIds = new Set((orgaStore.appointments?.data || [])
-			.filter((app: any) => app.user === myUserId)
-			.flatMap((app: any) => Array.isArray(app.client) ? app.client : [app.client])
-			.filter(Boolean));
-		
 		return (orgaStore.clients?.data || []).filter((c: any) => {
-			if ((c.status || '').toLowerCase() !== 'aktiv') return false;
-			return myClientIds.has(c.id);
+			return (c.status || '').toLowerCase() === 'aktiv';
 		}).length;
 	});
 
@@ -63,7 +58,7 @@
 
 		(orgaStore.appointments?.data || []).forEach((app: any) => {
 			if (!app.appointment) return;
-			if (app.user !== myUserId) return; // Nur eigene Termine auswerten
+			if (!isSuperAdmin && app.user !== myUserId) return; // Nur eigene Termine auswerten, es sei denn man ist Admin
 
 			const d = new Date(app.appointment);
 
@@ -90,7 +85,7 @@
 		const now = new Date().getTime();
 		const myUserId = pb.authStore.model?.id;
 		return (orgaStore.appointments?.data || []).filter((app: any) => {
-			if (app.user !== myUserId || app.settled) return false;
+			if ((!isSuperAdmin && app.user !== myUserId) || app.settled) return false;
 			if (app.description?.includes('[BLOCK]')) return false;
 			if (app.is_private) return false; // Private Termine ignorieren
 			if (!app.appointment) return false;
@@ -110,8 +105,6 @@
 	});
 
 	let missingFollowUpsCount = $derived(missingFollowUps.length);
-
-	let isSuperAdmin = $state(pb.authStore.isSuperuser || pb.authStore.model?.role === 'superadmin' || pb.authStore.model?.role === 'admin');
 
 	function handleNewAppointment(date?: Date) {
 		appointmentModal?.open(date);
@@ -146,11 +139,11 @@
         <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8 w-full animate-enter delay-50 auto-rows-fr">
             <a href="/clients" class="bg-white p-4 sm:p-5 rounded-2xl border border-neutral-200 shadow-sm flex items-center gap-3 hover:border-indigo-300 transition-colors group">
                 <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center text-lg sm:text-xl shadow-inner group-hover:scale-110 transition-transform shrink-0">👥</div>
-                <div class="min-w-0"><p class="text-[10px] sm:text-xs font-bold text-neutral-400 uppercase tracking-wider truncate">Meine Klienten</p><p class="text-lg sm:text-2xl font-black text-neutral-900 leading-none mt-0.5">{activeClientsCount}</p></div>
+                <div class="min-w-0"><p class="text-[10px] sm:text-xs font-bold text-neutral-400 uppercase tracking-wider truncate">{isSuperAdmin ? 'Aktive Klienten' : 'Meine Klienten'}</p><p class="text-lg sm:text-2xl font-black text-neutral-900 leading-none mt-0.5">{activeClientsCount}</p></div>
             </a>
             <a href="/invoices" class="bg-white p-4 sm:p-5 rounded-2xl border border-neutral-200 shadow-sm flex items-center gap-3 hover:border-rose-300 transition-colors group">
                 <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center text-lg sm:text-xl shadow-inner group-hover:scale-110 transition-transform shrink-0">💶</div>
-                <div class="min-w-0"><p class="text-[10px] sm:text-xs font-bold text-neutral-400 uppercase tracking-wider truncate">Meine Rechnungen</p><p class="text-lg sm:text-2xl font-black text-neutral-900 leading-none mt-0.5">{openInvoices.length}</p></div>
+                <div class="min-w-0"><p class="text-[10px] sm:text-xs font-bold text-neutral-400 uppercase tracking-wider truncate">{isSuperAdmin ? 'Offene Rechnungen' : 'Meine Rechnungen'}</p><p class="text-lg sm:text-2xl font-black text-neutral-900 leading-none mt-0.5">{openInvoices.length}</p></div>
             </a>
             <a href="/invoices" class="bg-white p-4 sm:p-5 rounded-2xl border border-neutral-200 shadow-sm flex items-center gap-3 hover:border-emerald-300 transition-colors group">
                 <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center text-lg sm:text-xl shadow-inner group-hover:scale-110 transition-transform shrink-0">💰</div>
@@ -162,11 +155,11 @@
             </button>
             <div class="bg-white p-4 sm:p-5 rounded-2xl border border-neutral-200 shadow-sm flex items-center gap-3 transition-colors group">
                 <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-cyan-50 text-cyan-600 flex items-center justify-center text-lg sm:text-xl shadow-inner shrink-0">⏱️</div>
-                <div class="min-w-0"><p class="text-[10px] sm:text-xs font-bold text-neutral-400 uppercase tracking-wider truncate">Stunden (Monat)</p><p class="text-lg sm:text-2xl font-black text-neutral-900 leading-none mt-0.5">{monthlyStats.hours.toFixed(1).replace('.', ',')} h</p></div>
+                <div class="min-w-0"><p class="text-[10px] sm:text-xs font-bold text-neutral-400 uppercase tracking-wider truncate">{isSuperAdmin ? 'Team-Stunden (Monat)' : 'Stunden (Monat)'}</p><p class="text-lg sm:text-2xl font-black text-neutral-900 leading-none mt-0.5">{monthlyStats.hours.toFixed(1).replace('.', ',')} h</p></div>
             </div>
             <div class="bg-white p-4 sm:p-5 rounded-2xl border border-neutral-200 shadow-sm flex items-center gap-3 transition-colors group">
                 <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-teal-50 text-teal-600 flex items-center justify-center text-lg sm:text-xl shadow-inner shrink-0">🚗</div>
-                <div class="min-w-0"><p class="text-[10px] sm:text-xs font-bold text-neutral-400 uppercase tracking-wider truncate">Gefahrene KM</p><p class="text-lg sm:text-2xl font-black text-neutral-900 leading-none mt-0.5">{monthlyStats.kms.toFixed(0)} km</p></div>
+                <div class="min-w-0"><p class="text-[10px] sm:text-xs font-bold text-neutral-400 uppercase tracking-wider truncate">{isSuperAdmin ? 'Team-KM (Monat)' : 'Gefahrene KM'}</p><p class="text-lg sm:text-2xl font-black text-neutral-900 leading-none mt-0.5">{monthlyStats.kms.toFixed(0)} km</p></div>
             </div>
         </div>
 
@@ -174,7 +167,7 @@
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
             <!-- Termine -->
             <div class="orga-card-white p-6 animate-enter delay-100 flex flex-col lg:col-span-1 h-full">
-                <h2 class="text-lg font-bold text-neutral-800 mb-4 flex items-center gap-2"><span>📅</span> Meine heutigen Termine</h2>
+                <h2 class="text-lg font-bold text-neutral-800 mb-4 flex items-center gap-2"><span>📅</span> {isSuperAdmin ? 'Heutige Termine' : 'Meine heutigen Termine'}</h2>
                 {#if todaysAppointments.length === 0}
                     <div class="flex flex-col items-center justify-center py-10 text-center h-full opacity-90">
                         <span class="text-5xl mb-4">🍃</span>

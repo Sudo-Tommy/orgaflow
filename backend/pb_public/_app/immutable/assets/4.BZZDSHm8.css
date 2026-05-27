@@ -1,0 +1,1 @@
+@media print{@page{size:A4 landscape;margin:0;padding:0}body>div:not(#print-container){display:none!important}#print-container{background:#fff;width:100%;margin:0;padding:0;display:block!important}}

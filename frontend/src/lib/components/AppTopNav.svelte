@@ -3,15 +3,17 @@
 	import { page } from "$app/stores";
 	import { slide } from "svelte/transition";
 	import type { Snippet } from "svelte";
-	import { getMailboxService } from "$lib/services/mailboxService.svelte";
+	import { getMailboxService } from "$lib/services/mailboxServiceStore.svelte";
 	import { useRequestAdmin } from "$lib/services/requestAdminService.svelte";
 	import { onMount, onDestroy } from "svelte";
 	import { toastStore } from "$lib/services/toastService.svelte";
-	import { getEmailService } from "$lib/services/emailService.svelte";
+	import { getEmailService } from "$lib/services/emailServiceStore.svelte";
 	import { updateStore } from "$lib/services/updateService.svelte";
 	import { pb } from "$lib/services/pocketbase";
 	import { orgaStore } from "$lib/stores/orgaStore.svelte";
 	import NotificationSettingsModal from "$lib/components/NotificationSettingsModal.svelte";
+	import AppointmentRequestsModal from "$lib/components/AppointmentRequestsModal.svelte";
+	import UpdateLogModal from "$lib/components/UpdateLogModal.svelte";
 
 	let { items = [] } = $props<{
 		items?: Array<{ label: string; href: string; icon: Snippet; roles?: string[] }>;
@@ -22,6 +24,7 @@
 	let isDarkMode = $state(false);
 
 	let isGodMode = $derived(pb.authStore.isSuperuser || pb.authStore.model?.role === 'superadmin');
+	let isAdmin = $derived(isGodMode || pb.authStore.model?.role === 'admin');
 	let globalCompanyId = $state('all');
 
 	function updateGlobalCompany(e: Event) {
@@ -37,6 +40,7 @@
 
 	// Reaktive Variablen-Bindung für Svelte 5
 	let notificationModal: any = $state();
+	let requestsModal: any = $state();
 
 	function getNotifyPrefs() {
 		try { return JSON.parse(localStorage.getItem('orga_notify_prefs') || '{"requests":true,"emails":true,"chats":true,"updates":true}'); } 
@@ -50,13 +54,20 @@
 	let isNotificationsOpen = $state(false);
 	let syncInterval: any;
 
+	const requestsCallback = () => {
+		reqAdmin.init();
+	};
+
 	// PWA Standby-Fix: Läd Benachrichtigungen neu, sobald das Handy aufwacht
 	function handleResume() {
 		if (document.visibilityState === 'visible' && navigator.onLine) {
-			mailboxService.loadFolders(pb.authStore.model?.email);
 			reqAdmin.init();
-			emailService.syncEmails().catch(() => {});
 			
+			if (!isGodMode) {
+				mailboxService.loadFolders(pb.authStore.model?.id);
+				emailService.syncEmails().catch(() => {});
+			}
+
 			const isSuperAdmin = pb.authStore.isSuperuser || pb.authStore.model?.role === 'superadmin' || pb.authStore.model?.role === 'admin';
 			if (isSuperAdmin) {
 				updateStore.check();
@@ -82,8 +93,10 @@
 		window.addEventListener('global-company-changed', handleCompanySync);
 
 		// Initialer Ladevorgang für Badge-Counts im Hintergrund
-		mailboxService.loadFolders(pb.authStore.model?.email);
 		reqAdmin.init();
+		if (!isGodMode) {
+			mailboxService.loadFolders(pb.authStore.model?.id);
+		}
 		
 		// Update-Store prüfen (Admins only)
 		const isSuperAdmin = pb.authStore.isSuperuser || pb.authStore.model?.role === 'superadmin' || pb.authStore.model?.role === 'admin';
@@ -93,14 +106,19 @@
 
 		// Auto-Sync für neue E-Mails im Hintergrund (alle 2 Minuten)
 		syncInterval = setInterval(async () => {
-			try {
-				const res = await emailService.syncEmails();
-				if (res.synced_count > 0) {
-					// Aktualisiert den Zähler und löst die Toast-Nachricht aus!
-					mailboxService.loadFolders(pb.authStore.model?.email);
-				}
-			} catch (e) {}
+			if (!isGodMode) {
+				try {
+					const res = await emailService.syncEmails();
+					if (res.synced_count > 0) {
+						// Aktualisiert den Zähler und löst die Toast-Nachricht aus!
+						mailboxService.loadFolders(pb.authStore.model?.id);
+					}
+				} catch (e) {}
+			}
 		}, 2 * 60 * 1000);
+
+		// Live-Updates für Terminanfragen im Hintergrund
+		pb.collection('appointment_requests').subscribe('*', requestsCallback);
 
 		document.addEventListener('visibilitychange', handleResume);
 		window.addEventListener('focus', handleResume);
@@ -116,6 +134,8 @@
 		document.removeEventListener('visibilitychange', handleResume);
 		window.removeEventListener('focus', handleResume);
 		window.removeEventListener('online', handleResume);
+		
+		pb.collection('appointment_requests').unsubscribe('*');
 	});
 
 	function toggleTheme() {
@@ -132,14 +152,35 @@
 		return !readByArray.includes(pb.authStore.model?.id);
 	}) || false);
 
-	let totalNotifications = $derived(unreadMails + pendingRequests + (hasUnreadUpdates ? 1 : 0));
+	let pendingAdmissions = $derived.by(() => {
+		let list = (orgaStore.clients?.data || []).filter((c: any) => c.status === 'Inaktiv' && c.notes && c.notes.includes('NEUAUFNAHME-ANFRAGE'));
+		if (!isGodMode) {
+			const userCompanyId = pb.authStore.model?.company;
+			if (isAdmin && userCompanyId) {
+				list = list.filter((c: any) => {
+					const comp = c.company;
+					if (Array.isArray(comp)) return comp.includes(userCompanyId);
+					if (typeof comp === 'string' && comp.startsWith('[')) {
+						try { return JSON.parse(comp).includes(userCompanyId); } catch { return false; }
+					}
+					return comp === userCompanyId || (comp && comp.includes(userCompanyId));
+				});
+			} else {
+				return 0;
+			}
+		}
+		return list.length;
+	});
+
+	let totalNotifications = $derived(unreadMails + pendingRequests + pendingAdmissions + (hasUnreadUpdates ? 1 : 0));
 
 	let prevUnread = $state(-1);
 	let prevPending = $state(-1);
+	let prevAdmissions = $state(-1);
 	let hasNewNotifications = $state(false);
 
 	// Persistenter Speicher für bereits "gesehene" (quittierte) Benachrichtigungen
-	let ackData = $state({ mails: 0, reqs: 0, updates: false });
+	let ackData = $state({ mails: 0, reqs: 0, admissions: 0, updates: false });
 	if (typeof localStorage !== 'undefined') {
 		try {
 			const stored = localStorage.getItem('orga_ack_data');
@@ -151,7 +192,7 @@
 		isNotificationsOpen = !isNotificationsOpen;
 		if (isNotificationsOpen) {
 			// Wenn geöffnet wird, quittieren wir den aktuellen Stand als "gesehen"
-			ackData = { mails: unreadMails, reqs: pendingRequests, updates: hasUnreadUpdates };
+			ackData = { mails: unreadMails, reqs: pendingRequests, admissions: pendingAdmissions, updates: hasUnreadUpdates };
 			if (typeof localStorage !== 'undefined') localStorage.setItem('orga_ack_data', JSON.stringify(ackData));
 			hasNewNotifications = false;
 		}
@@ -184,15 +225,30 @@
 		}
 		prevPending = pendingRequests;
 
+		if (prevAdmissions !== -1 && pendingAdmissions > prevAdmissions) {
+			const newCount = pendingAdmissions - prevAdmissions;
+			toastStore.success(`Eine neue Klienten-Aufnahme ist eingetroffen!`);
+			const prefs = getNotifyPrefs();
+			if (prefs.requests !== false && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+				new Notification('Neue Klienten-Aufnahme 👤', {
+					body: `Sie haben ${newCount} neue Aufnahme-Anfrage(n) erhalten.`,
+					icon: '/favicon.png'
+				});
+			}
+		}
+		prevAdmissions = pendingAdmissions;
+
 		// Basislinie nach unten korrigieren (z.B. wenn eine Mail gelesen/gelöscht wurde)
 		if (unreadMails < ackData.mails) ackData.mails = unreadMails;
 		if (pendingRequests < ackData.reqs) ackData.reqs = pendingRequests;
+		if (pendingAdmissions < (ackData.admissions || 0)) ackData.admissions = pendingAdmissions;
 		if (!hasUnreadUpdates) ackData.updates = false;
 
 		// Gibt es ECHTE neue Benachrichtigungen, die unsere Basislinie übersteigen?
 		hasNewNotifications = 
 			unreadMails > ackData.mails || 
 			pendingRequests > ackData.reqs || 
+			pendingAdmissions > (ackData.admissions || 0) ||
 			(hasUnreadUpdates && !ackData.updates);
 			
 		if (typeof localStorage !== 'undefined') localStorage.setItem('orga_ack_data', JSON.stringify(ackData));
@@ -234,6 +290,11 @@
 					{/each}
 				</select>
 			{/if}
+			{#if isAdmin}
+				<a href="/portal" target="_blank" class="hidden md:flex items-center justify-center gap-1.5 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 text-sm font-bold rounded-lg px-3 py-1.5 shadow-sm transition-colors focus:ring-2 focus:ring-sky-500/20 outline-none" title="Klienten-Portal testen">
+					<span>📱</span> Portal
+				</a>
+			{/if}
 			<!-- Theme Toggle -->
 			<button 
 				class="hidden md:flex p-2 text-neutral-500 hover:text-indigo-600 transition-colors relative rounded-full hover:bg-neutral-100 outline-none items-center justify-center"
@@ -242,6 +303,22 @@
 				title="Tag/Nacht Modus umschalten"
 			>
 				<span class="text-xl leading-none">{isDarkMode ? '☀️' : '🌙'}</span>
+			</button>
+
+			<!-- Anfragen Modal Button -->
+			<button 
+				class="hidden md:flex p-2 text-neutral-500 hover:text-brand-600 transition-colors relative rounded-full hover:bg-neutral-100 outline-none items-center justify-center"
+				onclick={() => requestsModal?.open()}
+				aria-label="Anfragen"
+				title="Anfragen & Feedback anzeigen"
+			>
+				<span class="text-xl leading-none">📬</span>
+				{#if pendingRequests > 0}
+					<span class="absolute top-1.5 right-1.5 flex h-2.5 w-2.5">
+						<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-400 opacity-75"></span>
+						<span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-brand-500"></span>
+					</span>
+				{/if}
 			</button>
 
 			<!-- Benachrichtigungs-Glocke -->
@@ -275,22 +352,20 @@
 						</div>
 						<div class="max-h-[60vh] overflow-y-auto custom-scrollbar">
 							{#if totalNotifications === 0}
-								<div class="p-8 text-center flex flex-col items-center justify-center">
+								<div class="p-8 text-center flex flex-col items-center justify-center border-b border-neutral-50">
 									<span class="text-3xl mb-3 opacity-50">✨</span>
 									<p class="text-sm font-semibold text-neutral-900">Alles erledigt!</p>
 									<p class="text-xs text-neutral-500 mt-1">Du hast keine neuen Benachrichtigungen.</p>
 								</div>
-							{:else}
-								<div class="flex flex-col">
-									{#if hasUnreadUpdates}
-										<button type="button" onclick={() => { isNotificationsOpen = false; updateStore.open(); }} class="w-full text-left p-4 border-b border-neutral-50 hover:bg-neutral-50 transition-colors flex items-start gap-3 cursor-pointer">
-											<div class="w-10 h-10 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center shrink-0 shadow-inner text-xl">✨</div>
-											<div>
-												<p class="text-sm font-bold text-neutral-900">Neues System-Update</p>
-												<p class="text-xs text-neutral-500 mt-0.5">Erfahren Sie, was sich in OrgaFlow verändert hat.</p>
-											</div>
-										</button>
-									{/if}
+							{/if}
+							<div class="flex flex-col">
+								<button type="button" onclick={() => { isNotificationsOpen = false; updateStore.open(); }} class="w-full text-left p-4 border-b border-neutral-50 hover:bg-neutral-50 transition-colors flex items-start gap-3 cursor-pointer">
+									<div class="w-10 h-10 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center shrink-0 shadow-inner text-xl">✨</div>
+									<div>
+										<p class="text-sm font-bold text-neutral-900">{hasUnreadUpdates ? 'Neues System-Update' : 'System-Updates (Verlauf)'}</p>
+										<p class="text-xs text-neutral-500 mt-0.5">Erfahren Sie, was sich in OrgaFlow verändert hat.</p>
+									</div>
+								</button>
 									{#if unreadMails > 0}
 										<a href="/mail" onclick={() => isNotificationsOpen = false} class="p-4 border-b border-neutral-50 hover:bg-neutral-50 transition-colors flex items-start gap-3 cursor-pointer">
 											<div class="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 shadow-inner">✉️</div>
@@ -300,17 +375,25 @@
 											</div>
 										</a>
 									{/if}
-									{#if pendingRequests > 0}
-										<a href="/dashboard" onclick={() => isNotificationsOpen = false} class="p-4 hover:bg-neutral-50 transition-colors flex items-start gap-3 cursor-pointer">
+									{#if (Number(pendingRequests) || 0) > 0}
+										<button type="button" onclick={() => { isNotificationsOpen = false; requestsModal?.open(); }} class="w-full text-left p-4 hover:bg-neutral-50 transition-colors flex items-start gap-3 cursor-pointer">
 											<div class="w-10 h-10 rounded-full bg-brand-50 text-brand-600 flex items-center justify-center shrink-0 shadow-inner">📬</div>
 											<div>
 												<p class="text-sm font-bold text-neutral-900">{pendingRequests} Terminanfrage{pendingRequests > 1 ? 'n' : ''}</p>
-												<p class="text-xs text-neutral-500 mt-0.5">Neu auf dem Dashboard eingetroffen.</p>
+												<p class="text-xs text-neutral-500 mt-0.5">Klicken, um die Anfragen direkt zu bearbeiten.</p>
 											</div>
-										</a>
+										</button>
+									{/if}
+									{#if (Number(pendingAdmissions) || 0) > 0}
+										<button type="button" onclick={() => { isNotificationsOpen = false; requestsModal?.open(); }} class="w-full text-left p-4 hover:bg-neutral-50 transition-colors flex items-start gap-3 cursor-pointer">
+											<div class="w-10 h-10 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 shadow-inner">👤</div>
+											<div>
+												<p class="text-sm font-bold text-neutral-900">{pendingAdmissions} Neuaufnahme-Anfrage{pendingAdmissions > 1 ? 'n' : ''}</p>
+												<p class="text-xs text-neutral-500 mt-0.5">Klicken, um die Anfragen direkt zu bearbeiten.</p>
+											</div>
+										</button>
 									{/if}
 								</div>
-							{/if}
 						</div>
 						
 						<div class="p-3 border-t border-neutral-100 bg-neutral-50 flex justify-center shrink-0">
@@ -342,16 +425,18 @@
 			<!-- Kompaktes Grid-Layout wie auf dem Homescreen von Handys, um vertikalen Platz massiv zu sparen -->
 			<div class="grid grid-cols-3 sm:grid-cols-4 gap-2 px-4 max-h-[70vh] overflow-y-auto custom-scrollbar pb-2">
 				{#each items as item}
-					<a
-						href={item.href}
-						class="flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl transition-all font-semibold text-[10px] sm:text-xs text-center {currentPath.startsWith(item.href) ? 'bg-indigo-50 text-indigo-700 shadow-sm border border-indigo-100 ring-1 ring-indigo-500/10' : 'text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900 border border-transparent'}"
-						onclick={() => isMobileMenuOpen = false}
-					>
-						<span class="w-6 h-6 shrink-0 {currentPath.startsWith(item.href) ? 'text-indigo-600' : 'opacity-70'}">
-							{@render item.icon()}
-						</span>
-						<span class="truncate w-full mt-1">{item.label}</span>
-					</a>
+					{#if item.label !== 'System-Admin' || isGodMode}
+						<a
+							href={item.href}
+							class="flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl transition-all font-semibold text-[10px] sm:text-xs text-center {currentPath.startsWith(item.href) ? 'bg-indigo-50 text-indigo-700 shadow-sm border border-indigo-100 ring-1 ring-indigo-500/10' : 'text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900 border border-transparent'}"
+							onclick={() => isMobileMenuOpen = false}
+						>
+							<span class="w-6 h-6 shrink-0 {currentPath.startsWith(item.href) ? 'text-indigo-600' : 'opacity-70'}">
+								{@render item.icon()}
+							</span>
+							<span class="truncate w-full mt-1">{item.label}</span>
+						</a>
+					{/if}
 				{/each}
 
 			<!-- Mobile Theme Toggle -->
@@ -362,6 +447,12 @@
 				<span class="w-6 h-6 shrink-0 opacity-70 flex items-center justify-center text-lg leading-none">{isDarkMode ? '☀️' : '🌙'}</span>
 				<span class="truncate w-full mt-1">{isDarkMode ? 'Tag-Modus' : 'Nacht-Modus'}</span>
 			</button>
+			{#if isAdmin}
+				<a href="/portal" target="_blank" class="flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl transition-all font-semibold text-[10px] sm:text-xs text-center text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200 shadow-sm" onclick={() => isMobileMenuOpen = false}>
+					<span class="w-6 h-6 shrink-0 flex items-center justify-center text-lg leading-none">📱</span>
+					<span class="truncate w-full mt-1">Portal</span>
+				</a>
+			{/if}
 			</div>
 		</nav>
 	{/if}
@@ -374,3 +465,5 @@
 {/if}
 
 <NotificationSettingsModal bind:this={notificationModal} />
+<AppointmentRequestsModal bind:this={requestsModal} />
+<UpdateLogModal />

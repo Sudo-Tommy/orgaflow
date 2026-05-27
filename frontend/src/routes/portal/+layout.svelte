@@ -38,14 +38,6 @@
                     <span class="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-[10px] font-bold rounded-full ml-2 hidden sm:inline-block">ADMIN</span>
                 {/if}
             </div>
-            
-            <!-- Desktop Navigation (wird auf der reinen Login-Seite ausgeblendet) -->
-            {#if !isPortalLogin}
-                <nav class="hidden md:flex items-center gap-2">
-                    <a href="/portal/invoices" class="px-3 py-2 text-sm font-bold rounded-lg transition-colors {currentPath.includes('/invoices') ? 'bg-brand-50 text-brand-700' : 'text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900'}">Rechnungen</a>
-                    <a href="/portal/appointments" class="px-3 py-2 text-sm font-bold rounded-lg transition-colors {currentPath.includes('/appointments') ? 'bg-brand-50 text-brand-700' : 'text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900'}">Meine Termine</a>
-                </nav>
-            {/if}
         </div>
         <div class="flex items-center gap-2 sm:gap-3">
             {#if isAdminMode}
@@ -62,7 +54,7 @@
     <!-- Mobile Navigation -->
     {#if !isPortalLogin}
         <div class="md:hidden flex bg-white border-b border-neutral-200 sticky top-15.25 sm:top-18.25 z-30 shadow-sm">
-            <a href="/portal/invoices" class="flex-1 py-3 text-center text-sm font-bold border-b-2 transition-colors {currentPath.includes('/invoices') ? 'border-brand-600 text-brand-700 bg-brand-50/30' : 'border-transparent text-neutral-500 hover:bg-neutral-50'}">Rechnungen</a>
+            <a href="/portal/overview" class="flex-1 py-3 text-center text-sm font-bold border-b-2 transition-colors {currentPath.includes('/overview') ? 'border-brand-600 text-brand-700 bg-brand-50/30' : 'border-transparent text-neutral-500 hover:bg-neutral-50'}">Rechnungen</a>
             <a href="/portal/appointments" class="flex-1 py-3 text-center text-sm font-bold border-b-2 transition-colors {currentPath.includes('/appointments') ? 'border-brand-600 text-brand-700 bg-brand-50/30' : 'border-transparent text-neutral-500 hover:bg-neutral-50'}">Meine Termine</a>
         </div>
     {/if}

@@ -33,11 +33,11 @@ export function createMailboxService() {
   let selectedFolderPath = $state<string>('INBOX');
 
   const selectedFolder = $derived.by(() => {
-    return folders.find(f => f.folder_path === selectedFolderPath) || folders[0];
+    return folders.find((f: MailboxFolder) => f.folder_path === selectedFolderPath) || folders[0];
   });
 
   const totalUnread = $derived.by(() => {
-    return folders.reduce((sum, f) => sum + (f.unread_count || 0), 0);
+    return folders.reduce((sum: number, f: MailboxFolder) => sum + (f.unread_count || 0), 0);
   });
 
   return {
@@ -155,7 +155,7 @@ export function createMailboxService() {
         );
 
         // Update in local state
-        const index = folders.findIndex(f => f.id === folderId);
+        const index = folders.findIndex((f: MailboxFolder) => f.id === folderId);
         if (index !== -1) {
           folders[index] = updated;
         }
@@ -176,7 +176,7 @@ export function createMailboxService() {
       error = null;
       try {
         await pb.collection('mailboxFolders').delete(folderId);
-        folders = folders.filter(f => f.id !== folderId);
+        folders = folders.filter((f: MailboxFolder) => f.id !== folderId);
       } catch (err) {
         error = err instanceof Error ? err.message : 'Failed to delete folder';
         console.error('[Mailbox] Delete error:', error);

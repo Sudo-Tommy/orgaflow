@@ -35,24 +35,24 @@ export class OrgaLiveCollection<T extends BaseRecord> {
                 expand: this.options.expand
             });
 
-            // 2. Realtime-Subscription einrichten
-            // WICHTIG: expand muss auch beim subscribe mitgegeben werden, 
-            // sonst fehlen die Relation-Daten bei einem Live-Update!
+            const subOptions: any = {};
+            if (this.options.expand) subOptions.expand = this.options.expand;
+            if (this.options.filter) subOptions.filter = this.options.filter;
+
             await pb.collection(this.collectionName).subscribe<T>('*', (e) => {
                 if (e.action === 'create') {
-                    // Svelte 5 Arrays sind deeply reactive, push funktioniert direkt
-                    this.data.push(e.record);
+                    this.data.push(e.record as T);
                 } else if (e.action === 'update') {
                     const index = this.data.findIndex(item => item.id === e.record.id);
                     if (index !== -1) {
-                        this.data[index] = e.record;
+                        // Sofortiges Update mit intelligentem Fallback für das alte 'expand' Objekt.
+                        // Verhindert Flackern/Verschwinden von Relationen, komplett ohne Server-Überlastung!
+                        this.data[index] = { ...e.record, expand: e.record.expand || this.data[index].expand } as T;
                     }
                 } else if (e.action === 'delete') {
                     this.data = this.data.filter(item => item.id !== e.record.id);
                 }
-            }, {
-                expand: this.options.expand
-            });
+            }, Object.keys(subOptions).length > 0 ? subOptions : undefined);
 
             this.isInitialized = true;
         } catch (err: any) {

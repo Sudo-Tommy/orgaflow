@@ -15,6 +15,7 @@ export interface SendEmailPayload {
 }
 
 export interface EmailMessage {
+    attachments?: Array<{ filename: string; content: string; contentType: string }>;
     uid: string;
     subject: string;
     from: string;

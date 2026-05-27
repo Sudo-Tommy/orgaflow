@@ -39,7 +39,7 @@ export function useRequestAdmin() {
             };
 
             pb.collection('appointment_requests').subscribe('*', subscriptionCallback, {
-                filter: filterStr // Realtime-Updates auch filtern!
+                filter: filterStr, requestKey: null // Realtime-Updates auch filtern und nicht auto-cancelln!
             });
         } catch(e) {
             console.error("Fehler beim Laden der Anfragen:", e);

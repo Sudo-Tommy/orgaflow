@@ -1,7 +1,7 @@
 <script lang="ts">
     import { orgaStore } from "$lib/stores/orgaStore.svelte";
     import { useClientFilter } from "$lib/services/clientFilterService.svelte";
-    import ClientDetailModal from "$lib/components/ClientDetailModal.svelte";
+    import ClientDetailModal from "$lib/components/clients/ClientDetailModal.svelte";
     import { pb } from "$lib/services/pocketbase";
     import { onMount } from "svelte";
 
@@ -95,6 +95,7 @@
                             <tr>
                                 <th class="p-4 font-bold text-neutral-500 text-xs uppercase tracking-wider">Klient</th>
                                 <th class="p-4 font-bold text-neutral-500 text-xs uppercase-tracking-wider">Kontakt</th>
+                                <th class="p-4 font-bold text-neutral-500 text-xs uppercase tracking-wider">Notizen</th>
                                 <th class="p-4 font-bold text-neutral-500 text-xs uppercase tracking-wider">Status</th>
                                 <th class="p-4 font-bold text-neutral-500 text-xs uppercase tracking-wider">Pflegegrad</th>
                             </tr>
@@ -116,6 +117,15 @@
                                     <td class="p-4 text-sm text-neutral-600">
                                         <p>{client.email || '-'}</p>
                                         <p class="text-xs">{client.phone || ''}</p>
+                                    </td>
+                                    <td class="p-4">
+                                        {#if client.notes}
+                                            <div class="bg-amber-50 text-amber-800 text-xs p-2 rounded-lg border border-amber-100/50 line-clamp-2 max-w-[16rem] leading-relaxed" title={client.notes}>
+                                                {client.notes}
+                                            </div>
+                                        {:else}
+                                            <span class="text-neutral-300">-</span>
+                                        {/if}
                                     </td>
                                     <td class="p-4">
                                         <span class="px-2.5 py-1 text-xs font-bold rounded-full {(client.status || '').toLowerCase() === 'aktiv' ? 'bg-emerald-100 text-emerald-700' : 'bg-neutral-100 text-neutral-600'}">
@@ -149,16 +159,21 @@
                                     {(client.status || 'Unbekannt')}
                                 </span>
                             </div>
-                            <div class="flex items-center justify-between gap-4 pl-13">
-                                <div class="text-xs text-neutral-600">
+                            <div class="flex items-start justify-between gap-4 pl-13">
+                                <div class="text-xs text-neutral-600 flex-1 min-w-0">
                                 {#if client.level_of_care}
                                     <p><span class="font-semibold">Pflegegrad:</span> {client.level_of_care}</p>
                                 {/if}
                                 {#if client.phone}
                                     <p class="mt-1"><span class="font-semibold">Telefon:</span> {client.phone}</p>
                                 {/if}
+                                {#if client.notes}
+                                    <div class="mt-2 bg-amber-50 text-amber-800 p-2 rounded-lg border border-amber-100/50">
+                                        <p class="line-clamp-2 leading-relaxed">{client.notes}</p>
+                                    </div>
+                                {/if}
                                 </div>
-                                <span class="text-indigo-600 text-xs font-bold">&rarr;</span>
+                                <span class="text-indigo-600 text-xs font-bold shrink-0 self-center">&rarr;</span>
                             </div>
                         </button>
                     {/each}
