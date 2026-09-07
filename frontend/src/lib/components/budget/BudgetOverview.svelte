@@ -1284,7 +1284,7 @@
     <!-- ========================================================================= -->
     <!-- 1. FINANZ-DASHBOARD & KENNZAHLEN FÜR GEWÄHLTEN MONAT                       -->
     <!-- ========================================================================= -->
-    <header class="relative w-full space-y-3 pb-3 border-b border-slate-200/80 dark:border-slate-800">
+    <header class="sticky top-0 z-30 w-full space-y-3 pb-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 shadow-2xs">
         <div class="w-full space-y-3">
             <!-- Titel- & Aktionsleiste -->
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1546,16 +1546,41 @@
                     </select>
                 </div>
 
-                <!-- Ansichts-Filter: Monat | Quartal | Jahr | Gesamt -->
+                <!-- Zeitraum-Umschalter: Dieser Monat | Letzter Monat | Quartal | Jahr -->
                 <div class="inline-flex rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
                     <button
                         type="button"
-                        onclick={() => (timeFilter = 'month')}
-                        class="min-h-[44px] px-3 py-1 text-xs sm:text-sm font-semibold rounded-lg transition-all cursor-pointer {timeFilter === 'month' || timeFilter === 'this_month'
+                        onclick={() => {
+                            timeFilter = 'this_month';
+                            const now = new Date();
+                            selectedYear = now.getFullYear();
+                            selectedMonth = now.getMonth() + 1;
+                        }}
+                        class="min-h-[44px] px-3 py-1 text-xs sm:text-sm font-semibold rounded-lg transition-all cursor-pointer {timeFilter === 'this_month' || (timeFilter === 'month' && selectedYear === new Date().getFullYear() && selectedMonth === (new Date().getMonth() + 1))
                             ? 'bg-white text-indigo-600 shadow-2xs dark:bg-slate-900 dark:text-indigo-400'
                             : 'text-slate-600 hover:text-slate-900 dark:text-slate-400'}"
                     >
-                        Monat
+                        Dieser Monat
+                    </button>
+                    <button
+                        type="button"
+                        onclick={() => {
+                            timeFilter = 'last_month';
+                            const now = new Date();
+                            let y = now.getFullYear();
+                            let m = now.getMonth();
+                            if (m === 0) {
+                                m = 12;
+                                y--;
+                            }
+                            selectedYear = y;
+                            selectedMonth = m;
+                        }}
+                        class="min-h-[44px] px-3 py-1 text-xs sm:text-sm font-semibold rounded-lg transition-all cursor-pointer {timeFilter === 'last_month'
+                            ? 'bg-white text-indigo-600 shadow-2xs dark:bg-slate-900 dark:text-indigo-400'
+                            : 'text-slate-600 hover:text-slate-900 dark:text-slate-400'}"
+                    >
+                        Letzter Monat
                     </button>
                     <button
                         type="button"
@@ -1564,7 +1589,7 @@
                             ? 'bg-white text-indigo-600 shadow-2xs dark:bg-slate-900 dark:text-indigo-400'
                             : 'text-slate-600 hover:text-slate-900 dark:text-slate-400'}"
                     >
-                        Q{Math.ceil(selectedMonth / 3)}
+                        Quartal
                     </button>
                     <button
                         type="button"
@@ -1573,16 +1598,7 @@
                             ? 'bg-white text-indigo-600 shadow-2xs dark:bg-slate-900 dark:text-indigo-400'
                             : 'text-slate-600 hover:text-slate-900 dark:text-slate-400'}"
                     >
-                        Gesamtjahr
-                    </button>
-                    <button
-                        type="button"
-                        onclick={() => (timeFilter = 'all')}
-                        class="min-h-[44px] px-3 py-1 text-xs sm:text-sm font-semibold rounded-lg transition-all cursor-pointer {timeFilter === 'all'
-                            ? 'bg-white text-indigo-600 shadow-2xs dark:bg-slate-900 dark:text-indigo-400'
-                            : 'text-slate-600 hover:text-slate-900 dark:text-slate-400'}"
-                    >
-                        Alle
+                        Jahr
                     </button>
                 </div>
             </div>
@@ -1667,6 +1683,7 @@
         <div class="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar -mx-2 px-2">
             <span class="shrink-0 text-xs font-semibold text-slate-500 dark:text-slate-400 pr-1">Filter:</span>
 
+            <!-- Filter 1: Alle -->
             <button
                 type="button"
                 onclick={() => (statusFilter = 'all')}
@@ -1674,10 +1691,46 @@
                     ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 shadow-2xs'
                     : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'}"
             >
-                Alle Einträge ({entries.length})
+                Alle ({entries.length})
             </button>
 
-            <!-- Filter: Nur Rechnungen -->
+            <!-- Filter 2: Nur Offene -->
+            <button
+                type="button"
+                onclick={() => (statusFilter = 'open')}
+                class="inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-sm font-medium transition-all cursor-pointer {statusFilter === 'open'
+                    ? 'bg-amber-600 text-white shadow-2xs'
+                    : 'bg-amber-50 text-amber-800 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-900/60'}"
+            >
+                <Clock class="h-4 w-4" />
+                <span>Nur Offene</span>
+            </button>
+
+            <!-- Filter 3: Bereits Bezahlt -->
+            <button
+                type="button"
+                onclick={() => (statusFilter = 'paid')}
+                class="inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-sm font-medium transition-all cursor-pointer {statusFilter === 'paid'
+                    ? 'bg-emerald-600 text-white shadow-2xs'
+                    : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-900/60'}"
+            >
+                <CheckCircle2 class="h-4 w-4" />
+                <span>Bereits Bezahlt</span>
+            </button>
+
+            <!-- Filter 4: Verträge -->
+            <button
+                type="button"
+                onclick={() => (statusFilter = 'contracts')}
+                class="inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-sm font-medium transition-all cursor-pointer {statusFilter === 'contracts'
+                    ? 'bg-purple-600 text-white shadow-2xs'
+                    : 'bg-purple-50 text-purple-800 hover:bg-purple-100 dark:bg-purple-950/40 dark:text-purple-300 dark:hover:bg-purple-900/60'}"
+            >
+                <Repeat class="h-4 w-4" />
+                <span>Verträge ({contracts.length})</span>
+            </button>
+
+            <!-- Filter 5: Kundenrechnungen -->
             <button
                 type="button"
                 onclick={() => (statusFilter = 'invoices')}
@@ -1686,10 +1739,22 @@
                     : 'bg-teal-50 text-teal-800 hover:bg-teal-100 dark:bg-teal-950/40 dark:text-teal-300 dark:hover:bg-teal-900/60'}"
             >
                 <FileCheck class="h-4 w-4" />
-                <span>Kundenrechnungen ({totals.invoicesCount})</span>
+                <span>Rechnungen ({totals.invoicesCount})</span>
             </button>
 
-            <!-- Filter: Überfällige Rückstände aus Vormonaten -->
+            <!-- Filter 6: Ratenzahlungen -->
+            <button
+                type="button"
+                onclick={() => (statusFilter = 'installments')}
+                class="inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-sm font-medium transition-all cursor-pointer {statusFilter === 'installments'
+                    ? 'bg-indigo-600 text-white shadow-2xs'
+                    : 'bg-indigo-50 text-indigo-800 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:text-indigo-300 dark:hover:bg-indigo-900/60'}"
+            >
+                <Layers class="h-4 w-4" />
+                <span>Raten ({totals.installmentsCount})</span>
+            </button>
+
+            <!-- Filter 7: Überfällige Rückstände aus Vormonaten -->
             {#if totals.arrearsCount > 0}
                 <button
                     type="button"
@@ -1703,54 +1768,6 @@
                     <span>⚠️ Rückstände ({totals.arrearsCount})</span>
                 </button>
             {/if}
-
-            <!-- Filter: Nur Offene -->
-            <button
-                type="button"
-                onclick={() => (statusFilter = 'open')}
-                class="inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-sm font-medium transition-all cursor-pointer {statusFilter === 'open'
-                    ? 'bg-amber-600 text-white shadow-2xs'
-                    : 'bg-amber-50 text-amber-800 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-900/60'}"
-            >
-                <Clock class="h-4 w-4" />
-                <span>Nur Offene</span>
-            </button>
-
-            <!-- Filter: Bereits Bezahlt -->
-            <button
-                type="button"
-                onclick={() => (statusFilter = 'paid')}
-                class="inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-sm font-medium transition-all cursor-pointer {statusFilter === 'paid'
-                    ? 'bg-emerald-600 text-white shadow-2xs'
-                    : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-900/60'}"
-            >
-                <CheckCircle2 class="h-4 w-4" />
-                <span>Bereits Bezahlt</span>
-            </button>
-
-            <!-- Filter: Ratenzahlungen -->
-            <button
-                type="button"
-                onclick={() => (statusFilter = 'installments')}
-                class="inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-sm font-medium transition-all cursor-pointer {statusFilter === 'installments'
-                    ? 'bg-indigo-600 text-white shadow-2xs'
-                    : 'bg-indigo-50 text-indigo-800 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:text-indigo-300 dark:hover:bg-indigo-900/60'}"
-            >
-                <Layers class="h-4 w-4" />
-                <span>Ratenzahlungen ({totals.installmentsCount})</span>
-            </button>
-
-            <!-- Filter: Laufende Verträge -->
-            <button
-                type="button"
-                onclick={() => (statusFilter = 'contracts')}
-                class="inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-sm font-medium transition-all cursor-pointer {statusFilter === 'contracts'
-                    ? 'bg-purple-600 text-white shadow-2xs'
-                    : 'bg-purple-50 text-purple-800 hover:bg-purple-100 dark:bg-purple-950/40 dark:text-purple-300 dark:hover:bg-purple-900/60'}"
-            >
-                <Repeat class="h-4 w-4" />
-                <span>Laufende Verträge ({contracts.length})</span>
-            </button>
         </div>
     </div>
 

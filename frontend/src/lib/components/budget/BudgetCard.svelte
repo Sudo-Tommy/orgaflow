@@ -28,10 +28,8 @@
         RotateCcw,
         Layers,
         PlusCircle,
-        Percent,
         Check,
         FileCheck,
-        Sparkles,
         AlertTriangle,
         Zap,
         ListTree
@@ -144,11 +142,19 @@
     <div class="space-y-3 pl-1.5">
         <div class="flex items-start justify-between gap-3">
             <div class="min-w-0 flex-1">
-                <!-- Empfänger / Zahler (fett hervorgehoben) -->
+                <!-- Empfänger / Zahler (fett hervorgehoben) & Kategorie-Badge mit Icon -->
                 <div class="flex flex-wrap items-center gap-2">
                     <h3 class="truncate text-base font-bold text-slate-900 sm:text-lg dark:text-slate-100" title={entry.recipient_or_payer}>
                         {entry.recipient_or_payer || 'Unbekannter Partner'}
                     </h3>
+
+                    <!-- Kategorie-Badge mit Icon direkt im Kopfbereich -->
+                    <div
+                        class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium {categoryMeta.color}"
+                    >
+                        <Tag class="h-3 w-3" />
+                        <span>{categoryMeta.name}</span>
+                    </div>
 
                     <!-- Automatische Kundenrechnung Badge -->
                     {#if entry.is_invoice || entry.source === 'accounting'}
@@ -185,7 +191,7 @@
                 </div>
 
                 <!-- Titel / Verwendungszweck -->
-                <p class="mt-0.5 truncate text-sm font-medium text-slate-600 dark:text-slate-400" title={entry.title}>
+                <p class="mt-1 truncate text-sm font-medium text-slate-600 dark:text-slate-400" title={entry.title}>
                     {entry.title}
                 </p>
                 {#if entry.description && entry.description !== entry.title}
@@ -195,7 +201,7 @@
                 {/if}
             </div>
 
-            <!-- Betrag & Buchungstyp (Eindeutig farblich kodiert) -->
+            <!-- Betrag & Buchungstyp (Groß farblich hervorgehoben: + Grün / − Rot) -->
             <div class="flex flex-col items-end text-right shrink-0">
                 <div
                     class="flex items-center gap-1 text-lg font-bold tracking-tight sm:text-xl tabular-nums {entry.type === 'income'
@@ -284,15 +290,15 @@
             </div>
         {/if}
 
-        <!-- BADGES LEISTE: Status & Kategorie -->
+        <!-- BADGES LEISTE: Status-Badge (Sofort erkennbar) -->
         <div class="flex flex-wrap items-center gap-2 pt-0.5">
             <!-- Status-Badge (Sofort erkennbar) -->
             {#if entry.payment_status === 'paid'}
                 <div
-                    class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold {statusMeta.badgeClass}"
+                    class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800"
                     title={`Bezahlt am ${formatDate(entry.paid_at || entry.invoice_date)}`}
                 >
-                    <span class="h-2 w-2 rounded-full {statusMeta.dotClass}"></span>
+                    <span class="h-2 w-2 rounded-full bg-emerald-500"></span>
                     <CheckCircle2 class="h-3.5 w-3.5" />
                     <span>Bezahlt am {formatDate(entry.paid_at || entry.invoice_date)}</span>
                 </div>
@@ -300,18 +306,18 @@
                 <div
                     class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold {isArrear || dueDateInfo.isOverdue
                         ? 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-800'
-                        : statusMeta.badgeClass}"
+                        : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800'}"
                     title={dueDateInfo.label}
                 >
                     <span
-                        class="h-2 w-2 rounded-full {isArrear || dueDateInfo.isOverdue ? 'bg-red-500 animate-pulse' : statusMeta.dotClass}"
+                        class="h-2 w-2 rounded-full {isArrear || dueDateInfo.isOverdue ? 'bg-red-500 animate-pulse' : 'bg-amber-500'}"
                     ></span>
                     <Clock class="h-3.5 w-3.5" />
                     <span>
                         {#if isArrear}
                             Rückstand ({formatDate(entry.invoice_date || entry.due_date)})
                         {:else if entry.due_date}
-                            {dueDateInfo.label}
+                            Fällig am {formatDate(entry.due_date)}
                         {:else}
                             Fällig (Ohne Frist)
                         {/if}
@@ -319,23 +325,15 @@
                 </div>
             {:else}
                 <div
-                    class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold {statusMeta.badgeClass}"
+                    class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800"
                 >
-                    <span class="h-2 w-2 rounded-full {statusMeta.dotClass}"></span>
+                    <span class="h-2 w-2 rounded-full bg-sky-500"></span>
                     <CalendarClock class="h-3.5 w-3.5" />
-                    <span>Vorgemerkt / Dauerauftrag</span>
+                    <span>Vorgemerkt</span>
                 </div>
             {/if}
 
-            <!-- Kategorie-Badge mit Icon -->
-            <div
-                class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium {categoryMeta.color}"
-            >
-                <Tag class="h-3 w-3" />
-                <span>{categoryMeta.name}</span>
-            </div>
-
-            <!-- Zusätzlicher Steuer-Badge falls bei Rechnung vorhanden -->
+            <!-- Zusätzlicher Steuer-Badge falls vorhanden -->
             {#if entry.tax_rate && entry.tax_rate !== '0'}
                 <span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                     {entry.tax_rate}% MwSt
@@ -352,9 +350,9 @@
                 <FileText class="h-3.5 w-3.5 shrink-0 text-slate-500 dark:text-slate-400" />
                 <span class="truncate">
                     {#if entry.invoice_number}
-                        <strong class="font-medium text-slate-800 dark:text-slate-200">Rechnung:</strong> #{entry.invoice_number}
+                        <strong class="font-medium text-slate-800 dark:text-slate-200">Rechnung #{entry.invoice_number}</strong>
                     {:else}
-                        <span class="text-slate-500 dark:text-slate-400">Ohne Beleg-Nr.</span>
+                        <span class="text-slate-500 dark:text-slate-400">Ohne Beleg</span>
                     {/if}
                 </span>
             </div>
@@ -387,7 +385,7 @@
 
     <!-- UNTERER BEREICH / DAUMENZONE: Schnellaktionen per 1-Tap (min 44x44 px Touch-Target) -->
     <div class="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 pl-1.5 dark:border-slate-800">
-        <!-- 1-Tap Hauptaktion: Zahlungsstatus umschalten, Rückstand nachholen oder Folge-Rate erfassen -->
+        <!-- 1-Tap Hauptaktion: Zahlungsstatus umschalten („Als bezahlt markieren“) -->
         <div class="flex flex-wrap items-center gap-2 flex-1 sm:flex-initial">
             {#if entry.payment_status === 'paid'}
                 <button
@@ -407,7 +405,7 @@
                     title="Jetzt überweisen und mit heutigem Wertstellungsdatum verbuchen"
                 >
                     <Zap class="h-4 w-4" />
-                    <span>Jetzt im aktuellen Monat nachholen</span>
+                    <span>Jetzt nachholen</span>
                 </button>
             {:else}
                 <button
