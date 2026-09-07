@@ -3,9 +3,12 @@ import { env } from '$env/dynamic/public';
 
 // Im Entwicklungsmodus (npm run dev) greift SvelteKit auf Port 8090 zu.
 // Im Live-Betrieb (Build in pb_public) läuft SvelteKit über PocketBase selbst, daher reicht ein relativer Pfad ("/").
-const pbUrl = import.meta.env.DEV ? (env.PUBLIC_POCKETBASE_URL || 'http://127.0.0.1:8090') : '/';
+const pbUrl = import.meta.env.DEV 
+    ? (env.PUBLIC_POCKETBASE_URL && env.PUBLIC_POCKETBASE_URL.startsWith('https') ? env.PUBLIC_POCKETBASE_URL : (env.PUBLIC_POCKETBASE_URL || 'http://127.0.0.1:8090')) 
+    : '/';
 
 export const pb = new PocketBase(pbUrl);
+pb.autoCancellation(false);
 
 // Funktion, um die PocketBase-Session am Leben zu halten
 export function keepPocketBaseAlive() {
@@ -40,8 +43,8 @@ pb.beforeSend = async function (url, options) {
         options = res.reqOpts ?? res.options ?? options;
     }
 
-    // Wir loggen nur Mutationen (POST, PUT, PATCH, DELETE), keine reinen Leseabfragen (GET)
-    if (options.method && options.method !== 'GET') {
+    // Wir loggen nur Mutationen (POST, PUT, PATCH, DELETE), keine reinen Leseabfragen (GET) und keine internen Realtime-Pings
+    if (options.method && options.method !== 'GET' && !url.includes('/api/realtime')) {
         try {
             let payloadData = options.body;
             
@@ -55,7 +58,7 @@ pb.beforeSend = async function (url, options) {
             // Relative URL für den Microservice generieren (Lokal vs. Live)
             const microserviceUrl = (typeof window !== 'undefined' && !window.location.hostname.includes('ihre-seniorenassistenz.com')) 
                 ? `http://${window.location.hostname}:3000/portal/frontend-audit` 
-                : '/api/emails/portal/frontend-audit';
+                : 'https://ihre-seniorenassistenz.com/api/emails/portal/frontend-audit';
 
             // Heimlich im Hintergrund ("Fire & Forget") an den Express Server schicken
             fetch(microserviceUrl, {

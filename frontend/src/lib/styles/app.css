@@ -1,0 +1,2 @@
+/* Re-export of root app.css for library styles compatibility */
+@import "../../app.css";

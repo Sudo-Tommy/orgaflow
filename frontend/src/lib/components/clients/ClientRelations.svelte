@@ -10,9 +10,12 @@
     import PdfPreviewModal from "$lib/components/PdfPreviewModal.svelte";
     import InvoiceEmailModal from "$lib/components/invoices/InvoiceEmailModal.svelte";
     import DocumentGeneratorModal from "$lib/components/DocumentGeneratorModal.svelte";
+    import ClientEditContactRelationModal from "./ClientEditContactRelationModal.svelte";
     import { pb } from "$lib/services/pocketbase";
     import { toastStore } from "$lib/services/toastService.svelte";
     import { confirmStore } from "$lib/services/confirmService.svelte";
+    import { Link2Off, Edit3 } from "lucide-svelte";
+  import ClientInvoicesWidget from "./ClientInvoicesWidget.svelte";
 
     let { clientId } = $props<{ clientId: string }>();
 
@@ -51,6 +54,8 @@
     let emailModal: ReturnType<typeof InvoiceEmailModal>;
     // svelte-ignore non_reactive_update
     let docGenModal: ReturnType<typeof DocumentGeneratorModal>;
+    // svelte-ignore non_reactive_update
+    let relationEditModal: ReturnType<typeof ClientEditContactRelationModal>;
     
     let fileInput: HTMLInputElement;
     let isUploading = $state(false);
@@ -101,7 +106,8 @@
     function previewDocument(e: Event, docFileName: string) {
         e.preventDefault();
         if (!clientData) return;
-        const url = pb.files.getURL(clientData as any, docFileName);
+        let url = pb.files.getURL(clientData as any, docFileName);
+        if (pb.authStore.token) url += (url.includes('?') ? '&' : '?') + 'token=' + pb.authStore.token;
         const lowerName = docFileName.toLowerCase();
         if (lowerName.endsWith('.pdf') || /\.(jpg|jpeg|png|gif|webp)$/i.test(lowerName)) {
             pdfPreviewModal?.open(url, 'Klienten-Akte', docFileName);
@@ -184,6 +190,92 @@
             isUploading = false;
         }
     }
+
+    function getContactRelationData(contactId: string) {
+        const rels = clientData?.contact_relations;
+        if (!rels || !rels[contactId]) return null;
+        const data = rels[contactId];
+        if (typeof data === 'string') return { relation: data, is_primary: false, has_power_of_attorney: false };
+        return data;
+    }
+
+    async function unlinkContact(contactId: string, contactName: string) {
+        if (!(await confirmStore.ask(
+            `Möchten Sie die Verknüpfung zu "${contactName}" wirklich aufheben?\n\nDer Kontakt bleibt im Adressbuch erhalten und wird lediglich von dieser Klienten-Akte getrennt.`,
+            "Verknüpfung aufheben?",
+            "Verknüpfung aufheben",
+            "Abbrechen",
+            true
+        ))) return;
+
+        try {
+            const existingIds = Array.isArray(clientData?.contacts) ? clientData.contacts : (clientData?.contacts ? [clientData.contacts] : []);
+            const updatedContacts = existingIds.filter((id: string) => id !== contactId);
+            
+            const currentRelations = { ...(clientData?.contact_relations || {}) };
+            delete currentRelations[contactId];
+
+            await pb.collection('clients').update(clientId, {
+                contacts: updatedContacts,
+                contact_relations: currentRelations
+            });
+
+            setTimeout(async () => {
+                const updatedClient = await pb.collection('clients').getOne(clientId, { 
+                    expand: 'insurance,retirement_homes,contacts,caregiver,inheritor', 
+                    requestKey: null 
+                }) as any;
+                const index = orgaStore.clients?.data.findIndex((c: any) => c.id === clientId) ?? -1;
+                if (index !== -1 && orgaStore.clients) orgaStore.clients.data[index] = updatedClient;
+            }, 300);
+
+            if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+                try { navigator.vibrate(40); } catch {}
+            }
+
+            toastStore.success(`Verknüpfung zu "${contactName}" aufgehoben.`);
+        } catch (err: any) {
+            console.error(err);
+            toastStore.error("Fehler beim Aufheben der Verknüpfung.");
+        }
+    }
+
+    async function unlinkRetirementHome(homeId: string, homeName: string) {
+        if (!(await confirmStore.ask(
+            `Möchten Sie die Verknüpfung zum Pflegeheim "${homeName}" wirklich aufheben?\n\nDas Pflegeheim bleibt im System gespeichert.`,
+            "Verknüpfung aufheben?",
+            "Verknüpfung aufheben",
+            "Abbrechen",
+            true
+        ))) return;
+
+        try {
+            const existingIds = Array.isArray(clientData?.retirement_homes) ? clientData.retirement_homes : (clientData?.retirement_homes ? [clientData.retirement_homes] : []);
+            const updatedHomes = existingIds.filter((id: string) => id !== homeId);
+
+            await pb.collection('clients').update(clientId, {
+                retirement_homes: updatedHomes
+            });
+
+            setTimeout(async () => {
+                const updatedClient = await pb.collection('clients').getOne(clientId, { 
+                    expand: 'insurance,retirement_homes,contacts,caregiver,inheritor', 
+                    requestKey: null 
+                }) as any;
+                const index = orgaStore.clients?.data.findIndex((c: any) => c.id === clientId) ?? -1;
+                if (index !== -1 && orgaStore.clients) orgaStore.clients.data[index] = updatedClient;
+            }, 300);
+
+            if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+                try { navigator.vibrate(40); } catch {}
+            }
+
+            toastStore.success(`Verknüpfung zum Pflegeheim "${homeName}" aufgehoben.`);
+        } catch (err: any) {
+            console.error(err);
+            toastStore.error("Fehler beim Aufheben der Pflegeheim-Verknüpfung.");
+        }
+    }
 </script>
 
 <div class="grid grid-cols-1 md:grid-cols-2 gap-8 h-full content-start">
@@ -203,60 +295,60 @@
                 </button>
             </div>
         </div>
-        <div class="flex-1 max-h-80 overflow-y-auto custom-scrollbar">
+        <div class="flex-1 max-h-140 overflow-y-auto custom-scrollbar">
             {#if appointments.length === 0}
                 <div class="text-center py-8 px-6">
                     <p class="text-neutral-400 text-sm mb-3">Keine anstehenden Termine.</p>
                     <button onclick={() => appointmentModal?.open({ preselectedClient: clientId })} class="text-indigo-600 hover:text-indigo-800 text-sm font-bold transition-colors">Jetzt planen &rarr;</button>
                 </div>
             {:else}
-                <div class="divide-y divide-neutral-100">
-                    {#each appointments as app}
-                        <button type="button" onclick={() => detailModal?.open(app.id)} class="w-full text-left group flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 sm:p-5 hover:bg-indigo-50/50 transition-colors cursor-pointer">
-                            <div class="flex items-start gap-3 min-w-0 flex-1">
-                                <div class="w-2.5 h-2.5 mt-1.5 rounded-full {app.settled ? 'bg-emerald-400' : 'bg-amber-400'} group-hover:scale-125 transition-transform shadow-sm shrink-0"></div>
-                                <div class="min-w-0 flex-1">
-                                    <p class="text-sm font-bold text-neutral-900 leading-snug truncate">{app.description || 'Termin ohne Beschreibung'}</p>
-                                    
-                                    <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-neutral-500 mt-1">
-                                        <div class="flex items-center gap-1.5 font-medium">
-                                            <span class="text-sm leading-none">🕒</span>
-                                            {#if app.appointment}
-                                                {new Date(app.appointment).toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })}, {new Date(app.appointment).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr
-                                            {:else}
-                                                Kein Datum
-                                            {/if}
-                                        </div>
-                                        
-                                        {#if app.is_private}
-                                            <div class="flex items-center gap-1 text-rose-600 font-bold">
-                                                <span class="leading-none">🔒</span> Privat
-                                            </div>
-                                        {/if}
-                                        {#if app.is_series}
-                                            <div class="flex items-center gap-1 text-indigo-600 font-bold">
-                                                <span class="leading-none">🔁</span> Serie
-                                            </div>
+            <div class="divide-y divide-neutral-100">
+                {#each appointments as app}
+                <button type="button" onclick={() => detailModal?.open(app.id)} class="w-full text-left group flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 sm:p-5 hover:bg-indigo-50/50 transition-colors cursor-pointer">
+                    <div class="flex items-start gap-3 min-w-0 flex-1">
+                        <div class="w-2.5 h-2.5 mt-1.5 rounded-full {app.settled ? 'bg-emerald-400' : 'bg-amber-400'} group-hover:scale-125 transition-transform shadow-sm shrink-0"></div>
+                        <div class="min-w-0 flex-1">
+                            <p class="text-sm font-bold text-neutral-900 leading-snug truncate">{app.description || 'Termin ohne Beschreibung'}</p>
+                            
+                            <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-neutral-500 mt-1">
+                                <div class="flex items-center gap-1.5 font-medium">
+                                    <span class="text-sm leading-none">🕒</span>
+                                    {#if app.appointment}
+                                    {new Date(app.appointment).toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })}, {new Date(app.appointment).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr
+                                    {:else}
+                                    Kein Datum
+                                    {/if}
+                                </div>
+                                
+                                {#if app.is_private}
+                                <div class="flex items-center gap-1 text-rose-600 font-bold">
+                                    <span class="leading-none">🔒</span> Privat
+                                </div>
+                                {/if}
+                                {#if app.is_series}
+                                <div class="flex items-center gap-1 text-indigo-600 font-bold">
+                                    <span class="leading-none">🔁</span> Serie
+                                </div>
                                         {/if}
                                     </div>
 
                                     <!-- Backtracking: Visuelle Indikatoren für verbundene Daten (expand) -->
                             {#if app.expand?.time_record || app.expand?.drive_record || app.expand?.tasks || app.expand?.expenditures}
-                                        <div class="flex gap-1.5 mt-2 flex-wrap">
+                            <div class="flex gap-1.5 mt-2 flex-wrap">
                                         {#if app.expand?.time_record}
-                                            <span class="text-[10px] font-bold bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-md flex items-center gap-1 shadow-sm">⏱️ Zeit</span>
+                                        <span class="text-[10px] font-bold bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-md flex items-center gap-1 shadow-sm">⏱️ Zeit</span>
                                         {/if}
                                         {#if app.expand?.drive_record}
-                                            <span class="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-md flex items-center gap-1 shadow-sm">🚗 Fahrt</span>
+                                        <span class="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-md flex items-center gap-1 shadow-sm">🚗 Fahrt</span>
                                         {/if}
                                         {#if app.expand?.tasks}
-                                            <span class="text-[10px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-md flex items-center gap-1 shadow-sm">📋 Tasks</span>
+                                        <span class="text-[10px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-md flex items-center gap-1 shadow-sm">📋 Tasks</span>
                                         {/if}
                                         {#if app.expand?.expenditures}
                                             <span class="text-[10px] font-bold bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded-md flex items-center gap-1 shadow-sm">💶 Ausgaben</span>
-                                        {/if}
+                                            {/if}
                                     </div>
-                                {/if}
+                                    {/if}
                                 </div>
                             </div>
                             
@@ -271,7 +363,9 @@
             {/if}
         </div>
     </div>
-
+    
+    <!-- Mailing-Liste Widget -->
+    <ClientInvoicesWidget client={clientData} />
     <!-- Kontakte Section -->
     <div class="orga-card-white flex flex-col p-0!">
         <div class="p-6 border-b border-neutral-100 flex flex-wrap items-center justify-between gap-3 bg-neutral-50/50">
@@ -289,22 +383,73 @@
                     <button onclick={() => linkContactModal?.open()} class="text-emerald-600 hover:text-emerald-800 text-sm font-bold transition-colors">Jetzt verknüpfen &rarr;</button>
                 </div>
             {:else}
-                <ul class="space-y-4">
+                <ul class="space-y-3">
                     {#each contacts as contact}
-                        <button type="button" onclick={() => contactModal?.open(contact)} class="w-full text-left flex items-center gap-3 p-3 rounded-xl hover:bg-indigo-50/50 transition-colors border border-neutral-100 hover:border-indigo-200 cursor-pointer group shadow-sm hover:shadow-md">
-                            <div class="w-10 h-10 rounded-full bg-neutral-200 flex items-center justify-center text-neutral-600 font-bold text-sm shrink-0 shadow-inner">
-                                {(contact.name_first?.charAt(0) || contact.company_name?.charAt(0) || '?').toUpperCase()}
+                        {@const relData = getContactRelationData(contact.id)}
+                        {@const contactDisplayName = `${contact.name_first || ''} ${contact.name_last || ''}`.trim() || contact.company_name || 'Kontakt'}
+                        <div class="flex items-center justify-between gap-3 p-3 rounded-xl hover:bg-neutral-50 border border-neutral-200 transition-all group shadow-sm hover:shadow-md bg-white">
+                            <button type="button" onclick={() => contactModal?.open(contact)} class="flex-1 text-left flex items-center gap-3 cursor-pointer min-w-0">
+                                <div class="w-10 h-10 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-sm shrink-0 shadow-inner">
+                                    {(contact.name_first?.charAt(0) || contact.company_name?.charAt(0) || '?').toUpperCase()}
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex items-center gap-2 flex-wrap">
+                                        <p class="text-sm font-bold text-neutral-900 truncate">
+                                            {contactDisplayName}
+                                        </p>
+                                        {#if relData?.relation}
+                                            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 shrink-0">
+                                                {relData.relation}
+                                            </span>
+                                        {:else if contact.company_name}
+                                            <span class="text-[10px] font-medium px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-600 border border-neutral-200 shrink-0">
+                                                {contact.company_name}
+                                            </span>
+                                        {/if}
+                                        {#if relData?.is_primary}
+                                            <span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 shrink-0" title="Hauptansprechpartner/in">
+                                                ⭐ Hauptkontakt
+                                            </span>
+                                        {/if}
+                                        {#if relData?.has_power_of_attorney}
+                                            <span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0" title="Hat Vorsorgevollmacht">
+                                                📜 Vollmacht
+                                            </span>
+                                        {/if}
+                                    </div>
+                                    <p class="text-xs text-neutral-500 mt-0.5 truncate">
+                                        {contact.phone || contact.email || 'Keine Direktkontaktdaten hinterlegt'}
+                                    </p>
+                                </div>
+                            </button>
+                            <div class="flex items-center gap-1 shrink-0">
+                                <button 
+                                    type="button" 
+                                    onclick={() => relationEditModal?.open(contact, relData)}
+                                    class="p-2 text-neutral-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors min-h-[36px] min-w-[36px] flex items-center justify-center"
+                                    title="Beziehung / Rolle anpassen"
+                                    aria-label="Beziehung bearbeiten"
+                                >
+                                    <Edit3 class="w-4 h-4" />
+                                </button>
+                                <button 
+                                    type="button" 
+                                    onclick={() => contactModal?.open(contact)} 
+                                    class="opacity-0 group-hover:opacity-100 transition-opacity text-indigo-600 px-2 py-1 text-xs font-bold uppercase tracking-wider hover:bg-indigo-50 rounded-lg hidden sm:block"
+                                >
+                                    Details
+                                </button>
+                                <button 
+                                    type="button" 
+                                    onclick={() => unlinkContact(contact.id, contactDisplayName)}
+                                    class="p-2 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors min-h-[36px] min-w-[36px] flex items-center justify-center"
+                                    title="Verknüpfung aufheben"
+                                    aria-label="Verknüpfung aufheben"
+                                >
+                                    <Link2Off class="w-4 h-4 text-rose-500" />
+                                </button>
                             </div>
-                            <div class="flex-1 min-w-0">
-                                <p class="text-sm font-bold text-neutral-900 truncate">
-                                    {#if contact.name_first || contact.name_last}{contact.name_first} {contact.name_last}{:else}{contact.company_name || 'Unbekannt'}{/if}
-                                </p>
-                                {#if contact.company_name && (contact.name_first || contact.name_last)}
-                                    <p class="text-xs text-neutral-500 mt-0.5 truncate">{contact.company_name}</p>
-                                {/if}
-                            </div>
-                            <div class="opacity-0 group-hover:opacity-100 transition-opacity text-indigo-600 px-2 text-xs font-bold uppercase tracking-wider">Details</div>
-                        </button>
+                        </div>
                     {/each}
                 </ul>
             {/if}
@@ -328,16 +473,29 @@
                     <button onclick={() => linkHomeModal?.open()} class="text-teal-600 hover:text-teal-800 text-sm font-bold transition-colors">Jetzt verknüpfen &rarr;</button>
                 </div>
             {:else}
-                <ul class="space-y-4">
+                <ul class="space-y-3">
                     {#each retirementHomes as home}
-                        <button type="button" onclick={() => homeModal?.open(home)} class="w-full text-left flex items-center gap-3 p-3 rounded-xl hover:bg-teal-50/50 transition-colors border border-neutral-100 hover:border-teal-200 cursor-pointer group shadow-sm hover:shadow-md">
-                            <div class="w-10 h-10 rounded-xl bg-teal-50 flex items-center justify-center text-teal-600 font-bold text-lg shrink-0 shadow-inner">🏥</div>
-                            <div class="flex-1 min-w-0">
-                                <p class="text-sm font-bold text-neutral-900 truncate">{home.name}</p>
-                                <p class="text-xs text-neutral-500 mt-0.5 truncate">{home.address || 'Keine Adresse'}</p>
+                        <div class="flex items-center justify-between gap-3 p-3 rounded-xl hover:bg-teal-50/40 border border-neutral-200 hover:border-teal-200 transition-all group shadow-sm hover:shadow-md bg-white">
+                            <button type="button" onclick={() => homeModal?.open(home)} class="flex-1 text-left flex items-center gap-3 cursor-pointer min-w-0">
+                                <div class="w-10 h-10 rounded-xl bg-teal-50 flex items-center justify-center text-teal-600 font-bold text-lg shrink-0 shadow-inner">🏥</div>
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-sm font-bold text-neutral-900 truncate">{home.name}</p>
+                                    <p class="text-xs text-neutral-500 mt-0.5 truncate">{home.address || 'Keine Adresse hinterlegt'}</p>
+                                </div>
+                            </button>
+                            <div class="flex items-center gap-1 shrink-0">
+                                <button type="button" onclick={() => homeModal?.open(home)} class="opacity-0 group-hover:opacity-100 transition-opacity text-teal-600 px-2 py-1 text-xs font-bold uppercase tracking-wider hover:bg-teal-100/50 rounded-lg hidden sm:block">Details</button>
+                                <button 
+                                    type="button" 
+                                    onclick={() => unlinkRetirementHome(home.id, home.name || 'Pflegeheim')}
+                                    class="p-2 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors min-h-[36px] min-w-[36px] flex items-center justify-center"
+                                    title="Verknüpfung aufheben"
+                                    aria-label="Verknüpfung aufheben"
+                                >
+                                    <Link2Off class="w-4 h-4 text-rose-500" />
+                                </button>
                             </div>
-                            <div class="opacity-0 group-hover:opacity-100 transition-opacity text-teal-600 px-2 text-xs font-bold uppercase tracking-wider">Details</div>
-                        </button>
+                        </div>
                     {/each}
                 </ul>
             {/if}
@@ -354,12 +512,15 @@
                 <button onclick={() => emailModal?.open(clientData, 'documents')} class="orga-button-ghost py-1.5 px-3 text-xs font-bold hidden sm:block flex-1 sm:flex-none" title="Dokumente per E-Mail versenden">
                     ✉️ Senden
                 </button>
-                <input type="file" multiple bind:this={fileInput} onchange={uploadDocuments} class="hidden" disabled={isUploading} accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" />
+                <input type="file" multiple bind:this={fileInput} onchange={uploadDocuments} class="hidden" disabled={isUploading} accept="*/*" />
                 <button onclick={() => fileInput.click()} disabled={isUploading} class="orga-button-ghost py-1.5 px-3 text-xs font-bold flex-1 sm:flex-none" title="Einfache Datei hochladen">
                     {isUploading ? 'Lädt...' : '📎 Hochladen'}
                 </button>
-            <button onclick={() => docGenModal?.open('', 2, clientId)} class="orga-button-primary py-1.5 px-3 text-xs font-bold bg-neutral-900 hover:bg-neutral-800 shadow-neutral-900/20 flex-1 sm:flex-none" title="Dokument aus Vorlage generieren">
-                ✨ Aus Vorlage
+                <button onclick={() => {
+                    const empId = Array.isArray(clientData?.assigned_employee) ? clientData.assigned_employee[0] : clientData?.assigned_employee;
+                    docGenModal?.open('', 2, clientId, 'all', empId);
+                }} class="orga-button-primary py-1.5 px-3 text-xs font-bold bg-neutral-900 hover:bg-neutral-800 shadow-neutral-900/20 flex-1 sm:flex-none cursor-pointer" title="Dokument aus Vorlage generieren">
+                    ✨ Aus Vorlage
                 </button>
             </div>
         </div>
@@ -379,7 +540,7 @@
                                 {#each clientData.documents as docFileName}
                                     <div class="group flex items-center justify-between p-3 rounded-xl border border-neutral-100 hover:border-amber-200 hover:bg-amber-50/30 transition-all shadow-sm hover:shadow-md">
                                         <button type="button" onclick={(e) => previewDocument(e, docFileName)} class="flex items-center gap-3 min-w-0 flex-1 text-left">
-                                            <div class="text-xl shrink-0 opacity-80 group-hover:scale-110 transition-transform duration-300">{docFileName.toLowerCase().endsWith('.pdf') ? '📕' : '🖼️'}</div>
+                                            <div class="text-xl shrink-0 opacity-80 group-hover:scale-110 transition-transform duration-300">{docFileName.toLowerCase().endsWith('.pdf') ? '📕' : (docFileName.toLowerCase().includes('.doc') ? '📄' : (docFileName.toLowerCase().match(/\.(xls|csv)/) ? '📊' : '🖼️'))}</div>
                                             <div class="truncate"><p class="text-sm font-bold text-neutral-900 truncate" title={docFileName}>{docFileName}</p></div>
                                         </button>
                                 <div class="flex items-center gap-1 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
@@ -418,3 +579,4 @@
 <PdfPreviewModal bind:this={pdfPreviewModal} />
 <InvoiceEmailModal bind:this={emailModal} />
 <DocumentGeneratorModal bind:this={docGenModal} />
+<ClientEditContactRelationModal bind:this={relationEditModal} {clientId} />

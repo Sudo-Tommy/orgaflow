@@ -57,32 +57,37 @@
     <!-- Desktop View -->
     <div class="hidden lg:block overflow-x-auto custom-scrollbar">
         <table class="w-full text-left border-collapse min-w-200" aria-label="Rechnungsliste">
-            <thead class="">
+            <thead class="bg-slate-100/90 dark:bg-slate-800/90 border-b border-slate-200 dark:border-slate-700">
                 <tr>
-                    <th class="p-4 w-12"><input type="checkbox" aria-label="Alle Rechnungen auswählen" checked={filterService.filtered.length > 0 && selectedInvoiceIds.length === filterService.filtered.length} onchange={onToggleAll} class="w-5 h-5 text-indigo-600 rounded border-neutral-300 cursor-pointer focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:outline-none" title="Alle auswählen" /></th>
-                    <th class="p-4 font-bold text-neutral-500 text-xs uppercase tracking-wider">Rechnung</th>
-                    <th class="p-4 font-bold text-neutral-500 text-xs uppercase tracking-wider">Klient</th>
-                    <th class="p-4 font-bold text-neutral-500 text-xs uppercase tracking-wider text-right">Betrag</th>
-                    <th class="p-4 font-bold text-neutral-500 text-xs uppercase tracking-wider text-center">Status</th>
-                    <th class="p-4 font-bold text-neutral-500 text-xs uppercase tracking-wider text-right">Aktionen</th>
+                    <th class="p-4 w-12"><input type="checkbox" aria-label="Alle Rechnungen auswählen" checked={filterService.filtered.length > 0 && selectedInvoiceIds.length === filterService.filtered.length} onchange={onToggleAll} class="w-5 h-5 text-indigo-600 rounded border-slate-300 dark:border-slate-600 cursor-pointer focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:outline-none" title="Alle auswählen" /></th>
+                    <th class="p-3.5 sm:p-4 font-bold text-slate-700 dark:text-slate-200 text-xs uppercase tracking-wider">Rechnung</th>
+                    <th class="p-3.5 sm:p-4 font-bold text-slate-700 dark:text-slate-200 text-xs uppercase tracking-wider">Klient</th>
+                    <th class="p-3.5 sm:p-4 font-bold text-slate-700 dark:text-slate-200 text-xs uppercase tracking-wider text-right">Betrag</th>
+                    <th class="p-3.5 sm:p-4 font-bold text-slate-700 dark:text-slate-200 text-xs uppercase tracking-wider text-center">Status</th>
+                    <th class="p-3.5 sm:p-4 font-bold text-slate-700 dark:text-slate-200 text-xs uppercase tracking-wider text-right">Aktionen</th>
                 </tr>
             </thead>
-            <tbody class="divide-y divide-neutral-50">
+            <tbody class="divide-y divide-slate-100 dark:divide-slate-800/80 bg-white dark:bg-slate-900">
             {#each groupedInvoices as [companyName, invoices]}
-                <tr class="bg-neutral-100/80 border-y border-neutral-200">
-                    <td colspan="6" class="p-3 px-4 font-bold text-neutral-800 text-sm flex items-center gap-2">
-                        <Building2 class="w-4 h-4 text-neutral-500" aria-hidden="true" /> {companyName}
+                <tr class="bg-slate-100 dark:bg-slate-800/90 border-y border-slate-200 dark:border-slate-700">
+                    <td colspan="6" class="p-3.5 px-4 font-bold text-slate-900 dark:text-slate-100 text-sm flex items-center gap-2">
+                        <Building2 class="w-4 h-4 text-indigo-600 dark:text-indigo-400" aria-hidden="true" /> {companyName}
                     </td>
                 </tr>
                 {#each invoices as inv (inv.id)}
                     <tr class="transition-colors group {getRowBgClass(inv, selectedInvoiceIds.includes(inv.id), false)}">
                         <td class="p-4">
-                            <input type="checkbox" aria-label="Rechnung {inv.invoice_nr} auswählen" checked={selectedInvoiceIds.includes(inv.id)} onchange={() => onToggleSelection(inv.id)} class="w-5 h-5 text-indigo-600 rounded border-neutral-300 cursor-pointer focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:outline-none" />
+                            <input type="checkbox" aria-label="Rechnung {inv.invoice_nr} auswählen" checked={selectedInvoiceIds.includes(inv.id)} onchange={() => onToggleSelection(inv.id)} class="w-5 h-5 text-indigo-600 rounded border-slate-300 dark:border-slate-600 cursor-pointer focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:outline-none" />
                         </td>
                         <td class="p-4">
                             <div class="flex flex-col">
-                                <span class="font-bold text-neutral-900">{inv.invoice_nr || 'RE-Unbekannt'}</span>
-                                <div class="text-[11px] text-neutral-500 mt-0.5 flex flex-col gap-0.5">
+                                <div class="flex items-center gap-1.5 flex-wrap">
+                                    <span class="font-bold text-slate-900 dark:text-slate-100 text-sm sm:text-base">{inv.invoice_nr || 'RE-Unbekannt'}</span>
+                                    {#if inv.is_cancellation}
+                                        <span class="text-[10px] font-black uppercase tracking-wider bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800 px-1.5 py-0.5 rounded shadow-2xs">Storno</span>
+                                    {/if}
+                                </div>
+                                <div class="text-xs text-slate-600 dark:text-slate-300 mt-1 flex flex-col gap-0.5">
                                     <span>Vom: {inv.issue_date ? new Date(inv.issue_date).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-'}</span>
                                     {#if inv.status !== 'Abgeschlossen' && inv.issue_date}
                                         {@const days = Math.max(0, Math.floor((new Date().getTime() - new Date(inv.issue_date).getTime()) / 86400000))}
@@ -90,51 +95,53 @@
                                             <span>Gesendet vor {days} Tag{#if days !== 1}en{/if}</span>
                                             {#if days >= 14}
                                                 {@const mLevel = days >= 30 ? 3 : (days >= 21 ? 2 : 1)}
-                                                <button type="button" aria-label="Mahnung senden" onclick={(e) => { e.stopPropagation(); onEmail(inv, true, mLevel); }} class="text-rose-700 font-bold bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded w-max mt-0.5 hover:bg-rose-500 hover:text-white transition-colors cursor-pointer text-[10px]">
+                                                <button type="button" aria-label="Mahnung senden" onclick={(e) => { e.stopPropagation(); onEmail(inv, true, mLevel); }} class="text-rose-700 dark:text-rose-300 font-bold bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 px-2 py-0.5 rounded w-max mt-0.5 hover:bg-rose-500 hover:text-white transition-colors cursor-pointer text-xs">
                                                     ⚠️ {mLevel}. Mahnung fällig
                                                 </button>
                                             {/if}
                                         {/if}
                                     {/if}
                                     {#if inv.status !== 'Abgeschlossen' && (inv as any).due_date}
-                                        <span class="text-rose-500 font-medium">Fällig: {new Date((inv as any).due_date).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
+                                        <span class="text-rose-600 dark:text-rose-400 font-semibold">Fällig: {new Date((inv as any).due_date).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
                                     {/if}
                                     {#if inv.status === 'Abgeschlossen' && inv.paid_at}
-                                        <span class="text-emerald-600 font-medium">Bezahlt: {new Date(inv.paid_at as unknown as string).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
+                                        <span class="text-emerald-600 dark:text-emerald-400 font-semibold">Bezahlt: {new Date(inv.paid_at as unknown as string).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
                                     {/if}
                                 </div>
                             </div>
                         </td>
                         <td class="p-4">
                             <div class="flex items-center gap-3">
-                                <div class="w-9 h-9 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-sm shrink-0" aria-hidden="true">{(getClient(inv)?.name_first?.charAt(0) || '')}{(getClient(inv)?.name_last?.charAt(0) || '?')}</div>
+                                <div class="w-9 h-9 rounded-full bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 flex items-center justify-center font-bold text-sm shrink-0 shadow-inner" aria-hidden="true">{(getClient(inv)?.name_first?.charAt(0) || '')}{(getClient(inv)?.name_last?.charAt(0) || '?')}</div>
                                 <div class="flex-1 min-w-0">
-                                    <p class="text-sm font-bold text-neutral-900 truncate">{getClient(inv) ? `${getClient(inv).name_first} ${getClient(inv).name_last}` : 'Ohne Klient'}</p>
-                                    <p class="text-xs text-neutral-500 mt-0.5 truncate">{Array.isArray(inv.appointments) ? inv.appointments.length : (inv.appointments ? 1 : 0)} Termin(e)</p>
+                                    <p class="text-sm font-bold text-slate-900 dark:text-slate-100 truncate">{getClient(inv) ? `${getClient(inv).name_first} ${getClient(inv).name_last}` : 'Ohne Klient'}</p>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5 truncate">{Array.isArray(inv.appointments) ? inv.appointments.length : (inv.appointments ? 1 : 0)} Termin(e)</p>
                                 </div>
                             </div>
                         </td>
-                        <td class="p-4 text-right">
-                            {#if inv.brutto > 0}
-                                <span class="font-black text-indigo-700 text-lg">{(inv.brutto ?? 0).toFixed(2).replace('.', ',')} €</span>
+                        <td class="p-4 text-right tabular-nums">
+                            {#if inv.is_cancellation || inv.brutto < 0}
+                                <span class="font-black text-rose-600 dark:text-rose-400 text-lg">{(inv.brutto ?? 0).toFixed(2).replace('.', ',')} €</span>
+                            {:else if inv.brutto > 0}
+                                <span class="font-black text-indigo-700 dark:text-indigo-400 text-lg">{(inv.brutto ?? 0).toFixed(2).replace('.', ',')} €</span>
                             {:else}
-                                <span class="font-bold text-neutral-400 text-sm">Nachweis</span>
+                                <span class="font-bold text-slate-400 text-sm">0,00 €</span>
                             {/if}
                         </td>
                         <td class="p-4 text-center">
-                            <div class="flex items-center gap-1 bg-neutral-100 p-1 rounded-lg border border-neutral-200 w-max mx-auto shadow-inner" role="group" aria-label="Statusauswahl">
+                            <div class="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg border border-slate-200 dark:border-slate-700 w-max mx-auto shadow-inner" role="group" aria-label="Statusauswahl">
                                 {#each [{val: 'Entwurf', label: 'Entwurf'}, {val: 'Eingereicht', label: 'Gesendet'}, {val: 'In Bearbeitung', label: 'In Arbeit'}, {val: 'Abgeschlossen', label: 'Bezahlt'}] as s}
                                     <button 
                                         type="button" 
                                         aria-label="Status auf {s.label} setzen"
                                         onclick={(e) => { e.stopPropagation(); onUpdateStatus(inv.id, s.val); }}
-                                        class="px-3 py-2 min-h-8 text-[10px] xl:text-xs font-bold rounded-md transition-all focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:outline-none {inv.status === s.val ? 'bg-white shadow-sm text-indigo-600 ' + (s.val === 'Abgeschlossen' ? 'hover:bg-indigo-50' : 'pointer-events-none') : 'text-neutral-500 hover:text-neutral-800 hover:bg-neutral-200/50'}"
+                                        class="px-3 py-2 min-h-8 text-xs font-bold rounded-md transition-all focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:outline-none {inv.status === s.val ? 'bg-white dark:bg-slate-900 shadow-sm text-indigo-600 dark:text-indigo-400 ' + (s.val === 'Abgeschlossen' ? 'hover:bg-indigo-50 dark:hover:bg-slate-800' : 'pointer-events-none') : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-700'}"
                                     >
                                         {s.label}
                                     </button>
                                 {/each}
                                 {#if !['Entwurf', 'Eingereicht', 'In Bearbeitung', 'Abgeschlossen'].includes(inv.status)}
-                                    <span class="px-2.5 py-1 text-xs font-bold text-rose-600 rounded-full bg-white shadow-sm">{inv.status}</span>
+                                    <span class="px-2.5 py-1 text-xs font-bold text-rose-600 rounded-full bg-white dark:bg-slate-800 shadow-sm">{inv.status}</span>
                                 {/if}
                             </div>
                         </td>
@@ -195,7 +202,12 @@
                         <button type="button" aria-label="Aktionsmenü für {inv.invoice_nr} öffnen" class="flex-1 p-4 pl-2 min-h-12 flex flex-col gap-3 cursor-pointer text-left focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:outline-none active:scale-95" onclick={() => onOpenMobileActions(inv)}>
                             <div class="flex justify-between items-start gap-3 w-full">
                                 <div class="min-w-0">
-                                    <span class="font-black text-neutral-900 text-base block truncate leading-tight">{inv.invoice_nr || 'RE-Unbekannt'}</span>
+                                    <div class="flex items-center gap-1.5 flex-wrap">
+                                        <span class="font-black text-neutral-900 text-base block truncate leading-tight">{inv.invoice_nr || 'RE-Unbekannt'}</span>
+                                        {#if inv.is_cancellation}
+                                            <span class="text-[8px] font-black uppercase tracking-wider bg-rose-100 text-rose-800 border border-rose-200 px-1.5 py-0.2 rounded">Storno</span>
+                                        {/if}
+                                    </div>
                                     <div class="text-[11px] font-semibold text-neutral-400 mt-1 flex flex-col gap-0.5">
                                         <span>Vom: {inv.issue_date ? new Date(inv.issue_date).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-'}</span>
                                         {#if inv.status !== 'Abgeschlossen' && inv.issue_date}
@@ -220,10 +232,12 @@
                                     </div>
                                 </div>
                                 <div class="text-right shrink-0">
-                                    {#if inv.brutto > 0}
+                                    {#if inv.is_cancellation || inv.brutto < 0}
+                                        <span class="font-black text-rose-600 text-lg leading-none block">{(inv.brutto ?? 0).toFixed(2).replace('.', ',')} €</span>
+                                    {:else if inv.brutto > 0}
                                         <span class="font-black text-indigo-600 text-lg leading-none block">{(inv.brutto ?? 0).toFixed(2).replace('.', ',')} €</span>
                                     {:else}
-                                        <span class="font-bold text-neutral-400 text-xs block">Nachweis</span>
+                                        <span class="font-bold text-neutral-400 text-xs block">0,00 €</span>
                                     {/if}
                                     <span class="inline-block mt-1.5 px-3 py-1 text-[10px] font-bold rounded-full {getStatusClass(inv.status)} border truncate max-w-25 text-center">{inv.status}</span>
                                 </div>

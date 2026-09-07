@@ -1,0 +1,17 @@
+# OrgaFlow - Autonomes Agenten-Regelwerk
+
+## 1. Kontext-Ökonomie & Tool-Disziplin (Token-Schonung)
+- Lade niemals unaufgefordert ganze Ordnerstrukturen oder mehr als die direkt benötigten Dateien in den Kontext.
+- Nutze vor jeder Code-Änderung `git status -s` und `git diff`, um dich auf exakt die veränderten Zeilen zu fokussieren.
+- Verwende für die Suche nach Funktionen, Variablen oder Store-Referenzen stets `git grep` oder zielgerichtete Terminal-Tools statt Volltext-Dateidumps.
+- Führe nach jeder Code-Anpassung autonom `npm run check` im Terminal aus. Lies die exakten Fehlermeldungen aus und passe nur die tatsächlich betroffenen Schnittstellen an.
+
+## 2. Modul-Ausgabe & Code-Qualität
+- Halte die etablierte SvelteKit-/PocketBase-Modulstruktur strikt ein.
+- Wird der Code eines Moduls geändert, gib immer das **komplette Modul / die vollständige Datei** ohne Auslassungszeichen (`// ... rest of code`) wieder.
+- Kopiere keine unbeteiligten Nachbardateien in den Output.
+
+## 3. Sicherheitsnetz & Fehlertoleranz
+- Vor komplexen Umbauten oder Refactorings: Lege autonom einen temporären Sicherungszweig an (`git checkout -b task/...`).
+- Schlägt ein Ansatz fehl oder führt zu Syntax-/Laufzeitfehlern, setze den Stand sofort per `git restore .` bzw. `git checkout -` auf den letzten funktionierenden Stand zurück, statt wertvolle Prompts mit Reparatur-Zyklen im Chat zu verbrauchen.
+- Nach erfolgreicher Verifikation: Erstelle einen atomaren lokalen Git-Commit nach Conventional-Commits-Standard.

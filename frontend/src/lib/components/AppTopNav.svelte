@@ -13,14 +13,16 @@
 	import { orgaStore } from "$lib/stores/orgaStore.svelte";
 	import NotificationSettingsModal from "$lib/components/NotificationSettingsModal.svelte";
 	import AppointmentRequestsModal from "$lib/components/AppointmentRequestsModal.svelte";
-	import UpdateLogModal from "$lib/components/UpdateLogModal.svelte";
+	import ImprovementProposalModal from "$lib/components/admin/ImprovementProposalModal.svelte";
+	import MobileNavDrawer from "$lib/components/MobileNavDrawer.svelte";
+	import { Lightbulb } from "lucide-svelte";
 
-	let { items = [] } = $props<{
+	let { items = [], isMobileMenuOpen = $bindable(false) } = $props<{
 		items?: Array<{ label: string; href: string; icon: Snippet; roles?: string[] }>;
+		isMobileMenuOpen?: boolean;
 	}>();
 
 	let currentPath = $derived($page.url.pathname);
-	let isMobileMenuOpen = $state(false);
 	let isDarkMode = $state(false);
 
 	let isGodMode = $derived(pb.authStore.isSuperuser || pb.authStore.model?.role === 'superadmin');
@@ -41,6 +43,7 @@
 	// Reaktive Variablen-Bindung für Svelte 5
 	let notificationModal: any = $state();
 	let requestsModal: any = $state();
+	let proposalModal: any = $state();
 
 	function getNotifyPrefs() {
 		try { return JSON.parse(localStorage.getItem('orga_notify_prefs') || '{"requests":true,"emails":true,"chats":true,"updates":true}'); } 
@@ -77,9 +80,9 @@
 
 	// Beobachtet den Dark-Mode-Status
 	$effect(() => {
-		isDarkMode = document.documentElement.classList.contains('theme-negative');
+		isDarkMode = document.documentElement.classList.contains('dark') || document.documentElement.classList.contains('theme-negative');
 		const observer = new MutationObserver(() => {
-			isDarkMode = document.documentElement.classList.contains('theme-negative');
+			isDarkMode = document.documentElement.classList.contains('dark') || document.documentElement.classList.contains('theme-negative');
 		});
 		observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
 		return () => observer.disconnect();
@@ -141,11 +144,16 @@
 	function toggleTheme() {
 		const newTheme = isDarkMode ? 'light' : 'dark';
 		localStorage.setItem('theme_preference', newTheme);
+		if (newTheme === 'dark') {
+			document.documentElement.classList.add('dark', 'theme-negative');
+		} else {
+			document.documentElement.classList.remove('dark', 'theme-negative');
+		}
 		window.dispatchEvent(new Event('theme-changed'));
 	}
 
 	let unreadMails = $derived(mailboxService.totalUnread || 0);
-	let pendingRequests = $derived(reqAdmin.requests.filter(r => r.status === 'requested').length);
+	let pendingRequests = $derived(reqAdmin.requests.filter(r => r.status !== 'accepted' && r.status !== 'denied').length);
 	
 	let hasUnreadUpdates = $derived(updateStore.updates?.some((u: any) => {
 		const readByArray = Array.isArray(u.read_by) ? u.read_by : (u.read_by ? [u.read_by] : []);
@@ -198,16 +206,46 @@
 		}
 	}
 
+	function safeSendNotification(title: string, body: string) {
+		try {
+			if (typeof window === 'undefined') return;
+			// Doppel-Benachrichtigung unterdrücken: Wenn App aktiv im Vordergrund ist, reicht der In-App Toast
+			if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+				return;
+			}
+			if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+			
+			// 1. PWA / Mobile Service Worker
+			if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+				navigator.serviceWorker.ready.then(reg => {
+					reg.showNotification(title, {
+						body,
+						icon: '/favicon.png',
+						badge: '/favicon.png',
+						data: { url: '/dashboard' }
+					});
+				}).catch(() => {});
+				return;
+			}
+			
+			// 2. Desktop Fallback (in try/catch, weil iOS Safari new Notification() verbietet)
+			try {
+				new Notification(title, { body, icon: '/favicon.png' });
+			} catch (e) {
+				// Ignorieren – Mobilgeräte werfen TypeError bei new Notification()
+			}
+		} catch (err) {
+			console.warn("[AppTopNav] Notification error:", err);
+		}
+	}
+
 	$effect(() => {
 		if (prevUnread !== -1 && unreadMails > prevUnread) {
 			const newCount = unreadMails - prevUnread;
 			toastStore.info(`Du hast ${newCount} neue E-Mail(s) erhalten!`);
 			const prefs = getNotifyPrefs();
-			if (prefs.emails !== false && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-				new Notification('Neue E-Mail ✉️', {
-					body: `Sie haben ${newCount} neue Nachricht(en) im Posteingang.`,
-					icon: '/favicon.png'
-				});
+			if (prefs.emails !== false) {
+				safeSendNotification('Neue E-Mail ✉️', `Sie haben ${newCount} neue Nachricht(en) im Posteingang.`);
 			}
 		}
 		prevUnread = unreadMails;
@@ -216,11 +254,8 @@
 			const newCount = pendingRequests - prevPending;
 			toastStore.success(`Eine neue Terminanfrage ist eingetroffen!`);
 			const prefs = getNotifyPrefs();
-			if (prefs.requests !== false && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-				new Notification('Neue Terminanfrage 📬', {
-					body: `Sie haben ${newCount} neue Terminanfrage(n) erhalten.`,
-					icon: '/favicon.png'
-				});
+			if (prefs.requests !== false) {
+				safeSendNotification('Neue Terminanfrage 📬', `Sie haben ${newCount} neue Terminanfrage(n) erhalten.`);
 			}
 		}
 		prevPending = pendingRequests;
@@ -229,11 +264,8 @@
 			const newCount = pendingAdmissions - prevAdmissions;
 			toastStore.success(`Eine neue Klienten-Aufnahme ist eingetroffen!`);
 			const prefs = getNotifyPrefs();
-			if (prefs.requests !== false && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-				new Notification('Neue Klienten-Aufnahme 👤', {
-					body: `Sie haben ${newCount} neue Aufnahme-Anfrage(n) erhalten.`,
-					icon: '/favicon.png'
-				});
+			if (prefs.requests !== false) {
+				safeSendNotification('Neue Klienten-Aufnahme 👤', `Sie haben ${newCount} neue Aufnahme-Anfrage(n) erhalten.`);
 			}
 		}
 		prevAdmissions = pendingAdmissions;
@@ -256,13 +288,13 @@
 </script>
 
 <!-- Kopfzeile mit dynamischem Einbezug der Safe-Area (iPhone Notch etc.) via CSS env() -->
-<header class="bg-white/90 backdrop-blur-md border-b border-neutral-200/60 px-4 md:px-6 flex flex-col z-30 sticky top-0 transition-all pt-[max(env(safe-area-inset-top,0px),0.75rem)] md:pt-[max(env(safe-area-inset-top,0px),1rem)]">
+<header class="bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 text-slate-900 dark:text-slate-100 px-4 md:px-6 flex flex-col z-20 sticky top-0 transition-all pt-[max(env(safe-area-inset-top,0px),0.75rem)] md:pt-[max(env(safe-area-inset-top,0px),1rem)]">
 	<div class="flex items-center justify-between pb-3 md:pb-4 w-full">
 		<div class="flex items-center gap-3">
 			<!-- Hamburger Icon nur auf Mobile -->
 			<button 
 				aria-label={isMobileMenuOpen ? "Menü schließen" : "Menü öffnen"} 
-				class="md:hidden p-2 -ml-2 text-neutral-600 hover:text-indigo-600 rounded-xl hover:bg-neutral-100 transition-all active:scale-95"
+				class="md:hidden p-2 -ml-2 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-all active:scale-95"
 				onclick={toggleMenu}
 			>
 				<svg class="w-6 h-6 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
@@ -275,7 +307,7 @@
 			</button>
 			
 			<!-- Logo auf Mobile anzeigen, da die Sidebar ja ausgeblendet ist -->
-			<div class="md:hidden flex items-center gap-2 font-bold tracking-tight text-neutral-900 text-xl">
+			<div class="md:hidden flex items-center gap-2 font-bold tracking-tight text-slate-900 dark:text-slate-100 text-xl">
 				<img src="/favicon.png" alt="Logo" class="w-6 h-6 object-contain" />
 				OrgaFlow
 			</div>
@@ -321,6 +353,17 @@
 				{/if}
 			</button>
 
+			<!-- Verbesserungsvorschlag einreichen (Glühbirne) -->
+			<button 
+				type="button"
+				class="p-2 text-amber-500 hover:text-amber-600 hover:bg-amber-50 transition-all rounded-full outline-none flex items-center justify-center min-w-[44px] min-h-[44px] active:scale-95 cursor-pointer"
+				onclick={() => proposalModal?.open?.()}
+				aria-label="Verbesserungsvorschlag einreichen"
+				title="Neuen Verbesserungsvorschlag machen"
+			>
+				<Lightbulb class="w-5 h-5 text-amber-500" />
+			</button>
+
 			<!-- Benachrichtigungs-Glocke -->
 			<div class="relative flex items-center">
 				<button 
@@ -341,9 +384,9 @@
 
 				{#if isNotificationsOpen}
 					<!-- Backdrop zum Schließen beim Klicken ins Leere -->
-					<button class="fixed inset-0 w-full h-full cursor-default z-40" onclick={() => isNotificationsOpen = false} tabindex="-1" aria-label="Schließen"></button>
+					<button class="fixed inset-0 w-full h-full cursor-default z-30" onclick={() => isNotificationsOpen = false} tabindex="-1" aria-label="Schließen"></button>
 					
-					<div class="fixed top-18 left-4 right-4 sm:absolute sm:left-auto sm:right-0 sm:top-full mt-2 sm:w-80 bg-white rounded-2xl shadow-xl border border-neutral-100 overflow-hidden z-50 animate-enter">
+					<div class="fixed top-18 left-4 right-4 sm:absolute sm:left-auto sm:right-0 sm:top-full mt-2 sm:w-80 bg-white rounded-2xl shadow-xl border border-neutral-100 overflow-hidden z-40 animate-enter">
 						<div class="p-4 border-b border-neutral-100 bg-neutral-50/50 flex justify-between items-center">
 							<h3 class="font-bold text-neutral-900">Benachrichtigungen</h3>
 							{#if totalNotifications > 0}
@@ -405,65 +448,23 @@
 				{/if}
 			</div>
 
-			<LoginLogout />
+			<div class="hidden md:block">
+				<LoginLogout />
+			</div>
+			<div class="md:hidden flex items-center">
+				<LoginLogout iconOnly={true} subtle={true} />
+			</div>
 		</div>
 	</div>
-
-	<!-- Aufklappbares Mobile Menü, klebt nahtlos unter dem Header -->
-	{#if isMobileMenuOpen}
-		<nav transition:slide={{ duration: 250, axis: 'y' }} class="md:hidden border-t border-neutral-200/60 py-4 w-full bg-white/95 backdrop-blur-xl absolute top-full left-0 shadow-[0_20px_40px_-15px_rgba(0,0,0,0.1)] rounded-b-3xl">
-			{#if isGodMode}
-				<div class="px-4 pb-3 border-b border-neutral-100 mb-3">
-					<select value={globalCompanyId} onchange={updateGlobalCompany} class="w-full bg-indigo-50 border border-indigo-200 text-sm font-bold text-indigo-700 rounded-lg px-3 py-2.5 shadow-sm focus:outline-none cursor-pointer">
-						<option value="all">🏢 Alle Firmen</option>
-						{#each orgaStore.company?.data || [] as comp}
-							<option value={comp.id}>{comp.city} {comp.name ? `(${comp.name})` : ''}</option>
-						{/each}
-					</select>
-				</div>
-			{/if}
-			<!-- Kompaktes Grid-Layout wie auf dem Homescreen von Handys, um vertikalen Platz massiv zu sparen -->
-			<div class="grid grid-cols-3 sm:grid-cols-4 gap-2 px-4 max-h-[70vh] overflow-y-auto custom-scrollbar pb-2">
-				{#each items as item}
-					{#if item.label !== 'System-Admin' || isGodMode}
-						<a
-							href={item.href}
-							class="flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl transition-all font-semibold text-[10px] sm:text-xs text-center {currentPath.startsWith(item.href) ? 'bg-indigo-50 text-indigo-700 shadow-sm border border-indigo-100 ring-1 ring-indigo-500/10' : 'text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900 border border-transparent'}"
-							onclick={() => isMobileMenuOpen = false}
-						>
-							<span class="w-6 h-6 shrink-0 {currentPath.startsWith(item.href) ? 'text-indigo-600' : 'opacity-70'}">
-								{@render item.icon()}
-							</span>
-							<span class="truncate w-full mt-1">{item.label}</span>
-						</a>
-					{/if}
-				{/each}
-
-			<!-- Mobile Theme Toggle -->
-			<button
-				class="flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl transition-all font-semibold text-[10px] sm:text-xs text-center text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900 border border-transparent"
-				onclick={() => { toggleTheme(); isMobileMenuOpen = false; }}
-			>
-				<span class="w-6 h-6 shrink-0 opacity-70 flex items-center justify-center text-lg leading-none">{isDarkMode ? '☀️' : '🌙'}</span>
-				<span class="truncate w-full mt-1">{isDarkMode ? 'Tag-Modus' : 'Nacht-Modus'}</span>
-			</button>
-			{#if isAdmin}
-				<a href="/portal" target="_blank" class="flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl transition-all font-semibold text-[10px] sm:text-xs text-center text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200 shadow-sm" onclick={() => isMobileMenuOpen = false}>
-					<span class="w-6 h-6 shrink-0 flex items-center justify-center text-lg leading-none">📱</span>
-					<span class="truncate w-full mt-1">Portal</span>
-				</a>
-			{/if}
-			</div>
-		</nav>
-	{/if}
 </header>
 
-<!-- Backdrop (Der abgedunkelte Hintergrund). Ein Klick daneben schließt das Menü -->
-{#if isMobileMenuOpen}
-	<!-- z-20 unterhalb der z-30 header -->
-	<button aria-label="Menü schließen" class="fixed inset-0 bg-neutral-900/10 backdrop-blur-sm z-20 md:hidden block" onclick={toggleMenu}></button>
-{/if}
+<MobileNavDrawer 
+	bind:isOpen={isMobileMenuOpen} 
+	{items} 
+	{isDarkMode} 
+	onToggleTheme={toggleTheme} 
+/>
 
 <NotificationSettingsModal bind:this={notificationModal} />
 <AppointmentRequestsModal bind:this={requestsModal} />
-<UpdateLogModal />
+<ImprovementProposalModal bind:this={proposalModal} />

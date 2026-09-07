@@ -1,127 +1,87 @@
 /* 1. Tailwind v4 Haupt-Import */
 @import "tailwindcss";
 
-/* 2. Globale Theme-Einstellungen (optional, für konsistente Schrift) */
+/* 2. Globale Theme-Tokens (Modern, edel & harmonisch) */
 @theme {
-    --font-sans: "Inter", system-ui, sans-serif;
+    --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 
-    /* Landing Page Brand Colors - Edles Petrol/Türkis (Passend zum Herz-Logo) */
-    --color-brand-50: #f2f7f8;
-    --color-brand-100: #dceced;
-    --color-brand-200: #bbdbe0;
-    --color-brand-300: #91c2c9;
-    --color-brand-400: #62a2ac;
-    --color-brand-500: #458893;
-    --color-brand-600: #386d78;
-    --color-brand-700: #315862;
-    --color-brand-800: #20565d; /* Exakte dunkle Petrol-Farbe deines Logos */
-    --color-brand-900: #244149;
-    --color-brand-950: #142a30;
+    /* Landing Page & Brand Colors - Modernes Petrol / Teal */
+    --color-brand-50: #f0fdfa;
+    --color-brand-100: #ccfbf1;
+    --color-brand-200: #99f6e4;
+    --color-brand-300: #5eead4;
+    --color-brand-400: #2dd4bf;
+    --color-brand-500: #14b8a6;
+    --color-brand-600: #0d9488;
+    --color-brand-700: #0f766e;
+    --color-brand-800: #115e59;
+    --color-brand-900: #134e4a;
+    --color-brand-950: #042f2e;
 
-        /* --- FARB-UMLEITUNG (WARMES THEME) --- */
-        /* Mache kühle Blautöne zu warmem Terracotta (Brand) */
-        --color-indigo-50: var(--color-brand-50);
-        --color-indigo-100: var(--color-brand-100);
-        --color-indigo-200: var(--color-brand-200);
-        --color-indigo-300: var(--color-brand-300);
-        --color-indigo-400: var(--color-brand-400);
-        --color-indigo-500: var(--color-brand-500);
-        --color-indigo-600: var(--color-brand-600);
-        --color-indigo-700: var(--color-brand-700);
-        --color-indigo-800: var(--color-brand-800);
-        --color-indigo-900: var(--color-brand-900);
-        --color-indigo-950: var(--color-brand-950);
-
-        --color-blue-50: var(--color-brand-50);
-        --color-blue-100: var(--color-brand-100);
-        --color-blue-200: var(--color-brand-200);
-        --color-blue-300: var(--color-brand-300);
-        --color-blue-400: var(--color-brand-400);
-        --color-blue-500: var(--color-brand-500);
-        --color-blue-600: var(--color-brand-600);
-        --color-blue-700: var(--color-brand-700);
-        --color-blue-800: var(--color-brand-800);
-        --color-blue-900: var(--color-brand-900);
-        --color-blue-950: var(--color-brand-950);
-
-        /* Ersetze kalte Akzente durch warmes Bernstein (Amber) */
-        --color-cyan-50: #fffbeb; --color-teal-50: #fffbeb;
-        --color-cyan-100: #fef3c7; --color-teal-100: #fef3c7;
-        --color-cyan-200: #fde68a; --color-teal-200: #fde68a;
-        --color-cyan-300: #fcd34d; --color-teal-300: #fcd34d;
-        --color-cyan-400: #fbbf24; --color-teal-400: #fbbf24;
-        --color-cyan-500: #f59e0b; --color-teal-500: #f59e0b;
-        --color-cyan-600: #d97706; --color-teal-600: #d97706;
-        --color-cyan-700: #b45309; --color-teal-700: #b45309;
-        --color-cyan-800: #92400e; --color-teal-800: #92400e;
-        --color-cyan-900: #78350f; --color-teal-900: #78350f;
-        --color-cyan-950: #451a03; --color-teal-950: #451a03;
-
-        /* Kaltes Neutral und Gray wird zu erdigem Stone (Warm Gray) */
-        --color-neutral-50: #fafaf9; --color-gray-50: #fafaf9;
-        --color-neutral-100: #f5f5f4; --color-gray-100: #f5f5f4;
-        --color-neutral-200: #e7e5e4; --color-gray-200: #e7e5e4;
-        --color-neutral-300: #d6d3d1; --color-gray-300: #d6d3d1;
-        --color-neutral-400: #a8a29e; --color-gray-400: #a8a29e;
-        --color-neutral-500: #78716c; --color-gray-500: #78716c;
-        --color-neutral-600: #57534e; --color-gray-600: #57534e;
-        --color-neutral-700: #44403c; --color-gray-700: #44403c;
-        --color-neutral-800: #292524; --color-gray-800: #292524;
-        --color-neutral-900: #1c1917; --color-gray-900: #1c1917;
-        --color-neutral-950: #0c0a09; --color-gray-950: #0c0a09;
+    /* Primary Accent Colors - Frisches, modernes Indigo */
+    --color-primary-50: #eef2ff;
+    --color-primary-100: #e0e7ff;
+    --color-primary-200: #c7d2fe;
+    --color-primary-300: #a5b4fc;
+    --color-primary-400: #818cf8;
+    --color-primary-500: #6366f1;
+    --color-primary-600: #4f46e5;
+    --color-primary-700: #4338ca;
+    --color-primary-800: #3730a3;
+    --color-primary-900: #312e81;
+    --color-primary-950: #1e1b4b;
 }
 
-/* 3. Basis-HTML/Body Setup für perfekte Lesbarkeit auf allen Geräten */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* 3. Basis-HTML & Body Setup */
 @layer base {
     html {
-        /* Weicher, eleganter 3-Sekunden-Übergang beim Umschalten */
-        transition: filter 3s ease-in-out;
+        color-scheme: light dark;
+        transition: background-color 0.2s ease, color 0.2s ease;
     }
 
-    /* --- DER NEGATIV-NACHTMODUS --- */
-    html.theme-negative {
-        /* Weiches Dunkelgrau statt tiefem Schwarz (invert 0.9). 
-           Brightness, Contrast und ein Hauch Sepia sorgen für den sanften Lichtschein! */
-        filter: invert(0.9) hue-rotate(180deg) brightness(1.05) contrast(0.95) sepia(0.1);
-    }
-
-    /* Bilder, Logos und Unterschriften (Canvas) vor dem Röntgen-Effekt schützen */
-    html.theme-negative img, html.theme-negative video, html.theme-negative canvas, html.theme-negative iframe {
-        /* Bilder zurückdrehen und Kontrast leicht erhöhen, um den dämpfenden Filter auszugleichen */
-        filter: invert(1) hue-rotate(180deg) contrast(1.15);
+    html.dark, html.theme-negative {
+        color-scheme: dark;
     }
 
     html, body {
-        /* Dunkler Hintergrund für den App-Rahmen, scharfe Schrift (antialiased) */
-        @apply antialiased min-h-screen;
-        
-        /* FIX für html2pdf.js: Feste HEX-Farben statt Tailwind v4 OKLCH für Root-Elemente */
-        background-color: #fbf9f6 !important; /* Noch weicherer, wärmerer Creme-Ton */
-        color: #1c1917 !important; /* Stone-900 (Ein warmes Schwarz) */
-
-        /* Verhindert, dass iOS beim Drehen des Handys die Schriftgröße zerschießt */
+        @apply antialiased min-h-screen font-sans;
+        background-color: #f8fafc; /* Klares, modernes Slate-50 */
+        color: #0f172a; /* Klares Slate-900 */
         -webkit-text-size-adjust: 100%;
-        
-        /* Schicke Markierungsfarbe (wenn man Text mit der Maus markiert) */
-        @apply selection:bg-brand-500 selection:text-white;
-
-            /* Verhindert das ungewollte Heranzoomen beim schnellen Doppeltippen auf Smartphones */
-            touch-action: manipulation;
+        @apply selection:bg-indigo-600 selection:text-white;
+        touch-action: manipulation;
     }
 
-    /* Standard-Scrollbar global (elegant und schmal) */
+    html.dark,
+    html.theme-negative,
+    html.dark body,
+    html.theme-negative body {
+        background-color: #020617; /* Reines, tiefes Slate-950 */
+        color: #f8fafc; /* Klares Slate-50 */
+    }
+
+    /* Native <dialog> Backdrop Styling (modern, dezent, unaufdringlich) */
+    dialog::backdrop {
+        background-color: rgba(15, 23, 42, 0.65);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+    }
+
+    /* Standard-Scrollbar global (elegant, modern und schmal) */
     ::-webkit-scrollbar {
         width: 6px;
         height: 6px;
     }
     ::-webkit-scrollbar-track {
-        @apply bg-transparent;
+        background: transparent;
     }
     ::-webkit-scrollbar-thumb {
-        @apply bg-neutral-700 rounded-full hover:bg-neutral-500 transition-colors;
+        @apply bg-slate-300 dark:bg-slate-700 rounded-full hover:bg-slate-400 dark:hover:bg-slate-600 transition-colors;
     }
 
-    /* Fix für iOS PWA (Homescreen): Zwingt das Handy dazu, Textfelder immer auswählbar zu machen und die Tastatur zu öffnen */
+    /* Fix für iOS PWA (Homescreen): Textfelder immer auswählbar machen */
     input, textarea, select, [contenteditable="true"] {
         -webkit-user-select: auto !important;
         user-select: auto !important;
@@ -130,18 +90,38 @@
 
     /* Verhindert den automatischen Zoom auf iOS beim Fokussieren von Inputs */
     @media screen and (max-width: 768px) {
-        input, textarea, select, [contenteditable="true"], .orga-input-clear {
+        input, textarea, select, [contenteditable="true"], .orga-input-clear, .orga-input {
             font-size: 16px !important;
         }
     }
+
+    /* Fix für native <dialog>-Elemente */
+    dialog:not([open]) {
+        display: none !important;
+    }
+
+    /* Globale Tabellen-Schrift- und Lesbarkeits-Optimierung */
+    table {
+        @apply text-slate-800 dark:text-slate-100;
+        font-variant-numeric: tabular-nums;
+    }
+
+    th {
+        @apply font-bold text-slate-700 dark:text-slate-200;
+        letter-spacing: 0.025em;
+    }
+
+    td {
+        @apply text-slate-800 dark:text-slate-100;
+    }
 }
 
-/* 4. Custom Utilities für softe Animationen */
+/* 4. Custom Utilities für softe Animationen & Glassmorphism */
 @layer utilities {
     .animate-enter {
-        animation: slideFadeUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        animation: slideFadeUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         opacity: 0;
-        transform: translateY(20px);
+        transform: translateY(12px);
     }
     .delay-100 { animation-delay: 100ms; }
     .delay-200 { animation-delay: 200ms; }
@@ -153,144 +133,232 @@
             transform: translateY(0);
         }
     }
+
+    .glass-card {
+        @apply bg-white/85 dark:bg-slate-900/85 backdrop-blur-md border border-slate-200/80 dark:border-slate-800 shadow-xs;
+    }
+
+    .glass-card-hover {
+        @apply hover:shadow-md hover:border-slate-300 dark:hover:border-slate-700 transition-all duration-200;
+    }
+
+    .form-mobile-container {
+        display: flex;
+        flex-direction: column;
+        min-height: 100dvh;
+        height: 100dvh;
+        overflow: hidden;
+    }
 }
 
-/* 5. Deine wiederverwendbaren OrgaFlow-Komponenten */
+/* 5. Modernisierte, konsistente OrgaFlow-Komponenten */
 @layer components {
 
-    /* --- KARTEN & MODALE --- */
+    /* --- KARTEN & CONTAINER --- */
     .orga-card-white,
-    .orga-filter-bar,
     .orga-dashboard-card,
     .orga-client-card,
     .orga-calendar-wrapper {
-        /* Responsiv: Auf Mobile etwas weniger Radius, auf Desktop starke Abrundung */
-        @apply bg-[#fffdfa] text-neutral-900 rounded-2xl md:rounded-3xl shadow-xl shadow-amber-900/5 border border-[#f3eee8] overflow-hidden transition-all duration-300 md:hover:shadow-2xl md:hover:shadow-amber-900/10 md:hover:border-[#ebe3d8] md:hover:-translate-y-1;
+        @apply bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs hover:shadow-md dark:shadow-none hover:border-slate-300 dark:hover:border-slate-700 overflow-hidden transition-all duration-200;
     }
 
     .orga-card-dark {
-        @apply bg-white text-neutral-900 border border-neutral-800 rounded-2xl md:rounded-3xl shadow-xl overflow-hidden;
+        @apply bg-slate-900 text-slate-100 border border-slate-800 rounded-2xl shadow-xl overflow-hidden;
+    }
+
+    /* --- MODALE & DIALOGE --- */
+    .orga-modal-backdrop {
+        @apply fixed inset-0 z-50 bg-slate-950/65 backdrop-blur-md flex items-center justify-center p-3 sm:p-6;
+    }
+
+    .orga-modal-window {
+        @apply bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col transition-all duration-200;
+    }
+
+    .orga-modal-header {
+        @apply px-5 sm:px-8 py-4 sm:py-5 border-b border-slate-200/80 dark:border-slate-800 shrink-0 sticky top-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md z-20 flex justify-between items-center;
+    }
+
+    .orga-modal-title {
+        @apply text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100 tracking-tight;
+    }
+
+    .orga-modal-subtitle {
+        @apply text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium mt-0.5;
+    }
+
+    .orga-modal-close {
+        @apply w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center transition-colors shrink-0 cursor-pointer;
+    }
+
+    .orga-modal-body {
+        @apply flex-1 overflow-y-auto p-5 sm:p-7 bg-slate-50/50 dark:bg-slate-950/40 text-slate-800 dark:text-slate-100;
+    }
+
+    .orga-modal-footer {
+        @apply px-5 sm:px-8 py-4 border-t border-slate-200/80 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md flex items-center justify-end gap-3 shrink-0;
     }
 
     /* --- EINGABEFELDER --- */
-    /* Das helle "Clear Field" Design (Für Formulare) */
     .orga-input-clear {
-        /* py-3 sorgt für eine Mindesthöhe, die perfekt für Daumen-Klicks auf Touchscreens ist */
-        @apply bg-[#fffdfa] text-neutral-900 border-2 border-[#eee6db] md:hover:border-[#e2d5c4] rounded-xl md:rounded-2xl 
-               px-4 py-3 w-full transition-all font-medium shadow-inner
-               focus:outline-none focus:border-brand-600 focus:ring-4 focus:ring-brand-600/20 focus:bg-white
-               placeholder:text-neutral-400 disabled:opacity-50 disabled:bg-neutral-50;
+        @apply bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 border border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 rounded-xl 
+               px-3.5 py-2.5 min-h-[44px] w-full transition-all text-base sm:text-sm font-medium
+               focus:outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600/20 dark:focus:border-indigo-500 dark:focus:ring-indigo-500/20
+               placeholder:text-slate-400 dark:placeholder:text-slate-500 disabled:opacity-50 disabled:bg-slate-100 dark:disabled:bg-slate-800/50;
     }
 
-    /* Das dunkle Design (Für Suchfelder im Header z.B.) */
+    .orga-input {
+        @apply bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 border border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 rounded-xl 
+               px-3 py-2 text-sm font-medium
+               focus:outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600/20 dark:focus:border-indigo-500 dark:focus:ring-indigo-500/20
+               placeholder:text-slate-400 dark:placeholder:text-slate-500;
+    }
+
     .orga-input-dark {
-        @apply bg-neutral-800 text-white border border-neutral-700 rounded-xl 
-               px-4 py-2.5 w-full transition-all placeholder:text-neutral-500
-               focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500;
+        @apply bg-slate-800 text-slate-100 border border-slate-700 hover:border-slate-600 rounded-xl 
+               px-3.5 py-2.5 min-h-[44px] w-full transition-all text-base sm:text-sm font-medium
+               focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 placeholder:text-slate-400;
     }
 
     /* --- BUTTONS --- */
-    /* Primärer Aktions-Button */
     .orga-button-primary {
-        @apply flex justify-center items-center gap-2 bg-brand-800 hover:bg-brand-700 text-white font-bold 
-               py-3 px-6 md:px-8 rounded-xl md:rounded-2xl transition-all duration-300 shadow-lg shadow-brand-800/30
-               hover:shadow-brand-800/50 hover:-translate-y-0.5 active:scale-95 disabled:opacity-50 disabled:pointer-events-none;
+        @apply inline-flex justify-center items-center gap-2 bg-indigo-600 hover:bg-indigo-700 active:scale-98 text-white font-semibold 
+               py-2.5 px-5 min-h-[44px] rounded-xl transition-all duration-200 shadow-xs hover:shadow-indigo-600/25 cursor-pointer
+               disabled:opacity-50 disabled:pointer-events-none disabled:shadow-none;
     }
 
-    /* Sekundärer Button (Abbrechen etc.) */
     .orga-button-ghost {
-        @apply flex justify-center items-center gap-2 bg-brand-50 hover:bg-brand-100 text-brand-900 border border-brand-200/50
-               font-bold py-3 px-6 rounded-xl md:rounded-2xl transition-all duration-300 active:scale-95;
+        @apply inline-flex justify-center items-center gap-2 bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-700/90 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700
+               font-semibold py-2.5 px-4 min-h-[44px] rounded-xl transition-all duration-200 shadow-2xs hover:border-slate-400 active:scale-98 cursor-pointer;
     }
 
-    /* Zerstörerischer Button (Löschen) */
     .orga-button-danger {
-        @apply flex justify-center items-center gap-2 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white 
-               font-bold py-3 px-6 rounded-xl md:rounded-2xl transition-colors active:scale-95;
+        @apply inline-flex justify-center items-center gap-2 bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white border border-rose-200 hover:border-rose-600
+               dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900/60 dark:hover:bg-rose-600 dark:hover:text-white
+               font-semibold py-2.5 px-4 min-h-[44px] rounded-xl transition-all duration-200 shadow-2xs active:scale-98 cursor-pointer;
     }
 
-    /* --- UTILITIES --- */
-    /* Spezifische Klasse für seitlich scrollbare Bereiche (wie deine Tab-Menüs) */
+    /* --- TABELLEN STYLING (HOHE LESBARKEIT & KONTRAST) --- */
+    .orga-table-container {
+        @apply bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs overflow-hidden;
+    }
+
+    .orga-table {
+        @apply w-full text-left border-collapse;
+    }
+
+    .orga-table thead,
+    .orga-table-head {
+        @apply bg-slate-100/90 dark:bg-slate-800/90 border-b border-slate-200 dark:border-slate-700;
+    }
+
+    .orga-table th,
+    .orga-table-th {
+        @apply p-3.5 sm:p-4 text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider whitespace-nowrap;
+    }
+
+    .orga-table td,
+    .orga-table-td {
+        @apply p-3.5 sm:p-4 text-sm font-medium text-slate-800 dark:text-slate-100;
+    }
+
+    .orga-table tr,
+    .orga-table-row {
+        @apply border-b border-slate-100 dark:border-slate-800/80 hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors;
+    }
+
+    /* --- SCROLLBAR UTILITY --- */
     .custom-scrollbar {
         scrollbar-width: thin;
-        scrollbar-color: #525252 transparent;
+        scrollbar-color: #cbd5e1 transparent;
     }
     .custom-scrollbar::-webkit-scrollbar {
-        width: 4px;
-        height: 4px;
+        width: 5px;
+        height: 5px;
     }
     .custom-scrollbar::-webkit-scrollbar-track {
         background: transparent;
     }
     .custom-scrollbar::-webkit-scrollbar-thumb {
-        background-color: #525252;
+        background-color: #cbd5e1;
         border-radius: 20px;
+    }
+    :global(.theme-negative) .custom-scrollbar::-webkit-scrollbar-thumb,
+    :global(.dark) .custom-scrollbar::-webkit-scrollbar-thumb {
+        background-color: #475569;
+    }
+
+    :global(.theme-negative) th,
+    :global(.theme-negative) .orga-table th {
+        color: #f1f5f9 !important;
+    }
+    :global(.theme-negative) td,
+    :global(.theme-negative) .orga-table td {
+        color: #ffffff !important;
     }
 
     /* --- LAYOUT --- */
-    /* Globaler Haupt-Wrapper für das Seitenlayout */
     .orga-layout-wrapper {
-        @apply min-h-screen  text-neutral-900 font-sans antialiased selection:bg-brand-500/30 flex flex-col relative;
+        @apply min-h-screen bg-slate-50/50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans antialiased selection:bg-indigo-500/30 flex flex-col relative;
     }
 
-    /* Content-Bereich neben dem Menü */
     .orga-layout-content {
         @apply relative w-full h-full flex-1 flex flex-col;
     }
+
     /* --- GENERISCHE SEITEN-LAYOUTS --- */
     .orga-page-header {
-        @apply mb-10 flex flex-col md:flex-row md:items-center justify-between gap-6;
+        @apply mb-6 md:mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4;
     }
 
     .orga-page-title {
-        @apply text-3xl font-bold text-neutral-900 tracking-tight;
+        @apply text-2xl sm:text-3xl font-black text-slate-900 dark:text-slate-100 tracking-tight;
     }
 
     .orga-page-subtitle {
-        @apply text-neutral-500 mt-2.5;
+        @apply text-slate-500 dark:text-slate-400 text-xs sm:text-sm mt-1;
     }
 
     .orga-filter-bar {
-        @apply p-5 md:p-8 mb-10 flex flex-col md:flex-row gap-6;
+        @apply p-4 sm:p-5 mb-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs flex flex-col md:flex-row gap-4;
     }
 
     .orga-grid {
-        @apply grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 xl:gap-8;
+        @apply grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 xl:gap-6;
     }
 
     /* --- DASHBOARD --- */
     .orga-dashboard-header {
-        @apply mb-10;
+        @apply mb-6;
     }
 
     .orga-dashboard-title {
-        @apply text-3xl font-bold text-neutral-900;
+        @apply text-2xl sm:text-3xl font-black text-slate-900 dark:text-slate-100 tracking-tight;
     }
 
     .orga-dashboard-subtitle {
-        @apply text-neutral-500 mt-2;
+        @apply text-slate-500 dark:text-slate-400 text-xs sm:text-sm mt-1;
     }
 
     .orga-dashboard-grid {
-        @apply grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6;
+        @apply grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5;
     }
 
     .orga-dashboard-card {
-        @apply p-6;
+        @apply p-5 sm:p-6;
     }
 
     .orga-dashboard-card-title {
-        @apply text-lg font-bold text-neutral-800 mb-4 flex items-center gap-2;
+        @apply text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100 mb-3 flex items-center gap-2;
     }
 
     .orga-dashboard-card-text {
-        @apply text-neutral-500 text-sm;
+        @apply text-slate-500 dark:text-slate-400 text-sm;
     }
 
     /* --- KLIENTEN --- */
     .orga-client-card {
-        /* Nutzt jetzt die Basis-Hover-Effekte von orga-card-white, ergänzt durch einen feinen Border-Glow */
-        @apply p-6 block hover:border-brand-200 relative;
+        @apply p-5 sm:p-6 block hover:border-indigo-300 dark:hover:border-indigo-800 relative;
     }
 
     /* --- KALENDER --- */
@@ -299,24 +367,22 @@
     }
 
     .orga-calendar-toolbar {
-        @apply p-4 md:p-6 border-b border-neutral-100 flex flex-col lg:flex-row justify-between gap-4 lg:items-center bg-neutral-50/30;
+        @apply p-4 border-b border-slate-100 dark:border-slate-800 flex flex-col lg:flex-row justify-between gap-4 lg:items-center bg-slate-50/50 dark:bg-slate-800/40;
     }
 
     .orga-calendar-header {
-        @apply grid grid-cols-7 border-b border-neutral-100 bg-neutral-50/80;
+        @apply grid grid-cols-7 border-b border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/70;
     }
 
     .orga-calendar-grid {
-        @apply grid grid-cols-7 auto-rows-fr bg-neutral-200 gap-px;
+        @apply grid grid-cols-7 auto-rows-fr bg-slate-200 dark:bg-slate-800 gap-px;
     }
 
     .orga-calendar-day {
-        @apply bg-white min-h-17.5 sm:min-h-25 p-1 sm:p-2 cursor-pointer transition-colors hover:bg-brand-50 flex flex-col relative;
+        @apply bg-white dark:bg-slate-900 min-h-18 sm:min-h-24 p-1 sm:p-2 cursor-pointer transition-colors hover:bg-indigo-50/60 dark:hover:bg-slate-800/80 flex flex-col relative;
     }
 
     /* --- EDITOR --- */
-    /* html2canvas fix: Es unterstützt keine oklch Farben (Tailwind v4 Default).
-       Wir zwingen den PDF-Container und alle Kinder zu sauberen Fallback-Werten. */
     .pdf-export-container, .pdf-export-container * {
         border-color: rgba(0, 0, 0, 0.1);
     }
@@ -327,22 +393,72 @@
         border-color: inherit;
     }
 
-    /* Raster und Linien beim PDF-Export via html2pdf ausblenden! */
     .pdf-export-container.orga-canvas-a4, .pdf-export-container .orga-canvas-a4 {
         background-image: none !important;
     }
 
-    /* A4-Simulation bei 96 DPI (794x1123) für perfekte Web-zu-PDF Koordinaten */
+    /* A4-Simulation bei 96 DPI (794x1123) */
     .orga-canvas-a4 {
         width: 794px;
-        min-height: 1123px; /* A4 Höhe, kann nach unten mitwachsen wenn Elemente drüber liegen */
+        min-height: 1123px;
         background-color: white;
-        /* Feines Raster (20x20px) als Orientierungshilfe und blaue Linie alle 1123px für den Seitenumbruch */
         background-image: 
             linear-gradient(to right, rgba(0,0,0,0.03) 1px, transparent 1px), 
             linear-gradient(to bottom, rgba(0,0,0,0.03) 1px, transparent 1px),
-            linear-gradient(to bottom, rgba(198, 106, 77, 0.3) 2px, transparent 2px);
+            linear-gradient(to bottom, rgba(79, 70, 229, 0.3) 2px, transparent 2px);
         background-size: 20px 20px, 20px 20px, 100% 1123px;
         position: relative;
+    }
+}
+
+/* --- GLOBALE PRINT- & PDF-EXPORT STYLES --- */
+@media print {
+    @page {
+        margin: 12mm;
+        size: auto;
+    }
+
+    body, html {
+        background: #ffffff !important;
+        color: #0f172a !important;
+        height: auto !important;
+        min-height: 100% !important;
+        overflow: visible !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+
+    .h-screen, 
+    .overflow-hidden,
+    .overflow-y-auto,
+    main {
+        height: auto !important;
+        max-height: none !important;
+        overflow: visible !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+
+    aside,
+    nav,
+    header,
+    .orga-page-header,
+    [class*="print:hidden"],
+    .toast-layer {
+        display: none !important;
+    }
+
+    table {
+        page-break-inside: auto;
+    }
+    tr {
+        page-break-inside: avoid;
+        page-break-after: auto;
+    }
+    thead {
+        display: table-header-group;
+    }
+    tfoot {
+        display: table-footer-group;
     }
 }

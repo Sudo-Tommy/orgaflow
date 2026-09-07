@@ -3,6 +3,8 @@
     import { sendEmail } from "$lib/services/emailService";
     import { toastStore } from "$lib/services/toastService.svelte";
     import { orgaStore } from "$lib/stores/orgaStore.svelte";
+    import { buildPrioritizedContacts } from "$lib/services/contactPickerService";
+    import { ChevronDown, Plus, Minus, Bold, Italic, Underline } from 'lucide-svelte';
 
     // svelte-ignore non_reactive_update
     let dialog: HTMLDialogElement;
@@ -25,33 +27,10 @@
 
     let isGenerating = $state(false);
     let generatedBody = $state<string | null>(null);
+    let textareaRef = $state<HTMLTextAreaElement | null>(null);
 
-    function buildAvailableContacts() {
-        let list: any[] = [];
-        const add = (name: string, email: string, phone: string, salutation: string, isClient: boolean = false) => {
-            if (email || phone) list.push({ name, email, phone, salutation, isClient });
-        };
-        orgaStore.clients?.data?.forEach((c: any) => {
-            let sal = c.salutation === 'Herr' ? `Sehr geehrter Herr ${c.name_last}` : (c.salutation === 'Frau' ? `Sehr geehrte Frau ${c.name_last}` : `Guten Tag ${c.name_first} ${c.name_last}`);
-            add(`${c.name_first} ${c.name_last} (Klient)`, c.email, c.phone || c.handy, sal + ',', true);
-        });
-        orgaStore.contacts?.data?.forEach((c: any) => {
-            let sal = c.salutation === 'Herr' ? `Sehr geehrter Herr ${c.name_last}` : (c.salutation === 'Frau' ? `Sehr geehrte Frau ${c.name_last}` : `Guten Tag ${c.name_first} ${c.name_last}`);
-            add(`${c.name_first} ${c.name_last} (${c.company_name || 'Kontakt'})`, c.email, c.phone, sal + ',', false);
-        });
-        orgaStore.retirement_homes?.data?.forEach((h: any) => {
-            add(`${h.name} (Pflegeheim)`, h.email, h.phone, `Sehr geehrte Damen und Herren vom ${h.name},`, false);
-        });
-        orgaStore.insurancies?.data?.forEach((i: any) => {
-            add(`${i.name} (Krankenkasse)`, i.email, i.phone, `Sehr geehrte Damen und Herren,`, false);
-        });
-        const unique: any[] = [];
-        const seen = new Set();
-        for (const item of list) {
-            const key = `${item.email}-${item.phone}`;
-            if (!seen.has(key)) { seen.add(key); unique.push(item); }
-        }
-        return unique.sort((a, b) => a.name.localeCompare(b.name));
+    function buildAvailableContacts(targetClient?: any) {
+        return buildPrioritizedContacts(targetClient);
     }
 
     function toggleRecipient(contact: any, isChecked: boolean) {
@@ -97,7 +76,7 @@
         showCcBcc = false;
         subject = `Ihre gebuchten Termine`;
         
-        availableContacts = buildAvailableContacts();
+        availableContacts = buildAvailableContacts(client);
         selectedContactRefs = [];
         if (recipient) {
             const isEmail = method === 'email';
@@ -179,6 +158,23 @@
 
         msg += `\nIhre Termine können Sie auch jederzeit im Klienten-Portal einsehen:\n👉 https://www.ihre-seniorenassistenz.com/portal\n\nWir freuen uns auf Sie!`;
         message = msg;
+    }
+
+    function applyFormat(type: 'bold' | 'italic' | 'underline') {
+        if (!textareaRef) return;
+        const isWa = method === 'whatsapp';
+        
+        let startTag = '', endTag = '';
+        if (type === 'bold') { startTag = isWa ? '*' : '<b>'; endTag = isWa ? '*' : '</b>'; }
+        else if (type === 'italic') { startTag = isWa ? '_' : '<i>'; endTag = isWa ? '_' : '</i>'; }
+        else if (type === 'underline') { startTag = isWa ? '' : '<u>'; endTag = isWa ? '' : '</u>'; }
+        if (!startTag) return;
+
+        const start = textareaRef.selectionStart;
+        const end = textareaRef.selectionEnd;
+        const selectedText = message.substring(start, end);
+        message = message.substring(0, start) + startTag + selectedText + endTag + message.substring(end);
+        setTimeout(() => { textareaRef?.focus(); textareaRef?.setSelectionRange(start + startTag.length, end + startTag.length); }, 10);
     }
 
     function handleToggle(id: string) {
@@ -341,19 +337,19 @@ WICHTIG: Beginne NICHT mit einer Anrede ("Sehr geehrte..."), da diese schon vorh
 
                 const htmlEmail = `
                     <div style="font-family: 'Segoe UI', Helvetica, Arial, sans-serif; color: #374151; max-width: 650px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);">
-                        <div style="background-color: #fdf8f6; padding: 30px; border-bottom: 3px solid #c66a4d;">
+                        <div style="background-color: #fdf8f6; padding: 30px; border-bottom: 3px solid #458893;">
                             <table width="100%" cellpadding="0" cellspacing="0" border="0">
                                 <tr>
                                     <td valign="middle">
-                                        <h1 style="color: #954028; margin: 0; font-size: 24px; letter-spacing: -0.5px; font-weight: 800;">${compName}</h1>
-                                        <p style="color: #c66a4d; margin: 4px 0 0 0; font-size: 14px; font-weight: 600;">Alltagshilfe • Betreuung • Organisation</p>
+                                        <h1 style="color: #20565d; margin: 0; font-size: 24px; letter-spacing: -0.5px; font-weight: 800;">${compName}</h1>
+                                        <p style="color: #458893; margin: 4px 0 0 0; font-size: 14px; font-weight: 600;">Alltagshilfe • Betreuung • Organisation</p>
                                     </td>
                                     ${compLogo ? `<td valign="middle" align="right" style="width: 100px;"><img src="${compLogo}" alt="Logo" width="100" style="max-height: 60px; max-width: 100px; object-fit: contain; border-radius: 6px;" /></td>` : ''}
                                 </tr>
                             </table>
                         </div>
                         <div style="padding: 35px 30px; font-size: 15px; line-height: 1.7; color: #1f2937; background-color: #ffffff;">
-                            ${htmlMessage.replace(/(?:<br>|\s)*(?:👉\s*)?(?:&lt;|<)?\s*https?:\/\/(?:www\.)?ihre-seniorenassistenz\.com\/portal\/?\s*(?:&gt;|>)?/gi, '<br><table role="presentation" border="0" cellpadding="0" cellspacing="0" style="margin: 15px 0;"><tr><td align="center" bgcolor="#c66a4d" style="border-radius: 8px;"><a href="https://www.ihre-seniorenassistenz.com/portal" style="display: inline-block; padding: 12px 24px; color: #ffffff; text-decoration: none; font-weight: bold; font-family: Arial, sans-serif; font-size: 15px;">Zum Klienten-Portal</a></td></tr></table><br>')}
+                            ${htmlMessage.replace(/(?:<br>|\s)*(?:👉\s*)?(?:&lt;|<)?\s*https?:\/\/(?:www\.)?ihre-seniorenassistenz\.com\/portal\/?\s*(?:&gt;|>)?/gi, '<br><table role="presentation" border="0" cellpadding="0" cellspacing="0" style="margin: 15px 0;"><tr><td align="center" bgcolor="#458893" style="border-radius: 8px;"><a href="https://www.ihre-seniorenassistenz.com/portal" style="display: inline-block; padding: 12px 24px; color: #ffffff; text-decoration: none; font-weight: bold; font-family: Arial, sans-serif; font-size: 15px;">Zum Klienten-Portal</a></td></tr></table><br>')}
                             
                             <div style="background-color: #f8fafc; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 25px 0;">
                                 <h3 style="margin-top: 0; color: #111827; font-size: 16px; margin-bottom: 12px;">Die gebuchten Termine:</h3>
@@ -367,7 +363,7 @@ WICHTIG: Beginne NICHT mit einer Anrede ("Sehr geehrte..."), da diese schon vorh
                                 <tr>
                                     <td valign="top" style="padding-bottom: 20px;">
                                         <strong style="color: #111827; font-size: 16px;">${finalUserName}</strong><br>
-                                        <span style="color: #c66a4d; font-weight: 600; font-size: 13px;">Ihre Ansprechperson</span>
+                                        <span style="color: #458893; font-weight: 600; font-size: 13px;">Ihre Ansprechperson</span>
                                     </td>
                                 </tr>
                                 <tr>
@@ -380,9 +376,9 @@ WICHTIG: Beginne NICHT mit einer Anrede ("Sehr geehrte..."), da diese schon vorh
                                                     ${compCity}
                                                 </td>
                                                 <td width="50%" valign="top" style="padding-left: 20px;">
-                                                    <div style="margin-bottom: 4px;">📞 <a href="tel:${finalUserPhone}" style="color: #c66a4d; text-decoration: none; font-weight: 500;">${finalUserPhone}</a></div>
-                                                    <div style="margin-bottom: 4px;">✉️ <a href="mailto:${finalUserEmail}" style="color: #c66a4d; text-decoration: none; font-weight: 500;">${finalUserEmail}</a></div>
-                                                    <div>🌐 <a href="${compWeb.startsWith('http') ? compWeb : 'https://' + compWeb}" style="color: #c66a4d; text-decoration: none; font-weight: 500;">${compWeb.replace(/^https?:\/\//, '')}</a></div>
+                                                    <div style="margin-bottom: 4px;">📞 <a href="tel:${finalUserPhone}" style="color: #458893; text-decoration: none; font-weight: 500;">${finalUserPhone}</a></div>
+                                                    <div style="margin-bottom: 4px;">✉️ <a href="mailto:${finalUserEmail}" style="color: #458893; text-decoration: none; font-weight: 500;">${finalUserEmail}</a></div>
+                                                    <div>🌐 <a href="${compWeb.startsWith('http') ? compWeb : 'https://' + compWeb}" style="color: #458893; text-decoration: none; font-weight: 500;">${compWeb.replace(/^https?:\/\//, '')}</a></div>
                                                 </td>
                                             </tr>
                                         </table>
@@ -456,51 +452,94 @@ WICHTIG: Beginne NICHT mit einer Anrede ("Sehr geehrte..."), da diese schon vorh
 
         <form onsubmit={handleSend} class="space-y-4">
             <div class="flex gap-2 p-1 bg-neutral-100 rounded-lg">
-                <button type="button" onclick={() => changeMethod('email')} class="flex-1 py-2 text-sm font-bold rounded-md transition-colors {method === 'email' ? 'bg-white shadow-sm text-indigo-600' : 'text-neutral-500 hover:text-neutral-700'}">✉️ E-Mail</button>
+                <button type="button" onclick={() => changeMethod('email')} class="flex-1 py-2 text-sm font-bold rounded-md transition-colors {method === 'email' ? 'bg-white shadow-sm text-brand-600' : 'text-neutral-500 hover:text-neutral-700'}">✉️ E-Mail</button>
                 <button type="button" onclick={() => changeMethod('whatsapp')} class="flex-1 py-2 text-sm font-bold rounded-md transition-colors {method === 'whatsapp' ? 'bg-white shadow-sm text-emerald-600' : 'text-neutral-500 hover:text-neutral-700'}">💬 WhatsApp</button>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                    <div class="flex items-center justify-between mb-1.5">
-                        <label for="multi-rem-recipient" class="block text-sm font-semibold text-neutral-700">{method === 'email' ? 'E-Mail Adresse' : 'Handynummer'}</label>
+                    <div class="flex items-center justify-between mb-1">
+                        <label for="multi-rem-recipient" class="block text-[11px] font-bold text-neutral-500 uppercase tracking-wider">{method === 'email' ? 'E-Mail Adresse *' : 'Handynummer *'}</label>
                         {#if method === 'email'}
-                            <button type="button" onclick={() => showCcBcc = !showCcBcc} class="text-xs font-bold text-indigo-600 hover:text-indigo-800 transition-colors">{showCcBcc ? '− CC / BCC' : '+ CC / BCC'}</button>
+                            <button type="button" onclick={() => showCcBcc = !showCcBcc} class="text-xs font-bold text-brand-600 hover:text-brand-800 transition-colors flex items-center gap-1 bg-brand-50 px-2.5 py-1 rounded-lg">
+                                {#if showCcBcc}<Minus class="w-3.5 h-3.5" /> CC / BCC ausblenden{:else}<Plus class="w-3.5 h-3.5" /> CC / BCC hinzufügen{/if}
+                            </button>
                         {/if}
                     </div>
-                    <input id="multi-rem-recipient" type="text" bind:value={recipient} class="orga-input-clear py-3 sm:py-2.5 text-sm" required disabled={isSending} />
+                    <div class="flex flex-col sm:flex-row gap-2 mt-1.5">
+                        <input id="multi-rem-recipient" type="text" bind:value={recipient} class="orga-input-clear min-h-12 flex-1" required disabled={isSending} />
+                        <div class="relative flex-1 sm:flex-none sm:w-64 z-50">
+                            <button type="button" aria-expanded={showContactDropdown} onclick={() => showContactDropdown = !showContactDropdown} disabled={isSending} class="w-full bg-white border border-neutral-200 hover:border-brand-300 rounded-xl px-4 min-h-12 text-sm flex items-center justify-between cursor-pointer transition-all shadow-sm focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:outline-none disabled:opacity-50">
+                                <span class="font-bold text-neutral-800 truncate">Adressbuch</span>
+                                <ChevronDown class="w-4 h-4 text-neutral-400 transition-transform duration-300 {showContactDropdown ? 'rotate-180' : ''}" />
+                            </button>
+                            {#if showContactDropdown}
+                                <button type="button" class="fixed inset-0 z-40 cursor-default outline-none w-full h-full" aria-label="Dropdown schließen" onclick={() => showContactDropdown = false} tabindex="-1"></button>
+                                <div class="absolute right-0 sm:left-0 mt-2 bg-white border border-neutral-200 rounded-xl shadow-2xl overflow-hidden max-h-72 overflow-y-auto custom-scrollbar w-72 sm:w-full z-50 p-1.5">
+                                    {#if availableContacts.some(c => c.isDirect && (method === 'email' ? c.email : c.phone))}
+                                        <div class="px-2 py-1 text-[11px] font-black text-brand-700 bg-brand-50 rounded-md mb-1 uppercase tracking-wider flex items-center justify-between">
+                                            <span>⭐ Direkte Klienten-Kontakte</span>
+                                        </div>
+                                        {#each availableContacts.filter(c => c.isDirect && (method === 'email' ? c.email : c.phone)) as c}
+                                            <label class="w-full text-left px-3 py-2 min-h-11 hover:bg-brand-50/60 bg-brand-50/25 transition-colors rounded-lg flex flex-col cursor-pointer border border-brand-100/70 mb-1">
+                                                <div class="flex items-center justify-between">
+                                                    <span class="font-bold text-xs text-neutral-900 truncate">{c.name}</span>
+                                                    <input type="checkbox" checked={recipient.includes(method === 'email' ? c.email : c.phone)} onchange={(e) => toggleRecipient(c, e.currentTarget.checked)} class="w-4 h-4 text-brand-600 border-neutral-300 rounded focus:ring-brand-500" />
+                                                </div>
+                                                <span class="text-[10px] text-brand-600 font-semibold truncate mt-0.5">{method === 'email' ? c.email : c.phone}</span>
+                                            </label>
+                                        {/each}
+                                        <div class="border-t border-neutral-200 my-1.5"></div>
+                                        <div class="px-2 py-1 text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
+                                            <span>Weitere Adressbuch-Kontakte</span>
+                                        </div>
+                                    {/if}
+                                    {#each availableContacts.filter(c => !c.isDirect && (method === 'email' ? c.email : c.phone)) as c}
+                                        <label class="w-full text-left px-3 py-2 min-h-11 hover:bg-neutral-50 transition-colors rounded-lg flex flex-col cursor-pointer">
+                                            <div class="flex items-center justify-between">
+                                                <span class="font-medium text-xs text-neutral-800 truncate">{c.name}</span>
+                                                <input type="checkbox" checked={recipient.includes(method === 'email' ? c.email : c.phone)} onchange={(e) => toggleRecipient(c, e.currentTarget.checked)} class="w-4 h-4 text-brand-600 border-neutral-300 rounded focus:ring-brand-500" />
+                                            </div>
+                                            <span class="text-[10px] text-neutral-500 font-medium truncate mt-0.5">{method === 'email' ? c.email : c.phone}</span>
+                                        </label>
+                                    {/each}
+                                    {#if availableContacts.filter(c => method === 'email' ? c.email : c.phone).length === 0}
+                                        <p class="text-xs text-neutral-500 p-4 text-center font-medium">Keine {method === 'email' ? 'E-Mails' : 'Nummern'} gefunden</p>
+                                    {/if}
+                                </div>
+                            {/if}
+                        </div>
+                    </div>
                 </div>
-
-                {#if method === 'email'}
-                <div>
-                    <label for="multi-rem-subject" class="block text-sm font-semibold text-neutral-700 mb-1.5">Betreff</label>
-                    <input id="multi-rem-subject" type="text" bind:value={subject} class="orga-input-clear py-3 sm:py-2.5 text-sm" required disabled={isSending} />
-                </div>
-                {/if}
-            </div>
             
             {#if method === 'email' && showCcBcc}
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 animate-enter">
                     <div>
-                        <label for="multi-rem-cc" class="block text-sm font-semibold text-neutral-700 mb-1.5">CC (Kopie)</label>
-                        <input id="multi-rem-cc" type="text" bind:value={cc} class="orga-input-clear py-3 sm:py-2.5 text-sm" disabled={isSending} placeholder="z.B. angehoeriger@mail.de" />
+                        <label for="multi-rem-cc" class="block text-[11px] font-bold text-neutral-500 uppercase tracking-wider mb-1.5">CC (Kopie)</label>
+                        <input id="multi-rem-cc" type="text" bind:value={cc} class="orga-input-clear min-h-12" disabled={isSending} placeholder="z.B. angehoeriger@mail.de" />
                     </div>
                     <div>
-                        <label for="multi-rem-bcc" class="block text-sm font-semibold text-neutral-700 mb-1.5">BCC (Blindkopie)</label>
-                        <input id="multi-rem-bcc" type="text" bind:value={bcc} class="orga-input-clear py-3 sm:py-2.5 text-sm" disabled={isSending} placeholder="z.B. info@mail.de" />
+                        <label for="multi-rem-bcc" class="block text-[11px] font-bold text-neutral-500 uppercase tracking-wider mb-1.5">BCC (Blindkopie)</label>
+                        <input id="multi-rem-bcc" type="text" bind:value={bcc} class="orga-input-clear min-h-12" disabled={isSending} placeholder="z.B. info@mail.de" />
                     </div>
                 </div>
             {/if}
 
-            <div class="p-4 bg-indigo-50 border border-indigo-100 rounded-xl">
-                <h3 class="font-bold text-indigo-900 text-sm mb-2">Zu bestätigende Termine wählen</h3>
+            {#if method === 'email'}
+            <div>
+                <label for="multi-rem-subject" class="block text-[11px] font-bold text-neutral-500 uppercase tracking-wider mb-1.5">Betreff *</label>
+                <input id="multi-rem-subject" type="text" bind:value={subject} class="orga-input-clear min-h-12" required disabled={isSending} />
+            </div>
+            {/if}
+
+            <div class="p-4 bg-brand-50 border border-brand-100 rounded-xl">
+                <h3 class="font-bold text-brand-900 text-sm mb-2">Zu bestätigende Termine wählen</h3>
                 {#if availableAppointments.length === 0}
-                    <p class="text-xs text-indigo-700 italic">Keine zukünftigen Termine gefunden.</p>
+                    <p class="text-xs text-brand-700 italic">Keine zukünftigen Termine gefunden.</p>
                 {:else}
                     <div class="max-h-48 overflow-y-auto custom-scrollbar pr-2 flex flex-col gap-2">
                         {#each availableAppointments as app}
-                            <label class="flex items-center gap-3 p-2 bg-white rounded-lg border border-indigo-100 cursor-pointer hover:border-indigo-300 transition-colors">
-                                <input type="checkbox" checked={selectedAppointmentIds.includes(app.id)} onchange={() => handleToggle(app.id)} class="text-indigo-600 rounded focus:ring-indigo-500 w-4 h-4" />
+                            <label class="flex items-center gap-3 p-2 bg-white rounded-lg border border-brand-100 cursor-pointer hover:border-brand-300 transition-colors focus-within:ring-2 focus-within:ring-brand-500/20 shadow-sm">
+                                <input type="checkbox" checked={selectedAppointmentIds.includes(app.id)} onchange={() => handleToggle(app.id)} class="text-brand-600 rounded border-neutral-300 focus:ring-brand-500 w-4 h-4" />
                                 <div class="flex-1 min-w-0">
                                     <p class="text-sm font-bold text-neutral-900">{new Date(app.appointment).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })} um {new Date(app.appointment).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr</p>
                                     <p class="text-xs text-neutral-500 truncate">{app.description || 'Termin'}</p>
@@ -512,22 +551,29 @@ WICHTIG: Beginne NICHT mit einer Anrede ("Sehr geehrte..."), da diese schon vorh
             </div>
 
             <div>
-                <div class="flex items-center justify-between mb-1.5">
-                    <label for="multi-rem-message" class="block text-sm font-semibold text-neutral-700">Nachricht</label>
-                    <button type="button" onclick={generateAiMessage} disabled={isSending || isGenerating || selectedAppointmentIds.length === 0} class="text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-3 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-colors shadow-sm disabled:opacity-50">
-                        {#if isGenerating}
-                            <div class="w-3 h-3 border-2 border-indigo-200 border-t-indigo-700 rounded-full animate-spin"></div> KI schreibt...
-                        {:else}
-                            <span>✨</span> KI-Vorschlag
-                        {/if}
-                    </button>
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+                    <label for="multi-rem-message" class="block text-[11px] font-bold text-neutral-500 uppercase tracking-wider">Nachricht *</label>
+                    <div class="flex items-center justify-end gap-2">
+                        <div class="flex items-center gap-1 bg-white border border-neutral-200 rounded-lg p-0.5 shadow-sm">
+                            <button type="button" onclick={() => applyFormat('bold')} class="w-7 h-7 flex items-center justify-center hover:bg-neutral-100 text-neutral-700 rounded text-xs font-bold transition-colors" title="Fett (Bold)"><Bold class="w-3.5 h-3.5"/></button>
+                            <button type="button" onclick={() => applyFormat('italic')} class="w-7 h-7 flex items-center justify-center hover:bg-neutral-100 text-neutral-700 rounded text-xs italic transition-colors font-serif" title="Kursiv (Italic)"><Italic class="w-3.5 h-3.5"/></button>
+                            {#if method === 'email'}<button type="button" onclick={() => applyFormat('underline')} class="w-7 h-7 flex items-center justify-center hover:bg-neutral-100 text-neutral-700 rounded text-xs underline transition-colors" title="Unterstrichen (Underline)"><Underline class="w-3.5 h-3.5"/></button>{/if}
+                        </div>
+                        <button type="button" onclick={generateAiMessage} disabled={isSending || isGenerating || selectedAppointmentIds.length === 0} class="text-xs font-bold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 px-3 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-colors shadow-sm disabled:opacity-50">
+                            {#if isGenerating}
+                                <div class="w-3 h-3 border-2 border-brand-200 border-t-brand-700 rounded-full animate-spin"></div> KI schreibt...
+                            {:else}
+                                <span>✨</span> KI-Vorschlag
+                            {/if}
+                        </button>
+                    </div>
                 </div>
-                <textarea id="multi-rem-message" bind:value={message} rows="8" class="orga-input-clear py-3 sm:py-2.5 text-sm resize-none custom-scrollbar" required disabled={isSending || isGenerating}></textarea>
+                <textarea id="multi-rem-message" bind:this={textareaRef} bind:value={message} rows="8" class="orga-input-clear min-h-48 py-4 text-sm resize-none custom-scrollbar" required disabled={isSending || isGenerating}></textarea>
             </div>
 
             <div class="pt-4 flex flex-col-reverse sm:flex-row justify-end gap-3 border-t border-neutral-100 mt-6">
                 <button type="button" onclick={close} class="orga-button-ghost w-full sm:w-auto py-3 sm:py-2.5" disabled={isSending}>Abbrechen</button>
-                <button type="submit" class="orga-button-primary w-full sm:w-auto py-3 sm:py-2.5 {method === 'whatsapp' ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/30' : 'shadow-indigo-600/30'}" disabled={isSending}>
+                <button type="submit" class="orga-button-primary w-full sm:w-auto py-3 sm:py-2.5 {method === 'whatsapp' ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/30' : 'shadow-brand-600/30'}" disabled={isSending}>
                     {isSending ? 'Wird verarbeitet...' : (method === 'email' ? 'E-Mail senden ✉️' : 'WhatsApp öffnen 💬')}
                 </button>
             </div>

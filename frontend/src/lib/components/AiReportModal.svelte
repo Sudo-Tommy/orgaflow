@@ -5,6 +5,7 @@
     import { toastStore } from "$lib/services/toastService.svelte";
     import { orgaStore } from "$lib/stores/orgaStore.svelte";
     import { Bot, Mic, Pencil, CheckCircle, Paperclip, FileText, AudioLines, X, RefreshCw, Square, ChevronDown, Sparkles, Loader2, Trash2 } from "lucide-svelte";
+    import { sanitizeReportText } from "$lib/utils/reportSanitizer";
 
     // svelte-ignore non_reactive_update
     let dialog: HTMLDialogElement;
@@ -48,7 +49,8 @@ Durchgeführte Maßnahmen:
 To-Dos:
 [Stichpunkte zu nächsten Schritten, Hinweisen, etc.]"
 
-Schreibe KEINE Floskeln davor oder danach (wie "Hier ist dein Bericht:"). Formuliere professionell im "Sie"-Format.`;
+Schreibe KEINE Floskeln davor oder danach (wie "Hier ist dein Bericht:"). Formuliere professionell und verbindlich im "Sie"-Format.
+WICHTIG: Erwähne unter keinen Umständen Begriffe wie "KI", "AI", "künstliche Intelligenz", "Modell" oder ähnliche Hinweise auf maschinelle Erstellung.`;
     const promptIntern = "Erstelle eine präzise interne Notiz für das Team aus den Aufzeichnungen. Bitte fasse alle wichtigen Fakten, medizinischen Auffälligkeiten und To-Dos sachlich und kurz in Stichpunkten zusammen. Keine langen Fließtexte, sondern reine Fakten für die interne Akte.";
     
     const promptStandard = `Erstelle einen kurzen, professionellen Besuchsbericht aus den vorliegenden Aufzeichnungen (falls vorhanden) und dem Kontext.
@@ -68,7 +70,8 @@ Durchgeführte Maßnahmen / Ort:
 To-Dos:
 [Aktuell kein weiterer Handlungsbedarf, sofern nicht explizit anders im Kontext angegeben]"
 
-Schreibe KEINE Floskeln davor oder danach. Formuliere professionell im "Sie"-Format.`;
+Schreibe KEINE Floskeln davor oder danach. Formuliere professionell im "Sie"-Format.
+WICHTIG: Erwähne unter keinen Umständen Begriffe wie "KI", "AI", "künstliche Intelligenz" oder Modellhinweise.`;
 
     let reportType = $state<'family' | 'internal' | 'standard'>('family');
     let customPrompt = $state(promptFamilie);
@@ -379,17 +382,17 @@ Schreibe KEINE Floskeln davor oder danach. Formuliere professionell im "Sie"-For
             const wait = Math.max(0, 1000 - (Date.now() - startTime));
             if (wait > 0) await new Promise(r => setTimeout(r, wait));
 
-            generatedText = data.text;
+            generatedText = sanitizeReportText(data.text);
             toastStore.success("Bericht erfolgreich generiert!");
         } catch (err: any) {
             console.error(err);
-            errorMsg = err.message || "Die KI konnte die Eingabe nicht verarbeiten.";
+            errorMsg = err.message || "Die Eingabe konnte nicht verarbeitet werden.";
         } finally {
             isGenerating = false;
         }
     }
     function handleSave() {
-        onSave(generatedText, reportType === 'standard' ? 'family' : reportType, recordings.map(r => r.blob));
+        onSave(sanitizeReportText(generatedText), reportType === 'standard' ? 'family' : reportType, recordings.map(r => r.blob));
         close();
     }
 

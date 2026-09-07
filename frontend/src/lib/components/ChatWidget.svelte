@@ -5,6 +5,7 @@
     import { toastStore } from "$lib/services/toastService.svelte";
     import { confirmStore } from "$lib/services/confirmService.svelte";
     import NotificationSettingsModal from "$lib/components/NotificationSettingsModal.svelte";
+    import FeedbackActionPromptModal from "$lib/components/admin/FeedbackActionPromptModal.svelte";
 
     const chat = useChat();
     let chatContainer: HTMLElement;
@@ -25,6 +26,27 @@
 
     // Reaktive Variablen-Bindung für Svelte 5
     let notificationModal: any = $state();
+    let feedbackPromptModal: any = $state();
+    let filterOnlyInquiries = $state(false);
+
+    // Filterbare Nachrichten (Alle vs. Anfragen & Bug-Reports)
+    const displayedMessages = $derived(
+        filterOnlyInquiries
+            ? chat.messages.filter(m => {
+                const text = (m.text || '').toLowerCase();
+                return (
+                    m.text?.includes('🚨 [BUG REPORT]') ||
+                    text.includes('?') ||
+                    text.includes('bug') ||
+                    text.includes('fehler') ||
+                    text.includes('problem') ||
+                    text.includes('hilfe') ||
+                    text.includes('bitte') ||
+                    text.includes('frage')
+                );
+            })
+            : chat.messages
+    );
 
     // Re-Init Funktion: Erkennt Standby-Aufwachen oder Netzwechsel
     function handleResume() {
@@ -48,7 +70,7 @@
 
     // Auto-Scroll nach unten, wenn eine neue Nachricht kommt
     $effect(() => {
-        if (chat.messages.length) {
+        if (displayedMessages.length) {
             tick().then(() => {
                 if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
             });
@@ -173,12 +195,59 @@
                 </p>
             </div>
         </div>
-        <button type="button" onclick={() => notificationModal?.open?.()} class="p-2 bg-white/10 hover:bg-white/20 rounded-xl transition-colors text-xl" title="Benachrichtigungen verwalten">🔔</button>
+        <div class="flex items-center gap-2">
+            {#if chat.isAdmin}
+                <a 
+                    href="/admin/system-prompts?tab=feedbacks" 
+                    class="px-2.5 py-1.5 bg-white/10 hover:bg-white/20 rounded-xl transition-colors text-xs font-bold flex items-center gap-1.5 text-white"
+                    title="Zur Superadmin Prompt-Verwaltung wechseln"
+                >
+                    <span>🎯</span>
+                    <span class="hidden sm:inline">Prompts</span>
+                </a>
+            {/if}
+            <button type="button" onclick={() => notificationModal?.open?.()} class="p-2 bg-white/10 hover:bg-white/20 rounded-xl transition-colors text-xl" title="Benachrichtigungen verwalten">🔔</button>
+        </div>
+    </div>
+
+    <!-- Sub-Header / Filter-Option für Anfragen & Bug-Reports -->
+    <div class="bg-brand-900/30 px-4 py-1.5 flex items-center justify-between text-[11px] border-b border-brand-700/40">
+        <span class="text-brand-100 font-medium">
+            {#if filterOnlyInquiries}
+                🔍 Nur Anfragen & Bugs ({displayedMessages.length})
+            {:else}
+                💬 Alle Chat-Nachrichten ({chat.messages.length})
+            {/if}
+        </span>
+        <button 
+            type="button" 
+            onclick={() => filterOnlyInquiries = !filterOnlyInquiries}
+            class="px-2.5 py-1 rounded-lg font-bold transition-colors cursor-pointer text-xs {filterOnlyInquiries ? 'bg-amber-400 text-neutral-900 shadow-xs' : 'bg-white/10 hover:bg-white/20 text-white'}"
+            title="Chat-Nachrichten nach Anfragen und Bug-Reports filtern"
+        >
+            {filterOnlyInquiries ? '✓ Nur Anfragen/Bugs' : 'Filter: Alle'}
+        </button>
     </div>
 
     <!-- Chat History / Messages -->
     <div class="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 bg-brand-50" bind:this={chatContainer}>
-        {#each chat.messages as msg}
+        {#if displayedMessages.length === 0}
+            <div class="flex flex-col items-center justify-center h-full text-center p-6 text-neutral-400 space-y-2">
+                <span class="text-2xl">🔍</span>
+                <p class="text-xs font-semibold text-neutral-600">Keine Anfragen oder Bug-Reports gefunden</p>
+                {#if filterOnlyInquiries}
+                    <button 
+                        type="button" 
+                        onclick={() => filterOnlyInquiries = false} 
+                        class="text-xs text-brand-600 hover:underline font-bold cursor-pointer"
+                    >
+                        Alle Nachrichten anzeigen
+                    </button>
+                {/if}
+            </div>
+        {/if}
+
+        {#each displayedMessages as msg}
             {@const rawUser = typeof msg.user === 'string' && msg.user.startsWith('[') ? JSON.parse(msg.user) : msg.user}
             {@const senderId = Array.isArray(rawUser) ? rawUser[0] : rawUser}
             {@const isMe = senderId === chat.currentUserId}
@@ -204,12 +273,30 @@
                             {isMe ? 'bg-brand-200 text-brand-950 rounded-tr-none' : 'bg-white text-neutral-900 rounded-tl-none'}
                             {isBugReport ? 'bg-rose-100! border! border-rose-300!' : ''}">
                     
-                    <!-- Delete Button -->
-                    {#if isMe || chat.isAdmin}
-                        <button onclick={() => handleDelete(msg.id)} class="absolute {isMe ? '-left-8' : '-right-8'} top-1 p-1.5 text-rose-400 bg-white border border-rose-200 rounded-full opacity-0 group-hover/msg:opacity-100 transition-all hover:bg-rose-500 hover:text-white shadow-sm z-10" title="Nachricht löschen">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                        </button>
-                    {/if}
+                    <!-- Action Buttons on Hover (Admin & Delete) -->
+                    <div class="absolute {isMe ? '-left-8' : '-right-8'} top-1 flex flex-col gap-1 opacity-0 group-hover/msg:opacity-100 transition-all z-10">
+                        {#if chat.isAdmin}
+                            <button 
+                                type="button"
+                                onclick={() => feedbackPromptModal?.open(msg, 'chat')} 
+                                class="p-1.5 text-indigo-600 bg-white border border-indigo-200 rounded-full hover:bg-indigo-600 hover:text-white shadow-sm transition-colors cursor-pointer" 
+                                title="🎯 Prompt aus dieser Nachricht erstellen"
+                            >
+                                <span class="text-xs leading-none">🎯</span>
+                            </button>
+                        {/if}
+
+                        {#if isMe || chat.isAdmin}
+                            <button 
+                                type="button"
+                                onclick={() => handleDelete(msg.id)} 
+                                class="p-1.5 text-rose-400 bg-white border border-rose-200 rounded-full hover:bg-rose-500 hover:text-white shadow-sm transition-colors cursor-pointer" 
+                                title="Nachricht löschen"
+                            >
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                            </button>
+                        {/if}
+                    </div>
 
                     <!-- Absender Name (nur bei anderen) -->
                     {#if !isMe}
@@ -323,3 +410,4 @@
 </div>
 
 <NotificationSettingsModal bind:this={notificationModal} />
+<FeedbackActionPromptModal bind:this={feedbackPromptModal} />

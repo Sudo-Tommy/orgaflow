@@ -1,0 +1,28 @@
+/// <reference path="../pb_data/types.d.ts" />
+migrate((app) => {
+  const collection = app.findCollectionByNameOrId("pbc_2488961533")
+
+  // update collection data
+  unmarshal({
+    "createRule": "user = @request.auth.id || @request.auth.role = \"superadmin\"",
+    "deleteRule": "user = @request.auth.id || @request.auth.role = \"superadmin\"",
+    "listRule": "user = @request.auth.id || @request.auth.role = \"superadmin\"",
+    "updateRule": "user = @request.auth.id || @request.auth.role = \"superadmin\"",
+    "viewRule": "user = @request.auth.id || @request.auth.role = \"superadmin\""
+  }, collection)
+
+  return app.save(collection)
+}, (app) => {
+  const collection = app.findCollectionByNameOrId("pbc_2488961533")
+
+  // update collection data
+  unmarshal({
+    "createRule": null,
+    "deleteRule": null,
+    "listRule": "",
+    "updateRule": null,
+    "viewRule": null
+  }, collection)
+
+  return app.save(collection)
+})

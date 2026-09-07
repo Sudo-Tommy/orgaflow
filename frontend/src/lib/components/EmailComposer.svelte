@@ -1,8 +1,10 @@
 <script lang="ts">
     import { pb } from '$lib/services/pocketbase';
-    import { sendEmail } from '$lib/services/emailService'; // FIX: No change needed, this is the utility file
+    import { sendEmail } from '$lib/services/emailService';
+    import { googleCalendarService, type GoogleCalendarStatus } from '$lib/services/googleCalendarService';
     import { onMount } from 'svelte';
     import { orgaStore } from "$lib/stores/orgaStore.svelte";
+    import { resolveCompanyData, resolveUserData, buildEmailHeader, buildEmailFooter, buildTextSignature } from '$lib/services/emailCompanyService';
     
     let to = $state('');
     let cc = $state('');
@@ -104,89 +106,26 @@
         
         try {
             // 1. Daten des eingeloggten Nutzers abrufen
-            const user = pb.authStore.model;
-            const userName = user ? `${user.name_first || ''} ${user.name_last || ''}`.trim() : 'Ihre Seniorenassistenz';
-            const userEmail = user?.email || 'info@ihre-seniorenassistenz.com';
-            const userPhone = user?.handy || user?.tel || '0151 57515432';
-            
-            let compName = 'Ihre Seniorenassistenz';
-            let compStreet = 'Dreyhauptstraße 2';
-            let compCity = '06108 Halle (Saale)';
-            let compWeb = 'www.ihre-seniorenassistenz.com';
-            let compLogo = '';
-            let companyId: string | null = null;
-            if (user && user.company) {
-                companyId = Array.isArray(user.company) ? user.company[0] : user.company;
-                const comp = orgaStore.company?.data?.find((c: any) => c.id === companyId);
-                if (comp) {
-                    compName = comp.name || compName;
-                    compStreet = `${comp.street || ''} ${comp.housenr || ''}`.trim() || compStreet;
-                    compCity = `${comp.zip || ''} ${comp.city || ''}`.trim() || compCity;
-                    compWeb = comp.website || compWeb;
-                    if (comp.logo) {
-                        const logoFilename = Array.isArray(comp.logo) ? comp.logo[0] : comp.logo;
-                        const rawUrl = pb.files.getURL(comp, logoFilename);
-                        try {
-                            const parsedUrl = new URL(rawUrl, 'https://ihre-seniorenassistenz.com');
-                            if (parsedUrl.hostname === 'localhost' || parsedUrl.hostname === '127.0.0.1') { parsedUrl.protocol = 'https:'; parsedUrl.hostname = 'ihre-seniorenassistenz.com'; parsedUrl.port = ''; }
-                            compLogo = parsedUrl.toString();
-                        } catch (e) {
-                            compLogo = rawUrl;
-                        }
-                    }
-                }
-            }
+            const compData = resolveCompanyData(orgaStore);
+            let googleStatus: GoogleCalendarStatus | null = null;
+            try { googleStatus = await googleCalendarService.getStatus(); } catch(e) {}
+            const senderEmail = googleStatus?.connected ? googleStatus.googleEmail : undefined;
+            const userData = resolveUserData(undefined, undefined, senderEmail);
+            const { userName, userEmail, userPhone } = userData;
 
             // 2. Wunderschöne HTML-Mail (Header, Body, Footer) zusammenbauen
             const htmlEmail = `
                 <div style="font-family: 'Segoe UI', Helvetica, Arial, sans-serif; color: #374151; max-width: 650px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);">
-                    <div style="background-color: #fdf8f6; padding: 30px; border-bottom: 3px solid #c66a4d;">
-                        <table width="100%" cellpadding="0" cellspacing="0" border="0">
-                            <tr>
-                                <td valign="middle">
-                                    <h1 style="color: #954028; margin: 0; font-size: 24px; letter-spacing: -0.5px; font-weight: 800;">${compName}</h1>
-                                    <p style="color: #c66a4d; margin: 4px 0 0 0; font-size: 14px; font-weight: 600;">Alltagshilfe • Betreuung • Organisation</p>
-                                </td>
-                                ${compLogo ? `<td valign="middle" align="right" style="width: 100px;"><img src="${compLogo}" alt="Logo" width="100" style="max-height: 60px; max-width: 100px; object-fit: contain; border-radius: 6px;" /></td>` : ''}
-                            </tr>
-                        </table>
-                    </div>
+                    ${buildEmailHeader(compData)}
                     <div style="padding: 35px 30px; font-size: 15px; line-height: 1.7; color: #1f2937; background-color: #ffffff;">
                         ${message.replace(/\n/g, '<br>')}
                     </div>
-                    <div style="background-color: #f8fafc; padding: 30px; border-top: 1px solid #e5e7eb;">
-                        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size: 14px; color: #4b5563;">
-                            <tr>
-                                <td valign="top" style="padding-bottom: 20px;">
-                                    <strong style="color: #111827; font-size: 16px;">${userName}</strong><br>
-                                    <span style="color: #c66a4d; font-weight: 600; font-size: 13px;">Ihre Ansprechperson</span>
-                                </td>
-                            </tr>
-                            <tr>
-                                <td valign="top">
-                                    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size: 13px; color: #4b5563; line-height: 1.6;">
-                                        <tr>
-                                            <td width="50%" valign="top" style="padding-right: 15px; border-right: 1px solid #e5e7eb;">
-                                                <strong style="color: #374151; font-size: 14px;">${compName}</strong><br>
-                                                ${compStreet}<br>
-                                                ${compCity}
-                                            </td>
-                                            <td width="50%" valign="top" style="padding-left: 20px;">
-                                                <div style="margin-bottom: 4px;">📞 <a href="tel:${userPhone}" style="color: #c66a4d; text-decoration: none; font-weight: 500;">${userPhone}</a></div>
-                                                <div style="margin-bottom: 4px;">✉️ <a href="mailto:${userEmail}" style="color: #c66a4d; text-decoration: none; font-weight: 500;">${userEmail}</a></div>
-                                                <div>🌐 <a href="${compWeb.startsWith('http') ? compWeb : 'https://' + compWeb}" style="color: #c66a4d; text-decoration: none; font-weight: 500;">${compWeb.replace(/^https?:\/\//, '')}</a></div>
-                                            </td>
-                                        </tr>
-                                    </table>
-                                </td>
-                            </tr>
-                        </table>
-                    </div>
+                    ${buildEmailFooter(userData, compData)}
                 </div>
             `;
             
             // 3. Fallback für einfache Text-Clients
-            const textEmail = `${message}\n\n--\n${userName}\n${compName}\n${compStreet}, ${compCity}\nTelefon: ${userPhone}\nE-Mail: ${userEmail}\nWeb: ${compWeb}`;
+            const textEmail = `${message}${buildTextSignature(userData, compData)}`;
 
             // 4. Anhänge vorbereiten
             const attachmentPayload = await Promise.all(attachments.map(async (file) => ({
@@ -213,7 +152,7 @@
                     
                     await pb.collection('mailbox_messages').create({
                         send_by: pb.authStore.model.id,
-                        company: companyId,
+                        company: pb.authStore.model.company || '',
                         folder: 'Sent',
                         from_address: `${userName} <${userEmail}>`,
                         to_address: fullTo,

@@ -211,6 +211,9 @@ export interface LiveChatRecord extends BaseRecord {
     whispered?: boolean;
     whispered_user?: string | string[]; // Relation
     file?: string; // file
+    status?: 'Neu' | 'In Bearbeitung' | 'Gelöst' | 'Archiviert' | string;
+    admin_notes?: string;
+    admin_reply?: string;
 }
 
 export interface MailboxMessageRecord extends BaseRecord {
@@ -248,4 +251,33 @@ export interface UpdateRecord extends BaseRecord {
     number?: number;
     date?: string; // date
     text?: string;
+}
+
+export interface SystemPromptRecord extends BaseRecord {
+    title: string;
+    calendar_week?: string;
+    prompt_content: string;
+    feedback_count?: number;
+    source_period_start?: string;
+    source_period_end?: string;
+    status: 'open' | 'applied' | 'archived';
+    raw_summary?: string;
+    metadata?: Record<string, any>;
+}
+
+export interface ImprovementProposalRecord extends BaseRecord {
+    title: string;
+    category: 'UI/UX & Design' | 'Core Engine & API' | 'Haushaltsbuch & Finanzen' | 'Dokumente & Vorlagen' | 'Termine & Außendienst' | 'Sicherheit & Audit' | 'Sonstiges';
+    priority: 'low' | 'medium' | 'high' | 'critical';
+    status: 'idea' | 'planned' | 'in_progress' | 'implemented';
+    description: string;
+    solution_concept?: string;
+    expected_behavior?: string;
+    ai_prompt?: string;
+    team_briefing?: string;
+    tags?: string;
+    source_type?: 'manual' | 'feedback' | 'chat' | 'inquiry';
+    source_id?: string;
+    author_name?: string;
+    author?: string;
 }

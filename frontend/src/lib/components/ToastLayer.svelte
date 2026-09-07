@@ -1,17 +1,9 @@
 <script lang="ts">
     import { toastStore } from "$lib/services/toastService.svelte";
+    import { fly, fade } from "svelte/transition";
     import { onMount } from "svelte";
-    import { elasticOut, cubicIn } from "svelte/easing";
 
-    let popoverEl: HTMLElement;
-    
-    onMount(() => {
-        if (popoverEl && typeof popoverEl.showPopover === 'function') {
-            popoverEl.showPopover();
-        }
-    });
-
-    let lastToastId = "";
+    let containerEl: HTMLElement | undefined = $state();
 
     // Gruppiert identische Toasts, die direkt nacheinander kommen
     let groupedToasts = $derived.by(() => {
@@ -28,135 +20,185 @@
         return groups;
     });
 
-    $effect(() => {
-        if (groupedToasts.length > 0) {
-            const newest = groupedToasts[groupedToasts.length - 1];
-            // Sobald ein neuer Toast auftaucht, rücken wir den Container wieder nach ganz oben
-            if (newest.ids[0] !== lastToastId && popoverEl && typeof popoverEl.showPopover === 'function') {
+    function dismissGroup(ids: string[]) {
+        ids.forEach(id => toastStore.remove(id));
+    }
+
+    /**
+     * Bringt den Toast-Layer verlässlich in den Browser Top-Layer,
+     * sodass Toasts NIEMALS hinter modalen <dialog>-Fenstern (z. B. QuickLetterModal, PdfPreviewModal, etc.) landen!
+     */
+    function syncPopoverState() {
+        if (!containerEl || typeof containerEl.showPopover !== 'function') return;
+        try {
+            if (toastStore.toasts.length > 0) {
+                // Falls bereits im Top-Layer: kurz schließen und neu öffnen,
+                // damit der Toast-Container ganz oben über neu geöffnete <dialog>-Elemente springt
                 try {
-                    if (popoverEl.matches(':popover-open')) popoverEl.hidePopover();
-                    popoverEl.showPopover();
+                    containerEl.hidePopover();
                 } catch (e) {}
-                lastToastId = newest.ids[0];
+                containerEl.showPopover();
+            } else {
+                try {
+                    containerEl.hidePopover();
+                } catch (e) {}
             }
+        } catch (err) {
+            // Sanfter Fallback auf standardmäßige fixed CSS-Positionierung
         }
+    }
+
+    // Reagiert sofort, wenn Toasts hinzugefügt oder entfernt werden
+    $effect(() => {
+        const _ = toastStore.toasts.length;
+        syncPopoverState();
     });
 
-    // Witzige Animation: Klatscht an die Scheibe (Splat) wie ein Ei
-    function splatIn(node: Element, { duration = 700 } = {}) {
-        return {
-            duration,
-            css: (t: number) => {
-                const ease = elasticOut(t);
-                const scale = 1 + (1 - ease) * 3; // Startet riesig (4x) und "knallt" federnd auf Normalgröße
-                return `transform: scale(${scale}); opacity: ${t < 0.2 ? t * 5 : 1};`;
-            }
-        };
-    }
+    onMount(() => {
+        syncPopoverState();
 
-    // Witzige Animation: Läuft wie ein zermatschtes Ei die Scheibe runter (Drip)
-    function dripOut(node: Element, { duration = 1200 } = {}) {
-        return {
-            duration,
-            css: (t: number, u: number) => {
-                const ease = cubicIn(u); // Beschleunigt exponentiell nach unten
-                return `transform: translateY(${ease * 800}px) scaleY(${1 + ease * 0.8}); opacity: ${t};`;
+        // Überwacht das Öffnen von <dialog>-Modalfenstern im Dokument.
+        // Sobald ein Modal aufgerufen wird (.showModal()), wird der Toast-Container
+        // erneut an die oberste Spitze des Top-Layers befördert.
+        const observer = new MutationObserver((mutations) => {
+            for (const m of mutations) {
+                if (m.type === 'attributes' && m.attributeName === 'open') {
+                    const target = m.target as HTMLElement;
+                    if (target.tagName === 'DIALOG' && target.hasAttribute('open')) {
+                        if (toastStore.toasts.length > 0) {
+                            syncPopoverState();
+                        }
+                    }
+                }
             }
+        });
+
+        observer.observe(document.body, {
+            attributes: true,
+            subtree: true,
+            attributeFilter: ['open']
+        });
+
+        return () => {
+            observer.disconnect();
         };
-    }
+    });
 </script>
 
-<div bind:this={popoverEl} popover="manual" class="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-8 sm:bottom-8 z-9999 flex flex-col items-center sm:items-end gap-4 pointer-events-none bg-transparent border-none m-0 p-0 overflow-visible w-auto h-auto outline-none">
+<!-- 
+    Mobile-First Top-Layer Toast Container:
+    - Verwendet popover="manual" für native Platzierung im Top-Layer ÜBER allen modalen <dialog>-Fenstern
+    - pointer-events-none auf dem Container verhindert jegliches Blockieren der Benutzeroberfläche
+    - Maximaler z-index als universeller Fallback
+-->
+<div 
+    bind:this={containerEl}
+    popover="manual"
+    id="global-toast-container"
+    class="fixed top-2 left-3 right-3 sm:top-auto sm:bottom-6 sm:right-6 sm:left-auto sm:max-w-md z-[2147483647] pointer-events-none flex flex-col items-center sm:items-end gap-2.5 pt-[max(env(safe-area-inset-top,0px),0.25rem)] m-0 p-0 border-0 bg-transparent overflow-visible"
+    aria-live="polite"
+    aria-atomic="true"
+>
     {#each groupedToasts as toast (toast.ids[0])}
-        <!-- Der ECHTE Kawaii-Toast! 🍞 -->
-        <div 
-            in:splatIn 
-            out:dripOut
-            class="pointer-events-auto relative flex flex-col items-center justify-center p-6 pt-10 pb-6
-                   rounded-4xl rounded-t-[3.5rem] border-[6px] sm:border-8 w-full max-w-sm sm:w-72 shadow-2xl 
-                   transform transition-transform hover:scale-105 cursor-pointer overflow-hidden
-                   {toast.type === 'error' ? 'bg-[#D2A679] border-[#6D4222] text-[#4A2C16]' : 'bg-[#FDEBD0] border-[#D98A44] text-[#8C5220]'}"
-            onclick={() => toast.ids.forEach((id: string) => toastStore.remove(id))}
-            role="button"
-            tabindex="0"
-            onkeydown={(e) => e.key === 'Enter' && toast.ids.forEach((id: string) => toastStore.remove(id))}
-            title="Klicken zum Schließen"
+        <button
+            type="button"
+            in:fly={{ y: -20, duration: 220 }}
+            out:fade={{ duration: 160 }}
+            class="pointer-events-auto w-full sm:w-auto min-w-[280px] max-w-sm sm:max-w-md bg-neutral-900/95 text-white backdrop-blur-xl rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.6)] border p-3.5 sm:p-4 flex items-start gap-3.5 transition-all active:scale-[0.98] select-none text-left cursor-pointer ring-1
+                   {toast.type === 'error' ? 'border-rose-500/50 ring-rose-500/30' : 
+                    toast.type === 'warning' ? 'border-amber-500/50 ring-amber-500/30' : 
+                    toast.type === 'info' ? 'border-sky-500/50 ring-sky-500/30' : 
+                    'border-emerald-500/50 ring-emerald-500/30'}"
+            onclick={() => dismissGroup(toast.ids)}
         >
+            <!-- Typ-Icon -->
+            <div class="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 text-base font-bold shadow-sm
+                        {toast.type === 'error' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' : 
+                         toast.type === 'warning' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 
+                         toast.type === 'info' ? 'bg-sky-500/20 text-sky-400 border border-sky-500/30' : 
+                         'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'}">
+                {#if toast.type === 'error'}
+                    ✕
+                {:else if toast.type === 'warning'}
+                    ⚠️
+                {:else if toast.type === 'info'}
+                    ℹ️
+                {:else}
+                    ✓
+                {/if}
+            </div>
+
+            <!-- Nachricht & Hinweis -->
+            <div class="flex-1 min-w-0 pt-0.5">
+                <p class="text-xs sm:text-sm font-bold text-white leading-snug break-words">
+                    {toast.message}
+                </p>
+                <p class="text-[10px] text-neutral-400 mt-0.5 font-medium">
+                    Tippen zum Schließen
+                </p>
+            </div>
+
             {#if toast.count > 1}
                 <!-- Multi-Hit Combo Zähler -->
-                <div class="absolute top-2 right-2 bg-rose-500 text-white font-black text-sm px-2 py-0.5 rounded-full shadow-md z-50 border-2 border-white animate-pulse">
+                <span class="bg-indigo-500 text-white font-black text-[10px] px-2 py-0.5 rounded-full shadow-xs shrink-0 self-center">
                     {toast.count}x
-                </div>
+                </span>
             {/if}
 
-            <!-- Der Belag (Honig, Marmelade, Blaubeere...) -->
-            {#if toast.type === 'success'}
-                <!-- Honig 🍯 -->
-                <div class="absolute top-0 left-0 right-0 h-8 bg-amber-400/90 rounded-b-4xl"></div>
-                <div class="absolute top-6 left-[20%] w-8 h-12 bg-amber-400/90 rounded-b-full"></div>
-                <div class="absolute top-6 right-[30%] w-6 h-10 bg-amber-400/90 rounded-b-full"></div>
-                <div class="absolute top-6 right-[15%] w-4 h-6 bg-amber-400/90 rounded-b-full"></div>
-            {:else if toast.type === 'warning'}
-                <!-- Erdbeermarmelade 🍓 -->
-                <div class="absolute top-0 left-0 right-0 h-8 bg-rose-500/90 rounded-b-4xl"></div>
-                <div class="absolute top-6 left-[15%] w-10 h-10 bg-rose-500/90 rounded-b-full"></div>
-                <div class="absolute top-6 right-[25%] w-7 h-14 bg-rose-500/90 rounded-b-full"></div>
-            {:else if toast.type === 'info'}
-                <!-- Blaubeermarmelade 🫐 -->
-                <div class="absolute top-0 left-0 right-0 h-8 bg-blue-500/80 rounded-b-4xl"></div>
-                <div class="absolute top-6 left-[30%] w-6 h-10 bg-blue-500/80 rounded-b-full"></div>
-                <div class="absolute top-6 right-[20%] w-8 h-8 bg-blue-500/80 rounded-b-full"></div>
-            {:else if toast.type === 'error'}
-                <!-- Verbrannt 🔥 -->
-                <div class="absolute -top-4 -left-4 w-16 h-16 bg-[#5C3A21] rounded-full blur-xl opacity-50"></div>
-                <div class="absolute bottom-4 right-4 w-12 h-12 bg-[#5C3A21] rounded-full blur-lg opacity-40"></div>
-            {/if}
-
-            <!-- Das Kawaii-Gesicht 🥺 -->
-            <div class="flex items-center justify-center gap-7 mb-4 relative z-10">
-                <!-- Linkes Auge -->
-                <div class="w-3.5 h-3.5 rounded-full {toast.type === 'error' ? 'bg-[#4A2C16]' : 'bg-[#8C5220]'} relative">
-                    <div class="absolute -bottom-2 -left-3.5 w-4 h-2.5 bg-rose-300/70 rounded-full blur-[1px]"></div>
-                    {#if toast.type === 'error'}
-                        <div class="absolute -top-2 -left-1 w-4 h-1 border-t-2 border-[#4A2C16] rounded-t-full transform rotate-12"></div>
-                    {/if}
-                </div>
-
-                <!-- Mund -->
-                <div class="relative -mt-2">
-                    {#if toast.type === 'success' || toast.type === 'info'}
-                        <!-- Lächeln -->
-                        <svg class="w-6 h-6 text-[#8C5220]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M7 14c2.5 3 7.5 3 10 0" /></svg>
-                    {:else if toast.type === 'error'}
-                        <!-- Traurig / Oops -->
-                        <svg class="w-6 h-6 text-[#4A2C16] transform rotate-180 mt-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M7 14c2.5 3 7.5 3 10 0" /></svg>
-                    {:else}
-                        <!-- Überrascht (Warning) -->
-                        <div class="w-3.5 h-3.5 border-4 border-[#8C5220] rounded-full mt-1"></div>
-                    {/if}
-                </div>
-
-                <!-- Rechtes Auge -->
-                <div class="w-3.5 h-3.5 rounded-full {toast.type === 'error' ? 'bg-[#4A2C16]' : 'bg-[#8C5220]'} relative">
-                    {#if toast.type === 'info'}
-                        <!-- Zwinkern -->
-                        <div class="absolute inset-0 bg-[#FDEBD0] scale-110 translate-y-1"></div>
-                        <div class="absolute inset-0 border-t-[3.5px] border-[#8C5220] rounded-t-full"></div>
-                    {/if}
-                    <div class="absolute -bottom-2 -right-3.5 w-4 h-2.5 bg-rose-300/70 rounded-full blur-[1px]"></div>
-                    {#if toast.type === 'error'}
-                        <div class="absolute -top-2 -right-1 w-4 h-1 border-t-2 border-[#4A2C16] rounded-t-full transform -rotate-12"></div>
-                    {/if}
-                </div>
+            <!-- Schließen-Icon -->
+            <div class="w-8 h-8 -mr-1 -mt-1 rounded-full text-neutral-400 hover:text-white hover:bg-white/10 flex items-center justify-center transition-colors shrink-0" aria-hidden="true">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
             </div>
-
-            <!-- Text-Inhalt -->
-            <p class="text-center font-extrabold text-sm sm:text-base leading-snug relative z-10 px-2 drop-shadow-sm">{toast.message}</p>
-            
-            <!-- Kleines X oben rechts -->
-            <div class="absolute top-4 right-5 opacity-20 hover:opacity-100 transition-opacity z-20">
-                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="4"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-            </div>
-        </div>
+        </button>
     {/each}
 </div>
+
+<style>
+    /* 
+       Native Browser Top-Layer Reset für den Popover-Container:
+       Garantiert, dass der Popover transparent ist, keine Browser-Standard-Ränder besitzt
+       und oberhalb ALLER <dialog>-Backdrops platziert wird.
+    */
+    :global(#global-toast-container[popover]) {
+        position: fixed !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: none !important;
+        background: transparent !important;
+        color: inherit !important;
+        overflow: visible !important;
+        pointer-events: none !important;
+        width: auto !important;
+        height: auto !important;
+        max-height: 100vh !important;
+        inset: unset !important;
+        z-index: 2147483647 !important;
+    }
+
+    /* Mobile: Oben zentriert */
+    :global(#global-toast-container[popover]) {
+        top: 0.5rem !important;
+        left: 0.75rem !important;
+        right: 0.75rem !important;
+        bottom: auto !important;
+    }
+
+    /* Desktop (ab 640px): Unten rechts */
+    @media (min-width: 640px) {
+        :global(#global-toast-container[popover]) {
+            top: auto !important;
+            bottom: 1.5rem !important;
+            right: 1.5rem !important;
+            left: auto !important;
+            max-width: 28rem !important;
+        }
+    }
+
+    :global(#global-toast-container::backdrop) {
+        display: none !important;
+        background: transparent !important;
+        pointer-events: none !important;
+    }
+</style>

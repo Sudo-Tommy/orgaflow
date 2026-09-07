@@ -1,19 +1,28 @@
 @echo off
 setlocal EnableDelayedExpansion
 
-:: Interne Sub-Prozesse abfangen (Wird fuer den Traffic-Monitor genutzt)
-if "%~1"=="TRAFFIC_MONITOR_PROC" goto traffic_monitor_loop
-
-title OrgaFlow - Server Management Tool
-
-:: --- CONFIGURATION ---
+:: --- CONFIGURATION (Muss vor allen Spruengen initialisiert werden) ---
 set "PROJECT_ROOT=%~dp0"
 set "VERSION_FILE=%PROJECT_ROOT%version.txt"
 set "BACKUP_DIR=%PROJECT_ROOT%..\OrgaFlow_Backups"
 set "NGINX_DIR=S:\nginx-1.30.0"
 
-:: Stelle sicher, dass das Skript im Projektverzeichnis ausgefuehrt wird (wichtig bei Admin-Rechten)
+:: Stelle sicher, dass das Skript im Projektverzeichnis ausgefuehrt wird
 cd /d "%PROJECT_ROOT%"
+
+:: Interne Sub-Prozesse abfangen (Wird fuer den Traffic-Monitor genutzt)
+if "%~1"=="TRAFFIC_MONITOR_PROC" goto traffic_monitor_loop
+
+:: Direkte CLI-Argumente unterstuetzen (z.B. "start.bat build", "start.bat update", "start.bat stop")
+if /i "%~1"=="build" goto build
+if /i "%~1"=="5" goto build
+if /i "%~1"=="update" goto update_all
+if /i "%~1"=="6" goto update_all
+if /i "%~1"=="live" goto start_live
+if /i "%~1"=="dev" goto start_dev
+if /i "%~1"=="stop" goto kill_all
+
+title OrgaFlow - Server Management Tool
 
 :: --- INIT VERSION ---
 if not exist "%VERSION_FILE%" > "%VERSION_FILE%" echo 1.0.0
@@ -27,19 +36,19 @@ echo ========================================================
 echo.
 echo  [ DEV MODUS ]
 echo   1) DEV-Modus STARTEN (Backend + Svelte + Mailer)
-echo   2) DEV-Modus BEENDEN
+echo   2) DEV-Modus BEENDEN (Fenster schliessen)
 echo   D1) Nur Svelte Dev-Server zuschalten (Live-Test)
 echo   D2) Svelte Dev-Server beenden
 echo.
 echo  [ LIVE MODUS ]
 echo   3) LIVE-Modus STARTEN (pb_public + Mailer + Nginx)
-echo   4) LIVE-Modus BEENDEN
+echo   4) LIVE-Modus BEENDEN (Fenster schliessen)
 echo.
-echo  [ BUILD ^& DEPLOY ]
-echo   5) Frontend Builden ^& in Backend (pb_public) kopieren
+echo  [ BUILD, DEPLOY ^& RESTART ]
+echo   5) Frontend builden, ins Backend laden ^& Server neustarten
 echo.
 echo  [ UPDATES ]
-echo   6) Komplettes Update (PB + Svelte + Node) ^& Version++
+echo   6) Komplettes Update (PB + Svelte + Node), Build ^& Neustart
 echo   7) Nur PocketBase Update
 echo   8) Nur Frontend (Svelte) Update
 echo   9) Nur Microservice (Node) Update
@@ -49,7 +58,7 @@ echo   B) 1:1 Projekt-Backup erstellen (Mirror)
 echo   V) Version manuell erhoehen
 echo   R) Windows Ressourcenmonitor (Live-Graphen) oeffnen
 echo   T) Traffic ^& Connection Monitor oeffnen
-echo   X) ALLE Server beenden (Not-Aus)
+echo   X) ALLE Server und Fenster beenden (Not-Aus ^& Port-Freigabe)
 echo.
 echo  [ NGINX STEUERUNG ]
 echo   N1) Nginx starten
@@ -82,6 +91,43 @@ if "%choice%"=="0" exit
 
 goto menu
 
+:close_all_windows
+echo ========================================================
+echo   Schliesse alle Server-Fenster und beende Prozesse...
+echo ========================================================
+:: 1. Taskkill ueber bekannte Fenstertitel
+taskkill /F /FI "WINDOWTITLE eq OrgaFlow PB (LIVE)*" /T >nul 2>&1
+taskkill /F /FI "WINDOWTITLE eq Microservice (LIVE)*" /T >nul 2>&1
+taskkill /F /FI "WINDOWTITLE eq PocketBase Backend*" /T >nul 2>&1
+taskkill /F /FI "WINDOWTITLE eq Email Microservice*" /T >nul 2>&1
+taskkill /F /FI "WINDOWTITLE eq SvelteKit Frontend*" /T >nul 2>&1
+taskkill /F /FI "WINDOWTITLE eq OrgaFlow Traffic Monitor*" /T >nul 2>&1
+
+:: 2. PowerShell: Ermittle alle Prozesse auf den Ports 3000, 8090, 5173
+::    und beende sowohl den Port-Inhaber als auch dessen uebergeordnetes CMD-Fenster (ParentProcessId)!
+powershell -NoProfile -Command "$ports = 3000, 8090, 5173; foreach ($p in $ports) { Get-NetTCPConnection -LocalPort $p -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { $id = $_; try { $parent = (Get-CimInstance Win32_Process -Filter ('ProcessId=' + $id)).ParentProcessId; if ($parent) { Stop-Process -Id $parent -Force -ErrorAction SilentlyContinue } } catch {}; Stop-Process -Id $id -Force -ErrorAction SilentlyContinue } }; Get-CimInstance Win32_Process -Filter 'Name=''cmd.exe''' | Where-Object { $_.CommandLine -like '*pocketbase*' -or $_.CommandLine -like '*microservice*' -or $_.CommandLine -like '*node index.js*' -or $_.CommandLine -like '*vite dev*' -or $_.CommandLine -like '*npm run dev*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; Get-Process pocketbase -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue" >nul 2>&1
+
+:: 3. Nginx sauber beenden
+if exist "%NGINX_DIR%\nginx.exe" (
+    cd /d "%NGINX_DIR%"
+    nginx.exe -s quit >nul 2>&1
+    taskkill /F /IM nginx.exe >nul 2>&1
+    cd /d "%PROJECT_ROOT%"
+)
+echo [OK] Alle alten Server-Fenster und Hintergrund-Prozesse wurden geschlossen.
+exit /b
+
+:start_live_procs
+echo Starte LIVE Backend (PocketBase auf Port 8090)...
+start "OrgaFlow PB (LIVE)" cmd /k "cd backend && pocketbase.exe serve --http=127.0.0.1:8090"
+echo Starte LIVE Microservice (Port 3000)...
+start "Microservice (LIVE)" cmd /k "cd microservice && node index.js"
+echo Starte Nginx Proxy...
+cd /d "%NGINX_DIR%"
+start "" nginx.exe
+cd /d "%PROJECT_ROOT%"
+exit /b
+
 :start_dev
 echo Starte Backend (Dev)...
 start "PocketBase Backend" cmd /k "cd backend && pocketbase.exe serve ihre-seniorenassistenz.com"
@@ -92,12 +138,8 @@ start "SvelteKit Frontend" cmd /k "cd frontend && npm run dev -- --host --open"
 goto menu
 
 :stop_dev
-echo ==========================================
-echo Beende DEV-Server Prozesse...
-taskkill /F /FI "WINDOWTITLE eq PocketBase Backend*" /T >nul 2>&1
-taskkill /F /FI "WINDOWTITLE eq Email Microservice*" /T >nul 2>&1
-taskkill /F /FI "WINDOWTITLE eq SvelteKit Frontend*" /T >nul 2>&1
-echo DEV-Server erfolgreich beendet!
+call :close_all_windows
+echo DEV-Server und Fenster erfolgreich beendet!
 pause
 goto menu
 
@@ -109,128 +151,150 @@ goto menu
 :stop_svelte_dev
 echo Beende SvelteKit Frontend (Dev)...
 taskkill /F /FI "WINDOWTITLE eq SvelteKit Frontend*" /T >nul 2>&1
+powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort 5173 -ErrorAction SilentlyContinue | ForEach-Object { $id = $_.OwningProcess; try { $parent = (Get-CimInstance Win32_Process -Filter ('ProcessId=' + $id)).ParentProcessId; if ($parent) { Stop-Process -Id $parent -Force -ErrorAction SilentlyContinue } } catch {}; Stop-Process -Id $id -Force -ErrorAction SilentlyContinue }" >nul 2>&1
 echo Frontend Dev-Server beendet!
 pause
 goto menu
 
 :start_live
-echo Starte LIVE Backend (PocketBase auf Port 8090)...
-start "OrgaFlow PB (LIVE)" cmd /k "cd backend && pocketbase.exe serve --http=127.0.0.1:8090"
-echo Starte LIVE Microservice...
-start "OrgaFlow Mailer (LIVE)" cmd /k "cd microservice && node index.js"
-echo Starte Nginx Proxy...
-cd /d "%NGINX_DIR%"
-start "" nginx.exe
-cd /d "%PROJECT_ROOT%"
+echo ==========================================
+echo Bereite LIVE-Server Start vor...
+call :close_all_windows
+call :start_live_procs
+echo LIVE-Server erfolgreich gestartet!
+pause
 goto menu
 
 :stop_live
-echo ==========================================
-echo Beende LIVE-Server Prozesse...
-taskkill /F /FI "WINDOWTITLE eq OrgaFlow PB (LIVE)*" /T >nul 2>&1
-taskkill /F /FI "WINDOWTITLE eq OrgaFlow Mailer (LIVE)*" /T >nul 2>&1
-echo Beende Nginx Proxy...
-cd /d "%NGINX_DIR%"
-nginx.exe -s quit >nul 2>&1
-taskkill /F /IM nginx.exe >nul 2>&1
-cd /d "%PROJECT_ROOT%"
+call :close_all_windows
 echo LIVE-Server erfolgreich beendet!
 pause
 goto menu
 
 :kill_all
-echo ==========================================
-echo Beende alle laufenden Server-Prozesse...
-:: Schliesst die Konsolenfenster anhand ihrer Titel
-taskkill /F /FI "WINDOWTITLE eq PocketBase Backend*" /T >nul 2>&1
-taskkill /F /FI "WINDOWTITLE eq Email Microservice*" /T >nul 2>&1
-taskkill /F /FI "WINDOWTITLE eq SvelteKit Frontend*" /T >nul 2>&1
-taskkill /F /FI "WINDOWTITLE eq OrgaFlow PB (LIVE)*" /T >nul 2>&1
-taskkill /F /FI "WINDOWTITLE eq OrgaFlow Mailer (LIVE)*" /T >nul 2>&1
-
-echo Beende Nginx Proxy...
-cd /d "%NGINX_DIR%"
-nginx.exe -s quit >nul 2>&1
-taskkill /F /IM nginx.exe >nul 2>&1
-cd /d "%PROJECT_ROOT%"
-
-echo Alle Server wurden erfolgreich beendet!
+call :close_all_windows
+echo Alle Server und Konsolenfenster wurden erfolgreich beendet und alle Ports freigegeben!
 pause
 goto menu
 
 :build
-echo ==========================================
-echo Erstelle Frontend-Build...
+echo.
+echo ========================================================
+echo   [1/4] Beende bestehende Live-Server ^& schliesse Fenster...
+echo ========================================================
+call :close_all_windows
+
+echo.
+echo ========================================================
+echo   [2/4] Erstelle Frontend-Produktions-Build...
+echo ========================================================
 cd /d "%PROJECT_ROOT%frontend"
 call npm run build
+if %errorlevel% neq 0 (
+    echo.
+    echo [FEHLER] Frontend-Build ist mit Fehlern abgebrochen!
+    echo Server werden nicht neu gestartet.
+    cd /d "%PROJECT_ROOT%"
+    pause
+    goto menu
+)
 cd /d "%PROJECT_ROOT%"
-echo.
-echo Loesche alten pb_public Ordner im Backend...
-if exist "backend\pb_public" rmdir /s /q "backend\pb_public"
-mkdir "backend\pb_public"
 
-echo Kopiere neue Build-Dateien 1:1 nach backend\pb_public...
-if exist "frontend\build" (
-    xcopy "frontend\build\*" "backend\pb_public\" /E /I /Y /H /C
-) else if exist "frontend\pb_public" (
-    xcopy "frontend\pb_public\*" "backend\pb_public\" /E /I /Y /H /C
+echo.
+echo ========================================================
+echo   [3/4] Synchronisiere Build nach backend\pb_public...
+echo ========================================================
+if not exist "backend\pb_public" mkdir "backend\pb_public"
+
+if exist "frontend\pb_public" (
+    robocopy "frontend\pb_public" "backend\pb_public" /MIR /NFL /NDL /NJH /NJS /nc /ns /np
+    echo [OK] frontend\pb_public erfolgreich nach backend\pb_public gespiegelt.
+) else if exist "frontend\build" (
+    robocopy "frontend\build" "backend\pb_public" /MIR /NFL /NDL /NJH /NJS /nc /ns /np
+    echo [OK] frontend\build erfolgreich nach backend\pb_public gespiegelt.
 ) else (
     echo [FEHLER] Konnte keinen Build-Ordner finden!
+    pause
+    goto menu
 )
+
 echo.
-echo Build und Kopiervorgang erfolgreich!
+echo ========================================================
+echo   [4/4] Starte alle Server sauber neu...
+echo ========================================================
+call :start_live_procs
+
 echo.
-echo ==========================================
-echo Starte Live-Server nach Build neu...
-taskkill /F /FI "WINDOWTITLE eq OrgaFlow PB (LIVE)*" /T >nul 2>&1
-taskkill /F /FI "WINDOWTITLE eq OrgaFlow Mailer (LIVE)*" /T >nul 2>&1
-cd /d "%NGINX_DIR%"
-nginx.exe -s quit >nul 2>&1
-taskkill /F /IM nginx.exe >nul 2>&1
-cd /d "%PROJECT_ROOT%"
-start "OrgaFlow PB (LIVE)" cmd /k "cd backend && pocketbase.exe serve --http=127.0.0.1:8090"
-start "OrgaFlow Mailer (LIVE)" cmd /k "cd microservice && node index.js"
-cd /d "%NGINX_DIR%"
-start "" nginx.exe
-cd /d "%PROJECT_ROOT%"
-echo Alle Live-Server erfolgreich neu gestartet!
+echo ========================================================
+echo   ERFOLG: Frontend gebaut, ins Backend geladen und
+echo   PocketBase, Microservice und Nginx frisch gestartet!
+echo ========================================================
 pause
 goto menu
 
 :update_all
-echo ==========================================
-echo [1/3] PocketBase Update...
-cd /d "%PROJECT_ROOT%backend" && call pocketbase update
-echo [2/3] SvelteKit Update...
+echo ========================================================
+echo   [1/6] Schliesse alle laufenden Server-Fenster...
+echo ========================================================
+call :close_all_windows
+
+echo.
+echo ========================================================
+echo   [2/6] PocketBase Update...
+echo ========================================================
+cd /d "%PROJECT_ROOT%backend" && call pocketbase.exe update
+cd /d "%PROJECT_ROOT%"
+
+echo.
+echo ========================================================
+echo   [3/6] SvelteKit Frontend Update...
+echo ========================================================
 cd /d "%PROJECT_ROOT%frontend" && call npm update
-echo [3/3] Microservice Update...
+cd /d "%PROJECT_ROOT%"
+
+echo.
+echo ========================================================
+echo   [4/6] Microservice Update...
+echo ========================================================
 cd /d "%PROJECT_ROOT%microservice" && call npm update
 cd /d "%PROJECT_ROOT%"
+
+echo.
+echo ========================================================
+echo   [5/6] Version aktualisieren...
+echo ========================================================
 call :set_version
-echo ==========================================
-echo Alle Updates abgeschlossen!
-pause
-goto menu
+
+echo.
+echo ========================================================
+echo   [6/6] Frontend neu bauen ^& Server frisch starten...
+echo ========================================================
+goto build
 
 :update_pb
-cd /d "%PROJECT_ROOT%backend" && call pocketbase update && cd /d "%PROJECT_ROOT%"
+call :close_all_windows
+cd /d "%PROJECT_ROOT%backend" && call pocketbase.exe update && cd /d "%PROJECT_ROOT%"
+echo PocketBase Update abgeschlossen. Starte Server neu...
+call :start_live_procs
 pause
 goto menu
 
 :update_front
+call :close_all_windows
 cd /d "%PROJECT_ROOT%frontend" && call npm update && cd /d "%PROJECT_ROOT%"
-pause
-goto menu
+goto build
 
 :update_micro
+call :close_all_windows
 cd /d "%PROJECT_ROOT%microservice" && call npm update && cd /d "%PROJECT_ROOT%"
+echo Microservice Update abgeschlossen. Starte Server neu...
+call :start_live_procs
 pause
 goto menu
 
 :backup
 echo ==========================================
 echo Erstelle 1:1 Mirror Backup...
-:: Sichere Zeitformatierung fuer Dateinamen erstellen (auch fuer deutsche Windows-Versionen)
 set "HH=%time:~0,2%"
 if "%HH:~0,1%"==" " set "HH=0%HH:~1,1%"
 set "TIMESTAMP=%date:~6,4%-%date:~3,2%-%date:~0,2%_%HH%-%time:~3,2%-%time:~6,2%"
@@ -239,7 +303,6 @@ set "CURRENT_BACKUP_DIR=%BACKUP_DIR%\OrgaFlow_Backup_%TIMESTAMP%"
 mkdir "%CURRENT_BACKUP_DIR%"
 
 echo Spiegel Projekt nach: %CURRENT_BACKUP_DIR%
-:: Robocopy erstellt einen exakten Spiegel. Temporaere Build/Node-Ordner werden ausgelassen.
 robocopy "%PROJECT_ROOT:~0,-1%" "%CURRENT_BACKUP_DIR%" /MIR /XD "node_modules" ".svelte-kit" "build" /R:1 /W:1
 echo.
 echo Backup erfolgreich gespeichert!
@@ -268,7 +331,6 @@ set /p NEW_VERSION="Gib die neue Versionsnummer ein (z.B. 1.0.2 oder 2.0 Beta, l
 if not "!NEW_VERSION!"=="" (
     set "APP_VERSION=!NEW_VERSION!"
     > "%VERSION_FILE%" echo !APP_VERSION!
-    :: Kopiere die version.txt direkt in den statischen Frontend-Ordner, damit Svelte sie ueber /version.txt laden kann
     copy /Y "%VERSION_FILE%" "%PROJECT_ROOT%frontend\static\version.txt" >nul
     echo Version wurde auf !APP_VERSION! geaendert!
 ) else (
@@ -282,7 +344,6 @@ cd /d "%NGINX_DIR%" && start nginx.exe
 cd /d "%PROJECT_ROOT%"
 goto menu
 
-:: --- Sub-Prozess fuer den Traffic Monitor ---
 :traffic_monitor_loop
 title OrgaFlow Traffic Monitor
 color 0A

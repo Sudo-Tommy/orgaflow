@@ -56,32 +56,60 @@
         errorMsg = "";
 
         try {
-            let current = new Date(start);
-            const promises = [];
+            const [sy, sm, sd] = startDate.split('-').map(Number);
+            const start = new Date(sy, sm - 1, sd, 0, 0, 0); 
+            
+            const [ey, em, ed] = endDate.split('-').map(Number);
+            const end = new Date(ey, em - 1, ed, 23, 59, 59);
 
-            // Schleife durch alle Tage im ausgewählten Zeitraum
-            while (current <= end) {
-                const dayIdx = current.getDay() === 0 ? 6 : current.getDay() - 1;
-                if (days[dayIdx]) {
-                    promises.push(pb.collection('appointments').create({
-                        appointment: current.toISOString(),
-                        description: `[BLOCK] ${description.trim() || 'Gesperrt'}`,
-                        is_private: false,
-                        is_visible: is_visible,
-                        user: pb.authStore.model?.id,
-                        client: []
-                    }, { requestKey: null }));
-                }
-                current.setDate(current.getDate() + 1);
+            const allDaysSelected = days.every(d => d);
+            const rruleDays = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
+            const selectedRruleDays = days.map((d, i) => d ? rruleDays[i] : null).filter(Boolean);
+
+            // 1. Mehrtages-Block (z.B. Urlaub über alle Wochentage des Zeitraums)
+            if (allDaysSelected) {
+                const tr = await pb.collection('time_records').create({
+                    start: start.toISOString(),
+                    end: end.toISOString()
+                }, { requestKey: null });
+
+                await pb.collection('appointments').create({
+                    appointment: start.toISOString(),
+                    description: `[BLOCK] ${description.trim() || 'Urlaub / Abwesend'}`,
+                    is_private: false,
+                    is_visible: is_visible,
+                    is_multiday: true,
+                    time_record: [tr.id],
+                    user: pb.authStore.model?.id,
+                    client: []
+                }, { requestKey: null });
+
+                toastStore.success(`Mehrtages-Sperre (${startDate} bis ${endDate}) als 1 zusammenhängendes Event angelegt!`);
+            } else {
+                // 2. Wiederkehrender Serientermin via RRULE (z.B. Sa & So jedes Wochenende)
+                const tr = await pb.collection('time_records').create({
+                    start: new Date(sy, sm - 1, sd, 0, 0, 0).toISOString(),
+                    end: new Date(sy, sm - 1, sd, 23, 59, 59).toISOString()
+                }, { requestKey: null });
+
+                // UNTIL im UTC-Format YYYYMMDDTHHMMSSZ
+                const untilUtc = end.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+                const rrule = `RRULE:FREQ=WEEKLY;BYDAY=${selectedRruleDays.join(',')};UNTIL=${untilUtc}`;
+
+                await pb.collection('appointments').create({
+                    appointment: start.toISOString(),
+                    description: `[BLOCK] ${description.trim() || 'Wochenende / Geschlossen'}`,
+                    is_private: false,
+                    is_visible: is_visible,
+                    is_series: true,
+                    recurrence_rule: rrule,
+                    time_record: [tr.id],
+                    user: pb.authStore.model?.id,
+                    client: []
+                }, { requestKey: null });
+
+                toastStore.success(`Wiederkehrende Sperre erfolgreich als 1 Serientermin angelegt!`);
             }
-
-            // In kleinen Blöcken (Chunks) senden, um die Datenbank nicht zu überlasten
-            const chunkSize = 20;
-            for (let i = 0; i < promises.length; i += chunkSize) {
-                await Promise.all(promises.slice(i, i + chunkSize));
-            }
-
-            toastStore.success(`Erfolgreich ${promises.length} Tage blockiert!`);
             
             // Kalender im Hintergrund neu laden
             if (orgaStore.appointments) {
@@ -91,9 +119,19 @@
             close();
         } catch(err: any) {
             console.error(err);
-            errorMsg = "Fehler beim Erstellen der Sperren. " + (err.message || "");
+            errorMsg = "Fehler beim Erstellen der Sperre: " + (err.message || "");
         } finally {
             isLoading = false;
+        }
+    }
+
+    function setPreset(type: 'weekend' | 'vacation') {
+        if (type === 'weekend') {
+            days = [false, false, false, false, false, true, true];
+            description = "Wochenende / Geschlossen";
+        } else {
+            days = [true, true, true, true, true, true, true];
+            description = "Urlaub / Abwesend";
         }
     }
 </script>
@@ -124,7 +162,13 @@
             </div>
 
             <div>
-                <span class="block text-sm font-semibold text-neutral-700 mb-2">An welchen Wochentagen?</span>
+                <div class="flex items-center justify-between mb-2">
+                    <span class="block text-sm font-semibold text-neutral-700">An welchen Wochentagen?</span>
+                    <div class="flex gap-1.5">
+                        <button type="button" onclick={() => setPreset('weekend')} class="px-2 py-0.5 rounded-lg text-xs font-bold bg-neutral-100 hover:bg-neutral-200 text-neutral-700 transition-colors">🛑 Nur Sa+So</button>
+                        <button type="button" onclick={() => setPreset('vacation')} class="px-2 py-0.5 rounded-lg text-xs font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-colors">🏖️ Alle (Urlaub)</button>
+                    </div>
+                </div>
                 <div class="grid grid-cols-7 gap-1.5 sm:gap-2">
                     {#each dayNames as day, i}
                         <label class="flex flex-col items-center justify-center p-2 sm:py-3 rounded-xl border-2 cursor-pointer transition-colors shadow-sm {days[i] ? 'border-rose-500 bg-rose-50 text-rose-700' : 'border-neutral-200 bg-white text-neutral-600 hover:border-rose-200 hover:bg-rose-50/50'}">
@@ -148,9 +192,9 @@
                 </div>
             </div>
 
-            <div class="mt-4 p-3.5 bg-rose-50 rounded-xl border border-rose-100 text-xs text-rose-700 flex gap-2.5 items-start shadow-sm">
-                <span class="text-lg leading-none mt-0.5">⚠️</span>
-                <p class="leading-relaxed">Diese Aktion legt für jeden ausgewählten Tag einen eigenständigen Blocker-Termin an. Bei großen Zeiträumen kann dies wenige Sekunden dauern.</p>
+            <div class="mt-4 p-3.5 bg-emerald-50 rounded-xl border border-emerald-100 text-xs text-emerald-800 flex gap-2.5 items-start shadow-sm">
+                <span class="text-lg leading-none mt-0.5">✨</span>
+                <p class="leading-relaxed font-medium"><strong>Intelligente Serien-Erstellung:</strong> Es wird 1 einziger, sich wiederholender Termin (bzw. Mehrtages-Block) erstellt. Blitzschnell, datenbank- und Google-Kalender-schonend ohne Rate-Limits.</p>
             </div>
 
             <div class="pt-4 flex flex-col-reverse sm:flex-row justify-end gap-3 border-t border-neutral-100 mt-6">

@@ -6,18 +6,21 @@
   "type": "module",
   "scripts": {
     "start": "node index.js",
-    "dev": "node index.js"
+    "dev": "node --watch index.js"
   },
   "dependencies": {
+    "@google/genai": "^2.21.0",
     "@google/generative-ai": "^0.24.1",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
+    "eventsource": "^5.1.1",
     "express": "^4.18.2",
     "imapflow": "^1.0.14",
     "jsonwebtoken": "^9.0.3",
     "mailparser": "^3.9.8",
     "nodemailer": "^6.9.7",
     "pdfkit": "^0.18.0",
+    "pdfkit-table": "^0.2.11",
     "pocketbase": "^0.21.1",
     "web-push": "^3.6.7"
   }

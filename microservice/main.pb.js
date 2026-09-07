@@ -12,15 +12,58 @@ routerAdd("GET", "/api/orgaflow/logs", (c) => {
     const perPage = parseInt(c.queryParam("perPage")) || 1000;
     const offset = (page - 1) * perPage;
 
+    // Filter-Parameter aus der URL auslesen
+    const level = c.queryParam("level");
+    const search = c.queryParam("search");
+
+    let query = "SELECT id, created, method, url, message, level, data, userIp FROM _requests";
+    const whereClauses = [];
+    const bindings = { limit: perPage, offset: offset };
+
+    if (level && level !== '') {
+        whereClauses.push("level = {:level}");
+        bindings.level = parseInt(level);
+    }
+
+    if (search && search !== '') {
+        // Suche in mehreren relevanten Feldern
+        whereClauses.push("(url LIKE {:search} OR message LIKE {:search} OR userIp LIKE {:search})");
+        bindings.search = '%' + search + '%';
+    }
+
+    if (whereClauses.length > 0) {
+        query += " WHERE " + whereClauses.join(" AND ");
+    }
+
+    query += " ORDER BY created DESC LIMIT {:limit} OFFSET {:offset}";
+
     const result = arrayOf(new DynamicModel({
         "id": "", "created": "", "method": "", "url": "", "message": "", "level": 0, "data": {}, "userIp": ""
     }));
 
-    // Fragt die interne Log-Tabelle von PocketBase ab (Inkludiert Logins, Änderungen etc.)
-    $app.logsDao().db()
-        .newQuery("SELECT id, created, method, url, message, level, data, userIp FROM _requests ORDER BY created DESC LIMIT {:limit} OFFSET {:offset}")
-        .bind({ limit: perPage, offset: offset })
-        .all(result);
+    $app.logsDao().db().newQuery(query).bind(bindings).all(result);
 
-    return c.json(200, { page: page, perPage: perPage, items: result });
+    // Gesamtzahl der gefilterten Einträge für die Paginierung ermitteln
+    let totalQuery = "SELECT COUNT(*) as total FROM _requests";
+    const totalBindings = { ...bindings };
+    delete totalBindings.limit;
+    delete totalBindings.offset;
+
+    if (whereClauses.length > 0) {
+        totalQuery += " WHERE " + whereClauses.join(" AND ");
+    }
+    
+    const totalResult = new DynamicModel({ "total": 0 });
+    $app.logsDao().db().newQuery(totalQuery).bind(totalBindings).one(totalResult);
+    
+    const totalItems = totalResult.total;
+    const totalPages = Math.ceil(totalItems / perPage);
+
+    return c.json(200, { 
+        page: page, 
+        perPage: perPage, 
+        items: result,
+        totalItems: totalItems,
+        totalPages: totalPages
+    });
 });

@@ -2,6 +2,33 @@ import PDFDocument from 'pdfkit-table';
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from '@sveltejs/kit';
 
+function sanitizePdfText(text: string): string {
+    if (!text) return '';
+    return text
+        .replace(/[\u201C\u201D\u201E\u00AB\u00BB]/g, '"') // Typografische doppelte Anführungszeichen
+        .replace(/[\u2018\u2019\u201A\u2039\u203A]/g, "'") // Typografische einfache Anführungszeichen
+        .replace(/[\u2013\u2014\u2015]/g, '-') // Gedankenstriche (En-dash, Em-dash)
+        .replace(/[\u2022\u25CF\u25AA\u25AB\u2023]/g, '-') // Bullets
+        .replace(/\u2026/g, '...') // Auslassungspunkte
+        .replace(/\u00A0/g, ' ') // Geschütztes Leerzeichen
+        .replace(/\u2192/g, '->') // Pfeil rechts
+        .replace(/[\u2713\u2714]/g, '[x]') // Häkchen
+        // Emojis entfernen, da Standard-Helvetica in PDFKit sie nicht unterstützt
+        .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]|\uD83C[\uDF00-\uDFFF]|\uD83D[\uDC00-\uDE4F]|\uD83D[\uDE80-\uDEFF]|\uD83E[\uDD00-\uDDFF]/g, '');
+}
+
+function cleanBase64Image(base64Str: string | null | undefined): Buffer | null {
+    if (!base64Str) return null;
+    try {
+        const clean = base64Str.replace(/^data:image\/[a-zA-Z0-9+]+;base64,/, '').trim();
+        if (!clean) return null;
+        return Buffer.from(clean, 'base64');
+    } catch (e) {
+        console.warn("Fehler beim Konvertieren von Base64 zu Buffer:", e);
+        return null;
+    }
+}
+
 export const POST: RequestHandler = async ({ request }) => {
     try {
         const { templateJson, data, isTimesheet } = await request.json();
@@ -83,8 +110,7 @@ export const POST: RequestHandler = async ({ request }) => {
                     const relativeY = (field.y ?? 0) % pageHeight;
 
                     if (field.type === 'text') {
-                        // WICHTIG: Das Frontend hat die Platzhalter bereits alle perfekt formatiert!
-                        // Wir müssen hier nur noch stumpf drucken.
+                        // WICHTIG: Das Frontend hat die Platzhalter bereits alle formatiert
                         const isBold = field.style?.fontWeight === 'bold';
                         doc.font(isBold ? 'Helvetica-Bold' : 'Helvetica');
                         
@@ -99,13 +125,12 @@ export const POST: RequestHandler = async ({ request }) => {
                         
                         (doc.fontSize as any)(field.style?.fontSize || 12);
                         doc.fillColor(field.style?.color || '#000000');
-                        doc.text(field.content || '', field.x, relativeY, textOptions);
+                        doc.text(sanitizePdfText(field.content || ''), field.x, relativeY, textOptions);
                            
                     } else if (field.type === 'logo') {
-                        const base64Str = field.imageBase64 || data.companyLogoBase64;
-                        if (base64Str) {
+                        const imgBuffer = cleanBase64Image(field.imageBase64 || data.companyLogoBase64);
+                        if (imgBuffer) {
                             try {
-                                const imgBuffer = Buffer.from(base64Str, 'base64');
                                 doc.image(imgBuffer, field.x, relativeY, {
                                     fit: [field.w, field.h],
                                     align: 'center',
@@ -205,7 +230,7 @@ export const POST: RequestHandler = async ({ request }) => {
                         const textOpts: any = { width: field.w, align: field.style?.textAlign || 'left', lineGap: 2 };
                         if (field.h && !field.style?.dynamicHeight) textOpts.height = field.h;
 
-                        doc.text(field.content || '', field.x, cursorY, textOpts);
+                        doc.text(sanitizePdfText(field.content || ''), field.x, cursorY, textOpts);
                         
                         if (doc.page !== currentMaxPage) {
                             currentMaxPage = doc.page;
@@ -214,10 +239,9 @@ export const POST: RequestHandler = async ({ request }) => {
                             maxDocYForCurrentLine = Math.max(maxDocYForCurrentLine, doc.y);
                         }
                     } else if (field.type === 'logo') {
-                        const base64Str = field.imageBase64 || data.companyLogoBase64;
-                        if (base64Str) {
+                        const imgBuffer = cleanBase64Image(field.imageBase64 || data.companyLogoBase64);
+                        if (imgBuffer) {
                             try {
-                                const imgBuffer = Buffer.from(base64Str, 'base64');
                                 doc.image(imgBuffer, field.x, cursorY, { fit: [field.w, field.h], align: 'center', valign: 'center' });
                                 if (doc.page !== currentMaxPage) {
                                     currentMaxPage = doc.page;
@@ -241,27 +265,36 @@ export const POST: RequestHandler = async ({ request }) => {
                 drawBodyFields(bodyFieldsBeforeTable, false);
 
                 const tableConf = tableField.tableConfig || {};
+                const columns = Array.isArray(tableConf.columns) ? tableConf.columns : [];
                 const positions = isTimesheet ? data.timesheetPositions : data.invoicePositions;
                 
-                if (positions && positions.length > 0) {
+                if (positions && positions.length > 0 && columns.length > 0) {
                     const tableData = {
-                        headers: tableConf.columns.map((c: any) => ({
-                            label: c.name,
+                        headers: columns.map((c: any) => ({
+                            label: sanitizePdfText(c.name || ''),
                             property: c.type,
-                            width: (c.width / 100) * tableField.w,
+                            width: ((Number(c.width) || 10) / 100) * tableField.w,
                             renderer: null,
                             align: c.align || 'left'
                         })),
-                        datas: positions.map((pos: any) => {
+                        datas: positions.map((pos: any, idx: number) => {
                             let row: any = {};
-                            for (const col of tableConf.columns) {
-                                if (col.type === 'total') row[col.type] = (pos.total || 0).toLocaleString('de-DE', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' €';
-                                else if (col.type === 'price') row[col.type] = pos.price;
-                                else if (col.type === 'duration') row[col.type] = pos.duration;
-                                else if (col.type === 'date') row[col.type] = pos.date;
-                                else if (col.type === 'pos') row[col.type] = pos.pos.toString();
-                                else if (col.type === 'title') row[col.type] = pos.title;
-                                else row[col.type] = pos[col.type] || '';
+                            for (const col of columns) {
+                                if (col.type === 'total') {
+                                    row[col.type] = (Number(pos.total) || 0).toLocaleString('de-DE', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' €';
+                                } else if (col.type === 'price') {
+                                    row[col.type] = sanitizePdfText(String(pos.price || ''));
+                                } else if (col.type === 'duration') {
+                                    row[col.type] = sanitizePdfText(String(pos.duration || ''));
+                                } else if (col.type === 'date') {
+                                    row[col.type] = sanitizePdfText(String(pos.date || ''));
+                                } else if (col.type === 'pos') {
+                                    row[col.type] = String(pos.pos ?? (idx + 1));
+                                } else if (col.type === 'title') {
+                                    row[col.type] = sanitizePdfText(String(pos.title || ''));
+                                } else {
+                                    row[col.type] = sanitizePdfText(String(pos[col.type] ?? ''));
+                                }
                             }
                             return row;
                         }),
@@ -338,6 +371,9 @@ export const POST: RequestHandler = async ({ request }) => {
                         doc.y = currentY;
                         drawBodyFields(bodyFieldsAfterTable, true);
                         doc.end();
+                    }).catch((err) => {
+                        console.error("Fehler beim Zeichnen der PDF-Tabelle:", err);
+                        reject(err);
                     });
                 } else {
                     drawBodyFields(bodyFieldsAfterTable, true);

@@ -3,12 +3,12 @@ export function getServices() {
         {
             iconPath: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z",
             title: "Alltagsbegleitung mit Herz",
-            description: "Ob Arztbesuch, Bankgeschäft oder der Gang zur Behörde: Wir sind Ihr sicherer Anker – und kennen glücklicherweise die besten Abkürzungen durch den deutschen Formulardschungel."
+            description: "Ob Arztbesuch, Bankgeschäft oder der Gang zur Behörde: Wir sind Ihr sicherer Anker und kennen glücklicherweise die besten Abkürzungen durch den deutschen Formular-Dschungel."
         },
         {
             iconPath: "M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z",
             title: "Zuhause wohlfühlen",
-            description: "Wir schnappen uns den Einkaufszettel, gießen die Durst leidenden Blumen und sorgen für Ordnung. So können Sie endlich mal wieder entspannt die Füße hochlegen (was Sie ohnehin viel zu selten tun!)."
+            description: "Wir übernehmen den Einkauf, gießen die Blumen und sorgen für Ordnung. So können Sie endlich mal wieder entspannt die Füße hochlegen (was Sie ohnehin viel zu selten tun!)."
         },
         {
             iconPath: "M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1",
@@ -27,8 +27,8 @@ export function getProcessSteps() {
     return [
         {
             step: "1. Tasse Kaffee",
-            title: "Unverbindliches Beschnuppern",
-            text: "Wir plaudern ganz entspannt darüber, wo der Schuh drückt. Wir kommen zu Ihnen nach Hause und schnüren ein Hilfe-Paket, das genau zu Ihnen passt. Kekse bringen wir auf Wunsch auch mit!"
+            title: "Unverbindliches Kennenlernen",
+            text: "Wir plaudern ganz entspannt darüber, wo der Schuh drückt. Wir kommen zu Ihnen nach Hause und schnüren ein Hilfe-Paket, das genau zu Ihnen passt."
         },
         {
             step: "2. Vorbereitung",
@@ -87,8 +87,22 @@ export function getCooperationScenarios() {
 
 export function getTeamMembers() {
     return [
-        { name: "Tommy Jenzsch", initial: "T", region: "Halle (Saale)", phone: "0151 57515432" },
-        { name: "Doreen Jenzsch", initial: "D", region: "Lutherstadt Wittenberg", phone: "0160 7303830" }
+        { 
+            name: "Tommy Jenzsch", 
+            initial: "T", 
+            region: "Halle (Saale)", 
+            phone: "0151 57515432",
+            avatar: "/team/tommy.jpg",
+            avatarUrl: "/team/tommy.jpg"
+        },
+        { 
+            name: "Doreen Jenzsch", 
+            initial: "D", 
+            region: "Lutherstadt Wittenberg", 
+            phone: "0160 7303830",
+            avatar: "/team/doreen.jpg",
+            avatarUrl: "/team/doreen.jpg"
+        }
     ];
 }
 
@@ -98,14 +112,14 @@ export function getFaqs() {
             question: "Was ist Seniorenassistenz eigentlich?",
             answerLines: [
                 "Wir nehmen Ihnen nicht das Steuer aus der Hand. <strong>Sie sind der Kapitän, wir sind der Navigator.</strong>",
-                "Wir unterschreiben nichts heimlich für Sie und wir setzen auch keine Spritzen. Wir sind ganz einfach Ihre motivierte rechte Hand: Wir organisieren, begleiten und unterstützen Sie bei genau den Vorhaben, die Sie sich wünschen."
+                "Wir sind Ihre motivierte rechte Hand: Wir organisieren, begleiten und unterstützen Sie bei genau den Vorhaben, die Sie sich wünschen."
             ]
         },
         {
-            question: "Übernimmt die Pflegekasse die Kosten?",
+            question: "Übernimmt die Pflegekasse die Kosten für die Seniorenassistenz?",
             answerLines: [
-                "<strong>In vielen Fällen: Ja!</strong> Haben Sie bereits einen Pflegegrad (1 bis 5)? Dann winken Ihnen monatlich 131 Euro <i>Entlastungsbetrag</i> (§ 45b SGB XI).",
-                "Sofern unsere Leistungen anerkannt sind, rechnen wir oft direkt mit der Kasse ab. Rufen Sie uns einfach an, wir klären das gerne (und ja, wir rufen auch bei der Kasse an, wenn Sie die Warteschleifen-Musik nicht mehr hören können)."
+                "<strong>Ja, in den allermeisten Fällen vollständig!</strong> Liegt ein Pflegegrad (1 bis 5) vor, haben Sie gesetzlichen Anspruch auf den monatlichen Entlastungsbetrag von <strong>131 Euro (§ 45b SGB XI)</strong>.",
+                "Ab Pflegegrad 2 kann zudem das jährliche Budget der <strong>Verhinderungspflege (§ 39 SGB XI)</strong> genutzt werden. Als anerkannter Dienstleister rechnen wir direkt mit Ihrer Pflegekasse ab – Sie müssen nicht in Vorkasse gehen. Haben Sie noch keinen Pflegegrad, begleiten wir Sie gerne kostenfrei bei der Antragstellung!"
             ]
         },
         {
@@ -162,6 +176,13 @@ export function getLegalContent() {
 
             <h4>4. Ihre Rechte</h4>
             <p>Sie haben jederzeit das Recht, unentgeltlich Auskunft über Herkunft, Empfänger und Zweck Ihrer gespeicherten personenbezogenen Daten zu erhalten. Sie haben außerdem ein Recht, die Berichtigung oder Löschung dieser Daten zu verlangen. Wenn Sie eine Einwilligung zur Datenverarbeitung erteilt haben, können Sie diese jederzeit für die Zukunft widerrufen.</p>
+
+            <h4>5. Nutzung von Google-Nutzerdaten &amp; Google API Services User Data Policy</h4>
+            <p>Unsere Anwendung bietet optionale Funktionen zur Authentifizierung via Google OAuth („Über Google anmelden“) sowie zur Kalendersynchronisation über die Google Calendar API an.</p>
+            <p><strong>Welche Daten erfasst werden:</strong> Bei der Anmeldung über Google fragen wir grundlegende Profildaten (Ihre E-Mail-Adresse und Ihren Namen) ab, um Ihr Nutzerkonto eindeutig zu identifizieren. Sofern Sie die Kalender-Synchronisation aktivieren, synchronisieren wir Ihre bei uns gebuchten Seniorenassistenz-Termine mit Ihrem Google Kalender.</p>
+            <p><strong>Zweck der Datenverarbeitung:</strong> Die Nutzung der Google-Daten dient ausschließlich der sicheren Benutzeranmeldung sowie der ordnungsgemäßen Bereitstellung und Koordination Ihrer Assistenztermine.</p>
+            <p><strong>Schutz und Weitergabe Ihrer Daten:</strong> Ihre Google-Nutzerdaten werden von uns niemals an Dritte weitergegeben, niemals für Werbe- oder Marketingzwecke verwendet und unter keinen Umständen für das Training von künstlicher Intelligenz (KI) oder Machine-Learning-Modellen genutzt.</p>
+            <p><strong>Google Limited Use Erklärung:</strong> Die Verwendung von Informationen, die von Google APIs empfangen werden, entspricht vollständig der <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener noreferrer" class="text-indigo-600 underline">Google API Services User Data Policy</a>, einschließlich der Anforderungen für die eingeschränkte Nutzung (Limited Use requirements).</p>
         `
     };
 }

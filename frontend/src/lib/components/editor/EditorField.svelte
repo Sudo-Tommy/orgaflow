@@ -3,7 +3,7 @@
     import { pb } from "$lib/services/pocketbase";
     import { orgaStore } from "$lib/stores/orgaStore.svelte";
 
-    let { field = $bindable(), allFields = [], isSelected, onSelect, isHeaderFooter = false, marginTop = 250, marginBottom = 150 } = $props<{
+    let { field = $bindable(), allFields = [], isSelected, onSelect, isHeaderFooter = false, marginTop = 250, marginBottom = 150, zoomScale = 1 } = $props<{
         field: CanvasField;
         allFields: CanvasField[];
         isSelected: boolean;
@@ -11,6 +11,7 @@
         isHeaderFooter?: boolean;
         marginTop?: number;
         marginBottom?: number;
+        zoomScale?: number;
     }>();
 
     let userCompany = $derived.by(() => {
@@ -31,7 +32,7 @@
     let snapLineY = $state<number | null>(null);
     const snapThreshold = 6;
     
-    let textSpan: HTMLSpanElement | null = $state(null);
+    let textSpan: HTMLElement | null = $state(null);
     let contentContainer: HTMLDivElement | null = $state(null);
     let elementHeight = $state(0);
 
@@ -107,21 +108,7 @@
         return validSegments.length > 0 ? validSegments : [{ top: 0, height: field.h }];
     });
 
-    function startDrag(e: MouseEvent) {
-        e.stopPropagation();
-        onSelect();
-        isDragging = true;
-        startX = e.clientX; startY = e.clientY;
-        initialFieldX = field.x; initialFieldY = field.y;
-        window.addEventListener('mousemove', onDrag);
-        window.addEventListener('mouseup', stopDrag);
-    }
-
-    function onDrag(e: MouseEvent) {
-        if (!isDragging) return;
-        const dx = e.clientX - startX;
-        const dy = e.clientY - startY;
-        
+    function calculateMove(dx: number, dy: number) {
         let targetX = Math.max(0, initialFieldX + dx);
         let targetY = Math.max(0, initialFieldY + dy);
         let targetW = field.w;
@@ -162,29 +149,7 @@
         field.y = Math.max(0, targetY);
     }
 
-    function stopDrag() {
-        isDragging = false;
-        snapLineX = null;
-        snapLineY = null;
-        window.removeEventListener('mousemove', onDrag);
-        window.removeEventListener('mouseup', stopDrag);
-    }
-
-    function startResize(e: MouseEvent) {
-        e.stopPropagation();
-        onSelect();
-        isResizing = true;
-        startX = e.clientX; startY = e.clientY;
-        initialFieldW = field.w; initialFieldH = field.h;
-        window.addEventListener('mousemove', onResize);
-        window.addEventListener('mouseup', stopResize);
-    }
-
-    function onResize(e: MouseEvent) {
-        if (!isResizing) return;
-        const dx = e.clientX - startX;
-        const dy = e.clientY - startY;
-        
+    function calculateResize(dx: number, dy: number) {
         let targetW = Math.max(20, initialFieldW + dx);
         let targetH = Math.max(20, initialFieldH + dy);
 
@@ -226,6 +191,82 @@
         field.h = targetH;
     }
 
+    function startDrag(e: MouseEvent) {
+        e.stopPropagation();
+        onSelect();
+        isDragging = true;
+        startX = e.clientX; startY = e.clientY;
+        initialFieldX = field.x; initialFieldY = field.y;
+        window.addEventListener('mousemove', onDrag);
+        window.addEventListener('mouseup', stopDrag);
+    }
+
+    function onDrag(e: MouseEvent) {
+        if (!isDragging) return;
+        const scale = zoomScale || 1;
+        const dx = (e.clientX - startX) / scale;
+        const dy = (e.clientY - startY) / scale;
+        calculateMove(dx, dy);
+    }
+
+    function stopDrag() {
+        isDragging = false;
+        snapLineX = null;
+        snapLineY = null;
+        window.removeEventListener('mousemove', onDrag);
+        window.removeEventListener('mouseup', stopDrag);
+    }
+
+    function startTouchDrag(e: TouchEvent) {
+        if (e.touches.length !== 1) return;
+        e.stopPropagation();
+        onSelect();
+        isDragging = true;
+        startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
+        initialFieldX = field.x;
+        initialFieldY = field.y;
+        window.addEventListener('touchmove', onTouchDrag, { passive: false });
+        window.addEventListener('touchend', stopTouchDrag);
+        window.addEventListener('touchcancel', stopTouchDrag);
+    }
+
+    function onTouchDrag(e: TouchEvent) {
+        if (!isDragging || e.touches.length !== 1) return;
+        if (e.cancelable) e.preventDefault();
+        const scale = zoomScale || 1;
+        const dx = (e.touches[0].clientX - startX) / scale;
+        const dy = (e.touches[0].clientY - startY) / scale;
+        calculateMove(dx, dy);
+    }
+
+    function stopTouchDrag() {
+        isDragging = false;
+        snapLineX = null;
+        snapLineY = null;
+        window.removeEventListener('touchmove', onTouchDrag);
+        window.removeEventListener('touchend', stopTouchDrag);
+        window.removeEventListener('touchcancel', stopTouchDrag);
+    }
+
+    function startResize(e: MouseEvent) {
+        e.stopPropagation();
+        onSelect();
+        isResizing = true;
+        startX = e.clientX; startY = e.clientY;
+        initialFieldW = field.w; initialFieldH = field.h;
+        window.addEventListener('mousemove', onResize);
+        window.addEventListener('mouseup', stopResize);
+    }
+
+    function onResize(e: MouseEvent) {
+        if (!isResizing) return;
+        const scale = zoomScale || 1;
+        const dx = (e.clientX - startX) / scale;
+        const dy = (e.clientY - startY) / scale;
+        calculateResize(dx, dy);
+    }
+
     function stopResize() {
         isResizing = false;
         snapLineX = null;
@@ -233,13 +274,158 @@
         window.removeEventListener('mousemove', onResize);
         window.removeEventListener('mouseup', stopResize);
     }
+
+    function startTouchResize(e: TouchEvent) {
+        if (e.touches.length !== 1) return;
+        e.stopPropagation();
+        onSelect();
+        isResizing = true;
+        startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
+        initialFieldW = field.w;
+        initialFieldH = field.h;
+        window.addEventListener('touchmove', onTouchResize, { passive: false });
+        window.addEventListener('touchend', stopTouchResize);
+        window.addEventListener('touchcancel', stopTouchResize);
+    }
+
+    function onTouchResize(e: TouchEvent) {
+        if (!isResizing || e.touches.length !== 1) return;
+        if (e.cancelable) e.preventDefault();
+        const scale = zoomScale || 1;
+        const dx = (e.touches[0].clientX - startX) / scale;
+        const dy = (e.touches[0].clientY - startY) / scale;
+        calculateResize(dx, dy);
+    }
+
+    function stopTouchResize() {
+        isResizing = false;
+        snapLineX = null;
+        snapLineY = null;
+        window.removeEventListener('touchmove', onTouchResize);
+        window.removeEventListener('touchend', stopTouchResize);
+        window.removeEventListener('touchcancel', stopTouchResize);
+    }
+
+    function formatContent(text: string) {
+        if (!text) return '';
+        
+        // Übersetzt die technischen Variablen in saubere, verständliche Namen
+        const mappings: Record<string, string> = {
+            'client.salutation': 'Klient: Anrede',
+            'client.salutation_formal': 'Klient: Formelle Anrede',
+            'client.name_first': 'Klient: Vorname',
+            'client.name_last': 'Klient: Nachname',
+            'client.street': 'Klient: Straße',
+            'client.housenr': 'Klient: Hausnr.',
+            'client.zip': 'Klient: PLZ',
+            'client.city': 'Klient: Stadt',
+            'client.phone': 'Klient: Telefon',
+            'client.handy': 'Klient: Mobil',
+            'client.insurance_nr': 'Klient: Vers.-Nr.',
+            'client.birthdate': 'Klient: Geburtsdatum',
+            'client.level_of_care': 'Klient: Pflegegrad',
+            'client.hourly_wage': 'Klient: Stundensatz',
+            'client.km_rate': 'Klient: KM-Pauschale',
+            'client.tax_rate': 'Klient: Steuersatz',
+            'client.signature': 'Klient: Unterschrift',
+            'insurance.name': 'Kasse: Name',
+            'insurance.type': 'Kasse: Art',
+            'insurance.street': 'Kasse: Straße',
+            'insurance.zip': 'Kasse: PLZ',
+            'insurance.city': 'Kasse: Stadt',
+            'insurance.phone': 'Kasse: Telefon',
+            'insurance.email': 'Kasse: E-Mail',
+            'caregiver.salutation': 'Betreuer: Anrede',
+            'caregiver.name_first': 'Betreuer: Vorname',
+            'caregiver.name_last': 'Betreuer: Nachname',
+            'caregiver.company_name': 'Betreuer: Firmenname',
+            'caregiver.street': 'Betreuer: Straße',
+            'caregiver.housenr': 'Betreuer: Hausnr.',
+            'caregiver.zip': 'Betreuer: PLZ',
+            'caregiver.city': 'Betreuer: Stadt',
+            'caregiver.phone': 'Betreuer: Telefon',
+            'caregiver.email': 'Betreuer: E-Mail',
+            'caregiver.signature': 'Betreuer: Unterschrift',
+            'careperson.name': 'Pflegeperson: Name',
+            'careperson.salutation': 'Pflegeperson: Anrede',
+            'careperson.relation': 'Pflegeperson: Verwandtschaft',
+            'careperson.birthdate': 'Pflegeperson: Geburtsdatum',
+            'careperson.street': 'Pflegeperson: Straße',
+            'careperson.housenr': 'Pflegeperson: Hausnr.',
+            'careperson.zip': 'Pflegeperson: PLZ',
+            'careperson.city': 'Pflegeperson: Stadt',
+            'careperson.phone': 'Pflegeperson: Telefon',
+            'careperson.email': 'Pflegeperson: E-Mail',
+            'careperson.reason': 'Pflegeperson: Verhinderungsgrund',
+            'careperson.care_type': 'Pflegeperson: Art (stundenweise)',
+            'careperson.pre_care': 'Pflegeperson: Vorpflegezeit (≥ 6 Mon.)',
+            'careperson.signature': 'Pflegeperson: Unterschrift',
+            'inheritor.salutation': 'Pflegeperson: Anrede',
+            'inheritor.name_first': 'Pflegeperson: Vorname',
+            'inheritor.name_last': 'Pflegeperson: Nachname',
+            'inheritor.company_name': 'Pflegeperson: Rolle',
+            'inheritor.street': 'Pflegeperson: Straße',
+            'inheritor.housenr': 'Pflegeperson: Hausnr.',
+            'inheritor.zip': 'Pflegeperson: PLZ',
+            'inheritor.city': 'Pflegeperson: Stadt',
+            'inheritor.phone': 'Pflegeperson: Telefon',
+            'inheritor.email': 'Pflegeperson: E-Mail',
+            'inheritor.signature': 'Pflegeperson: Unterschrift',
+            'contact.name_first': 'Kontakt: Vorname',
+            'contact.name_last': 'Kontakt: Nachname',
+            'contact.signature': 'Kontakt: Unterschrift',
+            'user.name_first': 'Mitarbeiter: Vorname',
+            'user.name_last': 'Mitarbeiter: Nachname',
+            'user.street': 'Mitarbeiter: Straße',
+            'user.housenr': 'Mitarbeiter: Hausnr.',
+            'user.zip': 'Mitarbeiter: PLZ',
+            'user.city': 'Mitarbeiter: Stadt',
+            'user.tel': 'Mitarbeiter: Telefon',
+            'user.handy': 'Mitarbeiter: Mobil',
+            'user.email': 'Mitarbeiter: E-Mail',
+            'user.signature': 'Mitarbeiter: Unterschrift',
+            'company.name': 'Firma: Name',
+            'company.street': 'Firma: Straße',
+            'company.housenr': 'Firma: Hausnr.',
+            'company.zip': 'Firma: PLZ',
+            'company.city': 'Firma: Stadt',
+            'company.number_telephone': 'Firma: Telefon',
+            'company.number_mobile': 'Firma: Mobil',
+            'company.email': 'Firma: E-Mail',
+            'company.website': 'Firma: Web',
+            'company.vatcode': 'Firma: Steuernummer',
+            'company.ik_number': 'Firma: IK-Nummer',
+            'company.bank_name': 'Bank: Name',
+            'company.bank_iban': 'Bank: IBAN',
+            'company.bank_bic': 'Bank: BIC',
+            'invoice.number': 'Rechnung: Nummer',
+            'date.today': 'Heute',
+            'date.today_+1y': 'Heute + 1 Jahr',
+            'invoice.issue_date': 'Rechnung: Datum',
+            'invoice.due_date': 'Rechnung: Fällig',
+            'invoice.service_period': 'Rechnung: Zeitraum',
+            'leistungszeitraum': 'Rechnung: Zeitraum'
+        };
+
+        return text.replace(/\{\{([^}]+)\}\}/g, (match, p1) => {
+            const key = p1.trim();
+            const label = mappings[key] || key;
+            // Rendert die Variable als ein visuelles, schickes Etikett (Badge) passend zur Schriftgröße des Elements
+            return `<span class="bg-brand-50 text-brand-600 px-1.5 py-0.5 rounded-md text-[0.85em] font-bold border border-brand-200/60 shadow-sm whitespace-nowrap inline-block align-baseline mx-0.5 select-none" contenteditable="false">${label}</span>`;
+        });
+    }
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div 
-    class="absolute cursor-move select-none group"
-    style="left: {field.x}px; top: {field.y}px; width: {field.w}px; height: {field.type === 'table' || field.style.dynamicHeight ? 'auto' : field.h + 'px'}; min-height: {field.type === 'table' || field.style.dynamicHeight ? '50px' : field.h + 'px'}; z-index: {isSelected ? 40 : (isHeaderFooter ? 30 : 10)};"
+    class="absolute group {isSelected ? '' : 'select-none'}"
+    style="cursor: {isSelected ? 'default' : 'move'}; left: {field.x}px; top: {field.y}px; width: {field.w}px; height: {field.type === 'table' || field.style.dynamicHeight ? 'auto' : field.h + 'px'}; min-height: {field.type === 'table' || field.style.dynamicHeight ? '50px' : field.h + 'px'}; z-index: {isSelected ? 40 : (isHeaderFooter ? 30 : 10)}; touch-action: manipulation;"
     onmousedown={startDrag}
+    ontouchstart={(e) => {
+        if ((e.target as HTMLElement)?.getAttribute('contenteditable') === 'true') return;
+        startTouchDrag(e);
+    }}
 >
     <!-- Visual background and selection ring (Gesplittet für Kopf-/Fußzeilen-Gaps) -->
     {#each backgroundSegments as segment}
@@ -262,7 +448,23 @@
                 <!-- Das unsichtbare Magie-Element, das den Text zur Seite (bzw. nach unten) drängt -->
                 <div style="float: left; width: 100%; height: {field.h + 2000}px; shape-outside: {shapeOutside}; pointer-events: none; opacity: 0;"></div>
             {/if}
-            <span bind:this={textSpan}>{@html field.content.replace(/\n/g, '<br/>')}</span>
+            {#if isSelected}
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <div 
+                    bind:this={textSpan}
+                    contenteditable="true"
+                    bind:innerHTML={field.content}
+                    class="outline-none whitespace-pre-wrap w-full cursor-text"
+                    style="min-height: 1em;"
+                    onmousedown={(e) => e.stopPropagation()}
+                ></div>
+            {:else}
+                <div 
+                    bind:this={textSpan}
+                    class="whitespace-pre-wrap w-full cursor-move"
+                    style="min-height: 1em;"
+                >{@html formatContent(field.content)}</div>
+            {/if}
         {:else if field.type === 'logo'}
             {#if userCompany?.logo}
                 <div class="w-full h-full flex items-center justify-center bg-transparent">
@@ -338,6 +540,27 @@
 
     <!-- Resize Handle -->
     {#if isSelected}
-        <div class="absolute w-3 h-3 bg-brand-600 border border-white rounded-full cursor-se-resize shadow-md z-50" style="top: {field.h - 6}px; right: -6px;" onmousedown={startResize}></div>
+        <div 
+            class="absolute w-6 h-6 sm:w-4 sm:h-4 bg-brand-600 border-2 border-white rounded-full cursor-se-resize shadow-lg z-50 flex items-center justify-center -bottom-3 -right-3 sm:-bottom-2 sm:-right-2 touch-none select-none active:scale-110"
+            onmousedown={startResize}
+            ontouchstart={startTouchResize}
+            title="Größe anpassen"
+            role="button"
+            tabindex="0"
+        ></div>
+    {/if}
+
+    <!-- Move Handle -->
+    {#if isSelected}
+        <div 
+            class="absolute w-8 h-8 sm:w-6 sm:h-6 bg-white border-2 border-brand-500 rounded-lg text-brand-600 cursor-move shadow-lg z-50 flex items-center justify-center hover:bg-brand-50 transition-colors -top-4 -left-4 sm:-top-3 sm:-left-3 touch-none select-none active:scale-110" 
+            onmousedown={startDrag}
+            ontouchstart={startTouchDrag}
+            title="Element verschieben"
+            role="button"
+            tabindex="0"
+        >
+            <svg class="w-4 h-4 sm:w-3.5 sm:h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg>
+        </div>
     {/if}
 </div>

@@ -4,7 +4,7 @@
     import { getClient, getPdfUrl } from "$lib/utils/invoiceHelpers";
     import { pb } from "$lib/services/pocketbase";
     // @ts-ignore
-    import { X, FileEdit, Send, Hourglass, Check, FileText, Clock, RefreshCw, Trash2, Mail } from "lucide-svelte";
+    import { X, FileEdit, Send, Hourglass, Check, FileText, Clock, RefreshCw, Trash2, Mail, XCircle } from "lucide-svelte";
 
     let {
         activeMobileInvoice = $bindable(),
@@ -13,7 +13,8 @@
         onPreviewPdf,
         onEmail,
         onRegenerate,
-        onDelete
+        onDelete,
+        onCancel
     }: {
         activeMobileInvoice: InvoicePayload | null;
         dialog: HTMLDialogElement | undefined;
@@ -22,6 +23,7 @@
         onEmail: (inv: InvoicePayload, isMahnung?: boolean, mLevel?: number) => void;
         onRegenerate: (invs: InvoicePayload[]) => void;
         onDelete: (id: string) => void;
+        onCancel: (id: string) => void;
     } = $props();
 
     function closeMenu() {
@@ -92,6 +94,7 @@
                 {#if getPdfUrl(activeMobileInvoice, 0, pb)}<button aria-label="Rechnung ansehen" onclick={() => { onPreviewPdf(activeMobileInvoice!, 0, 'Rechnung'); closeMenu(); }} class="flex items-center gap-3 p-4 min-h-14 bg-white border border-neutral-200 rounded-2xl hover:bg-neutral-50 active:scale-95 transition-all text-sm font-bold text-neutral-800 shadow-sm focus-visible:ring-2 focus-visible:ring-neutral-500 focus-visible:outline-none"><FileText class="w-5 h-5 text-neutral-500" /> Rechnung ansehen</button>{/if}
                 {#if getPdfUrl(activeMobileInvoice, 1, pb)}<button aria-label="Zeiten ansehen" onclick={() => { onPreviewPdf(activeMobileInvoice!, 1, 'Zeitnachweis'); closeMenu(); }} class="flex items-center gap-3 p-4 min-h-14 bg-white border border-neutral-200 rounded-2xl hover:bg-neutral-50 active:scale-95 transition-all text-sm font-bold text-neutral-800 shadow-sm focus-visible:ring-2 focus-visible:ring-neutral-500 focus-visible:outline-none"><Clock class="w-5 h-5 text-neutral-500" /> Zeiten ansehen</button>{/if}
                 {#if getPdfUrl(activeMobileInvoice, 0, pb) || getPdfUrl(activeMobileInvoice, 1, pb)}<button aria-label="Rechnung per E-Mail senden" onclick={() => { onEmail(activeMobileInvoice!); closeMenu(); }} class="flex items-center gap-3 p-4 min-h-14 bg-blue-50 border border-blue-100 rounded-2xl active:scale-95 transition-all text-sm font-bold text-blue-700 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"><Mail class="w-5 h-5 text-blue-600" /> Per E-Mail versenden</button>{/if}
+                <button aria-label="Rechnung stornieren" onclick={() => { onCancel(activeMobileInvoice!.id); closeMenu(); }} class="flex items-center gap-3 p-4 min-h-14 bg-rose-50 border border-rose-100 rounded-2xl active:scale-95 transition-all text-sm font-bold text-rose-700 focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:outline-none"><XCircle class="w-5 h-5 text-rose-600" /> Rechnung stornieren</button>
                 <div class="grid grid-cols-2 gap-3 mt-2">
                     <button aria-label="Layout neu generieren" onclick={() => { onRegenerate([activeMobileInvoice!]); closeMenu(); }} class="flex flex-col items-center justify-center gap-1.5 p-4 min-h-16 bg-amber-50 border border-amber-100 rounded-2xl active:scale-95 transition-all text-[11px] font-bold text-amber-700 text-center focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none"><RefreshCw class="w-5 h-5" /> Layout Refresh</button>
                     <button aria-label="Rechnung löschen" onclick={() => { onDelete(activeMobileInvoice!.id); closeMenu(); }} class="flex flex-col items-center justify-center gap-1.5 p-4 min-h-16 bg-rose-50 border border-rose-100 rounded-2xl active:scale-95 transition-all text-[11px] font-bold text-rose-700 text-center focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:outline-none"><Trash2 class="w-5 h-5" /> Löschen</button>

@@ -20,7 +20,7 @@
     } = $props();
 </script>
 
-<div class="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-neutral-200 p-4 z-30 pb-[max(env(safe-area-inset-bottom,0px),1rem)] shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.1)] transition-transform duration-300">
+<div class="md:hidden fixed bottom-[calc(4rem+max(env(safe-area-inset-bottom,0px),0.5rem))] left-3 right-3 bg-white/95 backdrop-blur-md border border-neutral-200/80 p-3 rounded-2xl z-45 shadow-[0_8px_30px_rgb(0,0,0,0.12)] transition-transform duration-300">
     {#if selectedCount > 0}
         <div class="flex items-center gap-3">
             <button aria-label="Auswahl aufheben" onclick={onClear} class="w-14 h-14 min-w-14 flex-none bg-neutral-100 text-neutral-600 rounded-2xl flex items-center justify-center font-bold text-xl active:scale-95 transition-transform focus-visible:ring-2 focus-visible:ring-neutral-500 focus-visible:outline-none" title="Auswahl aufheben">

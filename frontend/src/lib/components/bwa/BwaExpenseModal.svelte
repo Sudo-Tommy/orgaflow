@@ -95,10 +95,20 @@
     }
 </script>
 
-<dialog bind:this={expenseDialog} class="p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-full max-w-sm mx-auto my-auto rounded-3xl" onclick={(e) => { if (e.target === expenseDialog) expenseDialog?.close(); }}>
-    <div class="bg-white rounded-3xl p-6 md:p-8 w-full relative">
-        <button aria-label="Schließen" onclick={() => { expenseDialog?.close(); expReceiptFile = null; }} class="absolute top-5 right-5 w-10 h-10 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-colors">✕</button>
-        <div class="flex items-center justify-between mb-6 pr-12"><h2 class="text-2xl font-bold text-neutral-900">Ausgabe</h2><input type="file" accept="image/*,application/pdf" capture="environment" class="hidden" bind:this={receiptFileInput} onchange={handleReceiptScan} /><button type="button" onclick={() => receiptFileInput?.click()} disabled={isScanningReceipt} class="text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-3 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-colors shadow-sm disabled:opacity-50">{#if isScanningReceipt}<div class="w-3 h-3 border-2 border-indigo-200 border-t-indigo-700 rounded-full animate-spin"></div> Scannt...{:else}<span>📸</span> KI-Scan{/if}</button></div>
+<dialog bind:this={expenseDialog} class="p-2 sm:p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-[96vw] max-w-xl mx-auto my-auto rounded-3xl" onclick={(e) => { if (e.target === expenseDialog) expenseDialog?.close(); }}>
+    <div class="bg-white rounded-3xl p-5 sm:p-7 md:p-8 w-full max-h-[92vh] overflow-y-auto custom-scrollbar relative shadow-2xl">
+        <button aria-label="Schließen" onclick={() => { expenseDialog?.close(); expReceiptFile = null; }} class="absolute top-4 sm:top-6 right-4 sm:right-6 w-9 h-9 sm:w-10 sm:h-10 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-colors">✕</button>
+        <div class="flex items-center justify-between mb-5 pr-10">
+            <h2 class="text-xl sm:text-2xl font-black text-neutral-900 flex items-center gap-2"><span>🧾</span> Ausgabe erfassen</h2>
+            <input type="file" accept="image/*,application/pdf" capture="environment" class="hidden" bind:this={receiptFileInput} onchange={handleReceiptScan} />
+            <button type="button" onclick={() => receiptFileInput?.click()} disabled={isScanningReceipt} class="text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-3 py-1.5 rounded-xl flex items-center justify-center gap-1.5 transition-colors shadow-sm disabled:opacity-50">
+                {#if isScanningReceipt}
+                    <div class="w-3 h-3 border-2 border-indigo-200 border-t-indigo-700 rounded-full animate-spin"></div> Scannt...
+                {:else}
+                    <span>📸</span> KI-Scan
+                {/if}
+            </button>
+        </div>
         <form onsubmit={submitExpense} class="space-y-4">
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>

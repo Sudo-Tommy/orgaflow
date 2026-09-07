@@ -1,11 +1,11 @@
 [
   {
     "id": "_pb_users_auth_",
-    "listRule": "",
-    "viewRule": "",
-    "createRule": "@request.auth.role = \"admin\" || @request.auth.role = \"superadmin\"",
-    "updateRule": "@request.auth.role = \"admin\" || id = @request.auth.id || @request.auth.role = \"superadmin\"",
-    "deleteRule": "@request.auth.role = \"admin\" || id = @request.auth.id || @request.auth.role = \"superadmin\"",
+    "listRule": "@request.auth.role = \"owner\" || (@request.auth.role = \"admin\" && facility = @request.auth.facility) || id = @request.auth.id",
+    "viewRule": "@request.auth.role = \"owner\" || (@request.auth.role = \"admin\" && facility = @request.auth.facility) || id = @request.auth.id",
+    "createRule": "@request.auth.role = \"owner\" || (@request.auth.role = \"admin\" && facility = @request.auth.facility && role != \"owner\")",
+    "updateRule": "@request.auth.role = \"owner\" || (@request.auth.role = \"admin\" && facility = @request.auth.facility && role != \"owner\")",
+    "deleteRule": "@request.auth.role = \"owner\" || (@request.auth.role = \"admin\" && facility = @request.auth.facility && role != \"owner\")",
     "name": "users",
     "type": "auth",
     "fields": [
@@ -216,7 +216,10 @@
           "guest",
           "user",
           "admin",
-          "superadmin"
+          "superadmin",
+          "owner",
+          "caregiver",
+          "client"
         ]
       },
       {
@@ -353,6 +356,28 @@
         "presentable": false,
         "system": false,
         "type": "autodate"
+      },
+      {
+        "id": "rel_user_facility",
+        "name": "facility",
+        "type": "relation",
+        "collectionId": "pbc_facilities_hrbac",
+        "maxSelect": 1,
+        "required": false
+      },
+      {
+        "id": "rel_user_assigned_clients",
+        "name": "assigned_clients",
+        "type": "relation",
+        "collectionId": "hu9womf4xnkbrk8",
+        "maxSelect": 100,
+        "required": false
+      },
+      {
+        "id": "text_user_client_profile_id",
+        "name": "client_profile_id",
+        "type": "text",
+        "required": false
       }
     ],
     "indexes": [
@@ -997,6 +1022,92 @@
         ]
       },
       {
+        "exceptDomains": null,
+        "help": "",
+        "hidden": false,
+        "id": "email_req",
+        "name": "email",
+        "onlyDomains": null,
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "email"
+      },
+      {
+        "autogeneratePattern": "",
+        "help": "",
+        "hidden": false,
+        "id": "phone_req",
+        "max": 0,
+        "min": 0,
+        "name": "phone",
+        "pattern": "",
+        "presentable": false,
+        "primaryKey": false,
+        "required": false,
+        "system": false,
+        "type": "text"
+      },
+      {
+        "autogeneratePattern": "",
+        "help": "",
+        "hidden": false,
+        "id": "street_req",
+        "max": 0,
+        "min": 0,
+        "name": "street",
+        "pattern": "",
+        "presentable": false,
+        "primaryKey": false,
+        "required": false,
+        "system": false,
+        "type": "text"
+      },
+      {
+        "autogeneratePattern": "",
+        "help": "",
+        "hidden": false,
+        "id": "zip_city_req",
+        "max": 0,
+        "min": 0,
+        "name": "zip_city",
+        "pattern": "",
+        "presentable": false,
+        "primaryKey": false,
+        "required": false,
+        "system": false,
+        "type": "text"
+      },
+      {
+        "cascadeDelete": false,
+        "collectionId": "hu9womf4xnkbrk8",
+        "help": "",
+        "hidden": false,
+        "id": "client_id_req",
+        "maxSelect": 1,
+        "minSelect": 0,
+        "name": "client_id",
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "relation"
+      },
+      {
+        "help": "",
+        "hidden": false,
+        "id": "file_attachments",
+        "maxSelect": 10,
+        "maxSize": 0,
+        "mimeTypes": null,
+        "name": "attachments",
+        "presentable": false,
+        "protected": false,
+        "required": false,
+        "system": false,
+        "thumbs": null,
+        "type": "file"
+      },
+      {
         "hidden": false,
         "id": "autodate2990389176",
         "name": "created",
@@ -1301,11 +1412,11 @@
   },
   {
     "id": "hu9womf4xnkbrk8",
-    "listRule": "company_via_clients.users.id = @request.auth.id || @request.auth.role = \"superadmin\"",
-    "viewRule": "company_via_clients.users.id = @request.auth.id || @request.auth.role = \"superadmin\"",
-    "createRule": "company_via_clients.users.id = @request.auth.id || @request.auth.role = \"superadmin\"",
-    "updateRule": "company_via_clients.users.id = @request.auth.id || @request.auth.role = \"superadmin\"",
-    "deleteRule": "company_via_clients.users.id = @request.auth.id || @request.auth.role = \"superadmin\"",
+    "listRule": "@request.auth.role = \"owner\" || (@request.auth.role = \"admin\" && facility = @request.auth.facility) || (@request.auth.role = \"caregiver\" && id ?= @request.auth.assigned_clients.id) || (@request.auth.role = \"client\" && id = @request.auth.client_profile_id)",
+    "viewRule": "@request.auth.role = \"owner\" || (@request.auth.role = \"admin\" && facility = @request.auth.facility) || (@request.auth.role = \"caregiver\" && id ?= @request.auth.assigned_clients.id) || (@request.auth.role = \"client\" && id = @request.auth.client_profile_id)",
+    "createRule": "@request.auth.role = \"owner\" || (@request.auth.role = \"admin\" && facility = @request.auth.facility)",
+    "updateRule": "@request.auth.role = \"owner\" || (@request.auth.role = \"admin\" && facility = @request.auth.facility)",
+    "deleteRule": "@request.auth.role = \"owner\" || (@request.auth.role = \"admin\" && facility = @request.auth.facility)",
     "name": "clients",
     "type": "base",
     "fields": [
@@ -1778,6 +1889,14 @@
         "presentable": false,
         "system": false,
         "type": "autodate"
+      },
+      {
+        "id": "rel_client_facility",
+        "name": "facility",
+        "type": "relation",
+        "collectionId": "pbc_facilities_hrbac",
+        "maxSelect": 1,
+        "required": false
       }
     ],
     "indexes": [],
@@ -3033,11 +3152,11 @@
   },
   {
     "id": "pbc_3332084752",
-    "listRule": "company.users.id ?= @request.auth.id || client.company_via_clients.users.id ?= @request.auth.id || @request.auth.role = \"superadmin\"",
-    "viewRule": "company.users.id ?= @request.auth.id || client.company_via_clients.users.id ?= @request.auth.id || @request.auth.role = \"superadmin\"",
-    "createRule": "company.users.id ?= @request.auth.id || client.company_via_clients.users.id ?= @request.auth.id || @request.auth.role = \"superadmin\"",
-    "updateRule": "company.users.id ?= @request.auth.id || client.company_via_clients.users.id ?= @request.auth.id || @request.auth.role = \"superadmin\"",
-    "deleteRule": "company.users.id ?= @request.auth.id || client.company_via_clients.users.id ?= @request.auth.id || @request.auth.role = \"superadmin\"",
+    "listRule": "user.id = @request.auth.id || company.users.id ?= @request.auth.id || @request.auth.role = \"admin\" || @request.auth.role = \"superadmin\"",
+    "viewRule": "user.id = @request.auth.id || company.users.id ?= @request.auth.id || @request.auth.role = \"admin\" || @request.auth.role = \"superadmin\"",
+    "createRule": "user.id = @request.auth.id || company.users.id ?= @request.auth.id || @request.auth.role = \"admin\" || @request.auth.role = \"superadmin\"",
+    "updateRule": "user.id = @request.auth.id || company.users.id ?= @request.auth.id || @request.auth.role = \"admin\" || @request.auth.role = \"superadmin\"",
+    "deleteRule": "user.id = @request.auth.id || company.users.id ?= @request.auth.id || @request.auth.role = \"admin\" || @request.auth.role = \"superadmin\"",
     "name": "invoices",
     "type": "base",
     "fields": [
@@ -5657,5 +5776,194 @@
     ],
     "indexes": [],
     "system": false
+  },
+  {
+    "id": "pbc_facilities_hrbac",
+    "name": "facilities",
+    "type": "base",
+    "system": false,
+    "listRule": "@request.auth.role = \"owner\" || (@request.auth.role = \"admin\" && id = @request.auth.facility)",
+    "viewRule": "@request.auth.role = \"owner\" || (@request.auth.role = \"admin\" && id = @request.auth.facility)",
+    "createRule": "@request.auth.role = \"owner\"",
+    "updateRule": "@request.auth.role = \"owner\"",
+    "deleteRule": "@request.auth.role = \"owner\"",
+    "fields": [
+      {
+        "id": "text_fac_id",
+        "name": "id",
+        "type": "text",
+        "required": true,
+        "primaryKey": true,
+        "system": true
+      },
+      {
+        "id": "text_fac_name",
+        "name": "name",
+        "type": "text",
+        "required": true
+      },
+      {
+        "id": "text_fac_code",
+        "name": "code",
+        "type": "text"
+      },
+      {
+        "id": "text_fac_addr",
+        "name": "address",
+        "type": "text"
+      },
+      {
+        "id": "text_fac_tel",
+        "name": "phone",
+        "type": "text"
+      },
+      {
+        "id": "text_fac_email",
+        "name": "email",
+        "type": "text"
+      },
+      {
+        "id": "auto_fac_created",
+        "name": "created",
+        "type": "autodate",
+        "onCreate": true,
+        "onUpdate": false
+      },
+      {
+        "id": "auto_fac_updated",
+        "name": "updated",
+        "type": "autodate",
+        "onCreate": true,
+        "onUpdate": true
+      }
+    ],
+    "indexes": []
+  },
+  {
+    "id": "pbc_caregiver_clients",
+    "name": "caregiver_clients",
+    "type": "base",
+    "system": false,
+    "listRule": "@request.auth.role = \"owner\" || (@request.auth.role = \"admin\" && facility = @request.auth.facility)",
+    "viewRule": "@request.auth.role = \"owner\" || (@request.auth.role = \"admin\" && facility = @request.auth.facility)",
+    "createRule": "@request.auth.role = \"owner\" || (@request.auth.role = \"admin\" && facility = @request.auth.facility)",
+    "updateRule": "@request.auth.role = \"owner\" || (@request.auth.role = \"admin\" && facility = @request.auth.facility)",
+    "deleteRule": "@request.auth.role = \"owner\" || (@request.auth.role = \"admin\" && facility = @request.auth.facility)",
+    "fields": [
+      {
+        "id": "text_cc_id",
+        "name": "id",
+        "type": "text",
+        "required": true,
+        "primaryKey": true,
+        "system": true
+      },
+      {
+        "id": "rel_cc_caregiver",
+        "name": "caregiver",
+        "type": "relation",
+        "collectionId": "_pb_users_auth_",
+        "maxSelect": 1,
+        "required": true
+      },
+      {
+        "id": "rel_cc_client",
+        "name": "client",
+        "type": "relation",
+        "collectionId": "hu9womf4xnkbrk8",
+        "maxSelect": 1,
+        "required": true
+      },
+      {
+        "id": "rel_cc_facility",
+        "name": "facility",
+        "type": "relation",
+        "collectionId": "pbc_facilities_hrbac",
+        "maxSelect": 1
+      },
+      {
+        "id": "auto_cc_created",
+        "name": "created",
+        "type": "autodate",
+        "onCreate": true,
+        "onUpdate": false
+      },
+      {
+        "id": "auto_cc_updated",
+        "name": "updated",
+        "type": "autodate",
+        "onCreate": true,
+        "onUpdate": true
+      }
+    ],
+    "indexes": []
+  },
+  {
+    "id": "pbc_reports_hrbac",
+    "name": "reports",
+    "type": "base",
+    "system": false,
+    "listRule": "@request.auth.role = \"owner\" || (@request.auth.role = \"admin\" && facility = @request.auth.facility) || (@request.auth.role = \"caregiver\" && caregiver = @request.auth.id)",
+    "viewRule": "@request.auth.role = \"owner\" || (@request.auth.role = \"admin\" && facility = @request.auth.facility) || (@request.auth.role = \"caregiver\" && caregiver = @request.auth.id)",
+    "createRule": "@request.auth.role = \"owner\" || (@request.auth.role = \"admin\" && facility = @request.auth.facility)",
+    "updateRule": "@request.auth.role = \"owner\" || (@request.auth.role = \"admin\" && facility = @request.auth.facility)",
+    "deleteRule": "@request.auth.role = \"owner\" || (@request.auth.role = \"admin\" && facility = @request.auth.facility)",
+    "fields": [
+      {
+        "id": "text_rep_id",
+        "name": "id",
+        "type": "text",
+        "required": true,
+        "primaryKey": true,
+        "system": true
+      },
+      {
+        "id": "text_rep_title",
+        "name": "title",
+        "type": "text",
+        "required": true
+      },
+      {
+        "id": "text_rep_content",
+        "name": "content",
+        "type": "text"
+      },
+      {
+        "id": "rel_rep_caregiver",
+        "name": "caregiver",
+        "type": "relation",
+        "collectionId": "_pb_users_auth_",
+        "maxSelect": 1
+      },
+      {
+        "id": "rel_rep_client",
+        "name": "client",
+        "type": "relation",
+        "collectionId": "hu9womf4xnkbrk8",
+        "maxSelect": 1
+      },
+      {
+        "id": "rel_rep_facility",
+        "name": "facility",
+        "type": "relation",
+        "collectionId": "pbc_facilities_hrbac",
+        "maxSelect": 1
+      },
+      {
+        "id": "auto_rep_created",
+        "name": "created",
+        "type": "autodate",
+        "onCreate": true,
+        "onUpdate": false
+      },
+      {
+        "id": "auto_rep_updated",
+        "name": "updated",
+        "type": "autodate",
+        "onCreate": true,
+        "onUpdate": true
+      }
+    ],
+    "indexes": []
   }
 ]

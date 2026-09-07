@@ -109,7 +109,7 @@
 
     // Visuelles Feedback für die Skala
     function getRatingColor(value: number, isSelected: boolean) {
-        if (!isSelected) return "bg-neutral-100 text-neutral-500 hover:bg-neutral-200 border-neutral-200";
+        if (!isSelected) return "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700";
         if (value <= 3) return "bg-rose-500 text-white border-rose-600 shadow-rose-500/30";
         if (value <= 6) return "bg-amber-500 text-white border-amber-600 shadow-amber-500/30";
         if (value <= 8) return "bg-emerald-500 text-white border-emerald-600 shadow-emerald-500/30";
@@ -117,24 +117,24 @@
     }
 </script>
 
-<dialog bind:this={dialog} class="p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-full max-w-lg mx-auto my-auto rounded-3xl" onclick={(e) => { if (e.target === dialog) close(); }}>
-    <div class="bg-white rounded-3xl p-6 md:p-8 w-full max-h-[90vh] overflow-y-auto custom-scrollbar relative shadow-2xl">
-        <button aria-label="Schließen" onclick={close} class="absolute top-5 right-5 w-10 h-10 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-colors active:scale-95 focus-visible:ring-2 focus-visible:ring-neutral-500 focus-visible:outline-none z-10">
+<dialog bind:this={dialog} class="p-0 bg-transparent backdrop:bg-slate-950/65 backdrop:backdrop-blur-md w-full max-w-lg mx-auto my-auto rounded-3xl" onclick={(e) => { if (e.target === dialog) close(); }}>
+    <div class="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-3xl p-6 md:p-8 w-full max-h-[90vh] overflow-y-auto custom-scrollbar relative shadow-2xl">
+        <button aria-label="Schließen" onclick={close} class="absolute top-5 right-5 w-10 h-10 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-full flex items-center justify-center transition-colors active:scale-95 focus-visible:ring-2 focus-visible:ring-slate-500 focus-visible:outline-none z-10">
             <X class="w-5 h-5" />
         </button>
         
         <div class="flex items-center gap-3 mb-2 pr-12">
-            <div class="w-12 h-12 rounded-2xl bg-amber-50 text-amber-500 flex items-center justify-center shadow-inner shrink-0">
+            <div class="w-12 h-12 rounded-2xl bg-amber-50 dark:bg-amber-950/60 text-amber-500 flex items-center justify-center shadow-inner shrink-0">
                 <Star class="w-6 h-6 fill-current" />
             </div>
             <div>
-                <h2 class="text-xl sm:text-2xl font-black text-neutral-900 leading-tight">Ihr Feedback</h2>
-                <p class="text-xs sm:text-sm text-neutral-500 font-medium mt-0.5">Wie zufrieden sind Sie mit uns?</p>
+                <h2 class="text-xl sm:text-2xl font-black text-slate-900 dark:text-slate-100 leading-tight">Ihr Feedback</h2>
+                <p class="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium mt-0.5">Wie zufrieden sind Sie mit uns?</p>
             </div>
         </div>
 
         {#if errorMsg}
-            <div class="bg-rose-50 text-rose-700 p-4 rounded-xl mt-6 text-sm font-medium border border-rose-200 animate-enter shadow-sm">
+            <div class="bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 p-4 rounded-xl mt-6 text-sm font-medium border border-rose-200 dark:border-rose-900/60 animate-enter shadow-sm">
                 {errorMsg}
             </div>
         {/if}
@@ -142,7 +142,7 @@
         <form onsubmit={handleSubmit} class="mt-6 space-y-6">
             <div>
                 <!-- svelte-ignore a11y_label_has_associated_control -->
-                <label class="block text-sm font-bold text-neutral-700 mb-3 text-center">Auf einer Skala von 1 (Schlecht) bis 10 (Hervorragend)</label>
+                <label class="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3 text-center">Auf einer Skala von 1 (Schlecht) bis 10 (Hervorragend)</label>
                 <div class="flex flex-wrap justify-center gap-2">
                     {#each Array(10) as _, i}
                         {@const val = i + 1}
@@ -155,26 +155,26 @@
 
             <!-- Progressive Disclosure: Erst wenn ein Rating gewählt wurde, öffnet sich der Rest -->
             {#if rating > 0}
-                <div transition:slide={{ duration: 300 }} class="space-y-5 pt-4 border-t border-neutral-100">
+                <div transition:slide={{ duration: 300 }} class="space-y-5 pt-4 border-t border-slate-100 dark:border-slate-800">
                     <div>
-                        <label for="feedback-msg" class="block text-sm font-bold text-neutral-700 mb-1.5">Was können wir verbessern oder was lief besonders gut?</label>
-                        <textarea id="feedback-msg" bind:value={message} class="orga-input-clear w-full min-h-32 resize-y custom-scrollbar bg-neutral-50 focus:bg-white text-sm" placeholder="Ihre ehrliche Meinung ist uns wichtig..." maxlength="1000" disabled={isLoading}></textarea>
-                        <div class="text-[10px] text-neutral-400 text-right mt-1">{message.length}/1000</div>
+                        <label for="feedback-msg" class="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5">Was können wir verbessern oder was lief besonders gut?</label>
+                        <textarea id="feedback-msg" bind:value={message} class="orga-input-clear w-full min-h-32 resize-y custom-scrollbar text-sm" placeholder="Ihre ehrliche Meinung ist uns wichtig..." maxlength="1000" disabled={isLoading}></textarea>
+                        <div class="text-[10px] text-slate-400 dark:text-slate-500 text-right mt-1">{message.length}/1000</div>
                     </div>
 
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                            <label for="feedback-fname" class="block text-sm font-bold text-neutral-700 mb-1.5">Vorname <span class="text-neutral-400 font-normal">(Optional)</span></label>
-                            <input id="feedback-fname" type="text" bind:value={name_first} class="orga-input-clear w-full min-h-12 bg-neutral-50 focus:bg-white text-sm" disabled={isLoading} />
+                            <label for="feedback-fname" class="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5">Vorname <span class="text-slate-400 dark:text-slate-500 font-normal">(Optional)</span></label>
+                            <input id="feedback-fname" type="text" bind:value={name_first} class="orga-input-clear w-full min-h-12 text-sm" disabled={isLoading} />
                         </div>
                         <div>
-                            <label for="feedback-lname" class="block text-sm font-bold text-neutral-700 mb-1.5">Nachname <span class="text-neutral-400 font-normal">(Optional)</span></label>
-                            <input id="feedback-lname" type="text" bind:value={name_last} class="orga-input-clear w-full min-h-12 bg-neutral-50 focus:bg-white text-sm" disabled={isLoading} />
+                            <label for="feedback-lname" class="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5">Nachname <span class="text-slate-400 dark:text-slate-500 font-normal">(Optional)</span></label>
+                            <input id="feedback-lname" type="text" bind:value={name_last} class="orga-input-clear w-full min-h-12 text-sm" disabled={isLoading} />
                         </div>
                     </div>
 
                     <div class="pt-4 flex justify-end">
-                        <button type="submit" disabled={isLoading} class="orga-button-primary w-full sm:w-auto shadow-brand-600/30 active:scale-95 px-8 min-h-12 text-sm flex items-center justify-center gap-2">
+                        <button type="submit" disabled={isLoading} class="orga-button-primary w-full sm:w-auto active:scale-95 px-8 min-h-12 text-sm flex items-center justify-center gap-2">
                             {#if isLoading}
                                 <div class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
                                 Sendet...

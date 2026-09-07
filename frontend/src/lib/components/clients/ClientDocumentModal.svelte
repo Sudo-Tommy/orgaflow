@@ -210,8 +210,8 @@
                 </div>
 
                 <div class="space-y-2">
-                    <label for="doc-files" class="block text-sm font-semibold text-neutral-700 mb-1.5">Dateien anhängen (PDF, Bild)</label>
-                    <div class="flex items-center gap-3"><input type="file" id="doc-files" multiple accept=".pdf, .png, .jpg, .jpeg" class="hidden" onchange={handleFileSelect} disabled={isLoading} /><button type="button" onclick={() => document.getElementById('doc-files')?.click()} class="text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-sm active:scale-95" disabled={isLoading}><Upload class="w-4 h-4" /> Durchsuchen</button></div>
+                    <label for="doc-files" class="block text-sm font-semibold text-neutral-700 mb-1.5">Dateien anhängen (Alle Formate erlaubt)</label>
+                    <div class="flex items-center gap-3"><input type="file" id="doc-files" multiple accept="*/*" class="hidden" onchange={handleFileSelect} disabled={isLoading} /><button type="button" onclick={() => document.getElementById('doc-files')?.click()} class="text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-sm active:scale-95" disabled={isLoading}><Upload class="w-4 h-4" /> Durchsuchen</button></div>
                     
                     <!-- Anzeige der ausgewählten/bestehenden Dateien -->
                     {#if existingFiles.length > 0 || uploadFiles.length > 0}

@@ -1,4 +1,4 @@
-import { pb } from "$lib/services/pocketbase";
+import { pb } from "./pocketbase";
 
 export interface AppointmentRequestInput {
     company: string;

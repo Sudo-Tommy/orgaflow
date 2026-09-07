@@ -1,0 +1,20 @@
+/// <reference path="../pb_data/types.d.ts" />
+migrate((app) => {
+  const collection = app.findCollectionByNameOrId("00vkipv5adisx5g")
+
+  // update collection data
+  unmarshal({
+    "listRule": "users.id = @request.auth.id"
+  }, collection)
+
+  return app.save(collection)
+}, (app) => {
+  const collection = app.findCollectionByNameOrId("00vkipv5adisx5g")
+
+  // update collection data
+  unmarshal({
+    "listRule": ""
+  }, collection)
+
+  return app.save(collection)
+})

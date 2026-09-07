@@ -84,55 +84,55 @@
         {#each clientGroups as group}
             <div class="orga-card-white overflow-hidden animate-enter delay-200">
                 <!-- Group Header -->
-                <div class="bg-neutral-50/80 border-b border-neutral-100 p-4">
-                    <h2 class="font-bold text-neutral-900 flex items-center gap-2">{group.title} <span class="text-xs font-bold text-neutral-500 bg-white px-2 py-0.5 rounded-md border border-neutral-200 shadow-sm">{group.clients.length}</span></h2>
+                <div class="bg-slate-50/90 dark:bg-slate-800/70 border-b border-slate-200/80 dark:border-slate-800 p-4">
+                    <h2 class="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">{group.title} <span class="text-xs font-bold text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 px-2.5 py-0.5 rounded-md border border-slate-200 dark:border-slate-700 shadow-2xs">{group.clients.length}</span></h2>
                 </div>
                 
                 <!-- Desktop Table View -->
                 <div class="hidden md:block overflow-x-auto custom-scrollbar">
                     <table class="w-full text-left border-collapse min-w-150">
-                        <thead class="bg-neutral-50/50 border-b border-neutral-100">
+                        <thead class="bg-slate-100/90 dark:bg-slate-800/90 border-b border-slate-200 dark:border-slate-700">
                             <tr>
-                                <th class="p-4 font-bold text-neutral-500 text-xs uppercase tracking-wider">Klient</th>
-                                <th class="p-4 font-bold text-neutral-500 text-xs uppercase-tracking-wider">Kontakt</th>
-                                <th class="p-4 font-bold text-neutral-500 text-xs uppercase tracking-wider">Notizen</th>
-                                <th class="p-4 font-bold text-neutral-500 text-xs uppercase tracking-wider">Status</th>
-                                <th class="p-4 font-bold text-neutral-500 text-xs uppercase tracking-wider">Pflegegrad</th>
+                                <th class="p-3.5 sm:p-4 font-bold text-slate-700 dark:text-slate-200 text-xs uppercase tracking-wider">Klient</th>
+                                <th class="p-3.5 sm:p-4 font-bold text-slate-700 dark:text-slate-200 text-xs uppercase tracking-wider">Kontakt</th>
+                                <th class="p-3.5 sm:p-4 font-bold text-slate-700 dark:text-slate-200 text-xs uppercase tracking-wider">Notizen</th>
+                                <th class="p-3.5 sm:p-4 font-bold text-slate-700 dark:text-slate-200 text-xs uppercase tracking-wider">Status</th>
+                                <th class="p-3.5 sm:p-4 font-bold text-slate-700 dark:text-slate-200 text-xs uppercase tracking-wider">Pflegegrad</th>
                             </tr>
                         </thead>
-                        <tbody class="divide-y divide-neutral-50">
+                        <tbody class="divide-y divide-slate-100 dark:divide-slate-800/80 bg-white dark:bg-slate-900">
                             {#each group.clients as client (client.id)}
-                                <tr onclick={() => detailModal?.open(client.id)} class="hover:bg-blue-100 transition-colors group cursor-pointer">
-                                    <td class="p-4">
+                                <tr onclick={() => detailModal?.open(client.id)} class="hover:bg-indigo-50/60 dark:hover:bg-slate-800/60 transition-colors group cursor-pointer">
+                                    <td class="p-3.5 sm:p-4">
                                         <div class="flex items-center gap-3">
-                                            <div class="w-9 h-9 rounded-full bg-indigo-100 text-indigo-600 font-bold flex items-center justify-center text-sm shrink-0 shadow-inner">
+                                            <div class="w-9 h-9 rounded-full bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 font-bold flex items-center justify-center text-sm shrink-0 shadow-inner">
                                                 {(client.name_first?.charAt(0) || '')}{(client.name_last?.charAt(0) || '')}
                                             </div>
                                             <div>
-                                                <p class="font-bold text-neutral-900">{client.name_first} {client.name_last}</p>
-                                                <p class="text-xs text-neutral-500">{client.city || 'Kein Ort'}</p>
+                                                <p class="font-bold text-slate-900 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">{client.name_first} {client.name_last}</p>
+                                                <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">{client.city || 'Kein Ort'}</p>
                                             </div>
                                         </div>
                                     </td>
-                                    <td class="p-4 text-sm text-neutral-600">
+                                    <td class="p-3.5 sm:p-4 text-sm text-slate-700 dark:text-slate-200 font-medium">
                                         <p>{client.email || '-'}</p>
-                                        <p class="text-xs">{client.phone || ''}</p>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 font-normal">{client.phone || ''}</p>
                                     </td>
-                                    <td class="p-4">
+                                    <td class="p-3.5 sm:p-4">
                                         {#if client.notes}
-                                            <div class="bg-amber-50 text-amber-800 text-xs p-2 rounded-lg border border-amber-100/50 line-clamp-2 max-w-[16rem] leading-relaxed" title={client.notes}>
+                                            <div class="bg-amber-50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 text-xs p-2 rounded-lg border border-amber-200/60 dark:border-amber-800/50 line-clamp-2 max-w-[16rem] leading-relaxed" title={client.notes}>
                                                 {client.notes}
                                             </div>
                                         {:else}
-                                            <span class="text-neutral-300">-</span>
+                                            <span class="text-slate-300 dark:text-slate-600">-</span>
                                         {/if}
                                     </td>
-                                    <td class="p-4">
-                                        <span class="px-2.5 py-1 text-xs font-bold rounded-full {(client.status || '').toLowerCase() === 'aktiv' ? 'bg-emerald-100 text-emerald-700' : 'bg-neutral-100 text-neutral-600'}">
+                                    <td class="p-3.5 sm:p-4">
+                                        <span class="px-2.5 py-1 text-xs font-bold rounded-full {(client.status || '').toLowerCase() === 'aktiv' ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700'}">
                                             {(client.status || 'Unbekannt')}
                                         </span>
                                     </td>
-                                    <td class="p-4 text-sm font-bold text-neutral-800">
+                                    <td class="p-3.5 sm:p-4 text-sm font-bold text-slate-800 dark:text-slate-100">
                                         {client.level_of_care ? `Grad ${client.level_of_care}` : '-'}
                                     </td>
                                 </tr>
@@ -142,38 +142,38 @@
                 </div>
 
                 <!-- Mobile Card View -->
-                <div class="block md:hidden divide-y divide-neutral-100">
+                <div class="block md:hidden divide-y divide-slate-100 dark:divide-slate-800">
                     {#each group.clients as client (client.id)}
-                        <button type="button" onclick={() => detailModal?.open(client.id)} class="w-full text-left p-4 flex flex-col gap-3 hover:bg-neutral-50/50 transition-colors">
+                        <button type="button" onclick={() => detailModal?.open(client.id)} class="w-full text-left p-4 flex flex-col gap-3 hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors">
                             <div class="flex items-center justify-between">
                                 <div class="flex items-center gap-3 min-w-0">
-                                    <div class="w-10 h-10 rounded-full bg-indigo-100 text-indigo-600 font-bold flex items-center justify-center text-base shrink-0 shadow-inner">
+                                    <div class="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-bold flex items-center justify-center text-base shrink-0 shadow-inner">
                                         {(client.name_first?.charAt(0) || '')}{(client.name_last?.charAt(0) || '')}
                                     </div>
                                     <div class="flex-1 min-w-0 sm:hidden">
-                                        <h2 class="text-[15px] font-bold text-neutral-900 truncate hover:text-indigo-600 transition-colors">{client.name_first} {client.name_last}</h2>
-                                        <p class="text-xs text-neutral-500 truncate">{client.city || 'Kein Ort'}</p>
+                                        <h2 class="text-[15px] font-bold text-slate-900 dark:text-slate-100 truncate hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">{client.name_first} {client.name_last}</h2>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 truncate font-medium">{client.city || 'Kein Ort'}</p>
                                     </div>
                                 </div>
-                                <span class="px-2 py-0.5 text-[10px] font-bold rounded-full shrink-0 {(client.status || '').toLowerCase() === 'aktiv' ? 'bg-emerald-100 text-emerald-700' : 'bg-neutral-100 text-neutral-600'}">
+                                <span class="px-2 py-0.5 text-[10px] font-bold rounded-full shrink-0 {(client.status || '').toLowerCase() === 'aktiv' ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700'}">
                                     {(client.status || 'Unbekannt')}
                                 </span>
                             </div>
                             <div class="flex items-start justify-between gap-4 pl-13">
-                                <div class="text-xs text-neutral-600 flex-1 min-w-0">
+                                <div class="text-xs text-slate-600 dark:text-slate-300 flex-1 min-w-0">
                                 {#if client.level_of_care}
-                                    <p><span class="font-semibold">Pflegegrad:</span> {client.level_of_care}</p>
+                                    <p><span class="font-semibold text-slate-900 dark:text-slate-100">Pflegegrad:</span> {client.level_of_care}</p>
                                 {/if}
                                 {#if client.phone}
-                                    <p class="mt-1"><span class="font-semibold">Telefon:</span> {client.phone}</p>
+                                    <p class="mt-1"><span class="font-semibold text-slate-900 dark:text-slate-100">Telefon:</span> {client.phone}</p>
                                 {/if}
                                 {#if client.notes}
-                                    <div class="mt-2 bg-amber-50 text-amber-800 p-2 rounded-lg border border-amber-100/50">
+                                    <div class="mt-2 bg-amber-50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 p-2 rounded-lg border border-amber-200/60 dark:border-amber-800/50">
                                         <p class="line-clamp-2 leading-relaxed">{client.notes}</p>
                                     </div>
                                 {/if}
                                 </div>
-                                <span class="text-indigo-600 text-xs font-bold shrink-0 self-center">&rarr;</span>
+                                <span class="text-indigo-600 dark:text-indigo-400 text-xs font-bold shrink-0 self-center">&rarr;</span>
                             </div>
                         </button>
                     {/each}

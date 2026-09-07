@@ -7,13 +7,18 @@
 	import { pb } from "$lib/services/pocketbase";
 	import { orgaStore } from "$lib/stores/orgaStore.svelte";
 	import AppSidebar from "$lib/components/AppSidebar.svelte";
-	import AppTopNav from "$lib/components/AppTopNav.svelte";
+	import MobileNavDrawer from "$lib/components/MobileNavDrawer.svelte";
+	import AppBottomNav from "$lib/components/AppBottomNav.svelte";
 	import ToastLayer from "$lib/components/ToastLayer.svelte";
 	import ConfirmLayer from "$lib/components/ConfirmLayer.svelte";
 	import UpdateLogModal from "$lib/components/UpdateLogModal.svelte";
+	import { rbacService } from "$lib/services/rbacService.svelte";
+	import { toastStore } from "$lib/services/toastService.svelte";
 
 	let { children } = $props();
 
+	let isMobileMenuOpen = $state(false);
+	let isDarkMode = $state(false);
 	const auth = authManager();
 
 	onMount(() => {
@@ -21,9 +26,20 @@
 	});
 
 	// Reaktive Bestimmung der Sichtbarkeit (verfügbar im gesamten Layout)
-	let isPublicPage = $derived($page.url.pathname === '/' || $page.url.pathname.startsWith('/login') || $page.url.pathname.startsWith('/portal'));
+	let isPublicPage = $derived(
+		$page.url.pathname === '/' || 
+		$page.url.pathname.startsWith('/login') || 
+		$page.url.pathname.startsWith('/portal') ||
+		$page.url.pathname.startsWith('/datenschutz') ||
+		$page.url.pathname.startsWith('/privacy') ||
+		$page.url.pathname.startsWith('/impressum') ||
+		$page.url.pathname.startsWith('/legal')
+	);
+	
+	// Prüft, ob wir im Editor sind (alles unter /documents/... außer die /documents/ Übersicht selbst)
+	let isEditorPage = $derived($page.url.pathname.startsWith('/documents/') && $page.url.pathname.length > 11);
 
-	// --- Auth Guard (Routenschutz) ---
+	// --- Auth & HRBAC Guard (Routenschutz) ---
 	$effect(() => {
 		if (!auth.isLoggedIn && !isPublicPage) {
 			// Ausgeloggte Nutzer auf geschützten Seiten zum Login leiten
@@ -33,35 +49,69 @@
 			Object.values(orgaStore).forEach(store => store.destroy());
 			
 		} else if (auth.isLoggedIn && ($page.url.pathname === '/' || $page.url.pathname.startsWith('/login'))) {
-			// Eingeloggte Nutzer von der Start- oder Login-Seite weg zum Dashboard leiten
-			goto('/dashboard');
+			// Eingeloggte Nutzer von der Start- oder Login-Seite weg zum Dashboard oder Portal leiten
+			if (rbacService.isClient) {
+				goto('/portal');
+			} else {
+				goto('/dashboard');
+			}
+		} else if (auth.isLoggedIn && !isPublicPage) {
+			const currentPath = $page.url.pathname;
+			
+			// 1. Klient-Rolle: darf nur im Klientenportal bleiben
+			if (rbacService.isClient && !currentPath.startsWith('/portal')) {
+				goto('/portal');
+				return;
+			}
+
+			// 2. Betreuer (Caregiver): kein Zugriff auf Finanzen, Rechnungen, BWA, Firma oder Admin
+			if (rbacService.isCaregiver) {
+				const restrictedPaths = ['/invoices', '/bwa', '/finances', '/admin', '/company', '/vma'];
+				if (restrictedPaths.some(p => currentPath.startsWith(p))) {
+					toastStore.warning("Keine Zugriffsberechtigung für diesen Unternehmensbereich.");
+					goto('/dashboard');
+					return;
+				}
+			}
+
+			// 3. Betriebsleiter (Facility Admin): kein Zugriff auf Inhaber-exklusive Bereiche
+			if (rbacService.isFacilityAdmin) {
+				const ownerOnlyPaths = ['/admin/system-prompts', '/admin/system'];
+				if (ownerOnlyPaths.some(p => currentPath.startsWith(p))) {
+					toastStore.warning("Dieser Systembereich ist ausschließlich dem Inhaber vorbehalten.");
+					goto('/admin');
+					return;
+				}
+			}
 		}
 	});
 
 	// --- Lade die Daten, sobald der Nutzer eingeloggt ist ---
 	$effect(() => {
 		if (auth.isLoggedIn) {
-			const isSuperuser = pb.authStore.isSuperuser;
-			
 			// Initialisiert dynamisch die Tabellen im Store, basierend auf Rechten
 			Object.entries(orgaStore).forEach(([key, store]) => {
 				// Überspringe Kollektionen, die nur für Superuser (Admins) bestimmt sind
-				if ((key === 'superusers' || key === 'letterboxes') && !isSuperuser) return;
+				if (key === 'superusers' && !pb.authStore.isSuperuser) return;
+				if (key === 'letterboxes' && !rbacService.isOwner) return;
+				if (key === 'system_prompts' && !rbacService.canAccessSystemPrompts) return;
 				store.init();
 			});
 		}
 	});
 
-	// --- Automatischer, zeitgesteuerter Negativ-Modus ---
+	// --- Automatischer, zeitgesteuerter Tag-/Nachtmodus ---
 	$effect(() => {
 		function checkTimeAndApplyTheme() {
 			// Prüfen, ob der Nutzer manuell eingegriffen hat
 			const manualTheme = localStorage.getItem('theme_preference');
 			if (manualTheme === 'dark') {
-				document.documentElement.classList.add('theme-negative');
+				document.documentElement.classList.add('dark', 'theme-negative');
+				isDarkMode = true;
 				return;
 			} else if (manualTheme === 'light') {
-				document.documentElement.classList.remove('theme-negative');
+				document.documentElement.classList.remove('dark', 'theme-negative');
+				isDarkMode = false;
 				return;
 			}
 
@@ -71,16 +121,18 @@
 			const isNight = hour >= 19 || hour < 7;
 			
 			if (isNight) {
-				document.documentElement.classList.add('theme-negative');
+				document.documentElement.classList.add('dark', 'theme-negative');
+				isDarkMode = true;
 			} else {
-				document.documentElement.classList.remove('theme-negative');
+				document.documentElement.classList.remove('dark', 'theme-negative');
+				isDarkMode = false;
 			}
 		}
 
 		checkTimeAndApplyTheme(); // Sofort beim Laden ausführen
 		const interval = setInterval(checkTimeAndApplyTheme, 60000); // Jede Minute prüfen
 		
-		// Listener für unseren manuellen Umschalt-Button
+		// Listener für unseren manuellen Umschalt-Button und die Sidebar
 		window.addEventListener('theme-changed', checkTimeAndApplyTheme);
 
 		return () => {
@@ -89,22 +141,30 @@
 		};
 	});
 
-	// --- Navigation Setup ---
-	let navItems = $derived([
-		{ label: 'Dashboard', href: '/dashboard', icon: iconDashboard },
-		{ label: 'Posteingang', href: '/mail', icon: iconMail },
-		{ label: 'Termine', href: '/appointments', icon: iconCalendar },
-		{ label: 'Klienten', href: '/clients', icon: iconClients },
-		{ label: 'Krankenkassen', href: '/insurancies', icon: iconInsurance },
-		{ label: 'Firmendaten', href: '/company', icon: iconClients },
-		{ label: 'Vorlagen', href: '/documents', icon: iconDocuments },
-		{ label: 'Rechnungen', href: '/invoices', icon: iconDocuments },
-		{ label: 'BWA & Statistik', href: '/bwa', icon: iconChart },
-		{ label: 'Kontakte', href: '/contacts', icon: iconProfile },
-		{ label: 'Mein Profil', href: '/profile', icon: iconProfile },
-		{ label: 'Haushaltsbuch', href: '/finances', icon: iconWallet },
-		{ label: 'System-Admin', href: '/admin', icon: iconAdmin, roles: ['admin'] }
-	]);
+	// --- Navigation Setup (Rollen-basiert) ---
+	let navItems = $derived.by(() => {
+		const all = [
+			{ label: 'Dashboard', href: '/dashboard', icon: iconDashboard },
+			{ label: 'Termine', href: '/appointments', icon: iconCalendar },
+			{ label: 'Klienten', href: '/clients', icon: iconClients },
+			{ label: 'Krankenkassen', href: '/insurancies', icon: iconInsurance },
+			{ label: 'Firmendaten', href: '/company', icon: iconClients },
+			{ label: 'Vorlagen', href: '/documents', icon: iconDocuments },
+			{ label: 'Rechnungen', href: '/invoices', icon: iconDocuments },
+			{ label: 'BWA & Statistik', href: '/bwa', icon: iconChart },
+			{ label: 'Kontakte', href: '/contacts', icon: iconProfile },
+			{ label: 'Mein Profil', href: '/profile', icon: iconProfile },
+			{ label: 'Haushaltsbuch', href: '/finances', icon: iconWallet },
+			{ label: 'System-Admin', href: '/admin', icon: iconAdmin }
+		];
+
+		return all.filter(item => {
+			if (item.label === 'System-Admin') return rbacService.canAccessAdmin;
+			if (['Firmendaten'].includes(item.label)) return rbacService.isAdmin;
+			if (['Rechnungen', 'BWA & Statistik', 'Haushaltsbuch'].includes(item.label)) return rbacService.canAccessFinances;
+			return true;
+		});
+	});
 </script>
 
 {#snippet iconDashboard()}
@@ -147,18 +207,20 @@
 	<svg class="w-full h-full" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" /></svg>
 {/snippet}
 
-{#if auth.isLoggedIn && !isPublicPage}
-	<div class="flex h-screen overflow-hidden bg-neutral-50 text-neutral-900 font-sans antialiased selection:bg-indigo-500/30">
+<!-- Wenn wir im Editor sind (!isEditorPage), werden Sidebar und TopNav gar nicht erst geladen! -->
+{#if auth.isLoggedIn && !isPublicPage && !isEditorPage}
+	<div class="flex h-screen overflow-hidden bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans antialiased selection:bg-indigo-600 selection:text-white">
 		<AppSidebar items={navItems} />
 		<div class="flex-1 flex flex-col relative overflow-hidden">
 			<!-- Subtiler Hintergrund-Glow im Main-Bereich für mehr visuelle Tiefe -->
 			<div class="absolute top-0 right-0 w-125 h-125 bg-indigo-500/5 blur-[100px] pointer-events-none rounded-full"></div>
-			<AppTopNav items={navItems} />
-			<main class="flex-1 overflow-y-auto p-6 md:p-10 lg:p-12 custom-scrollbar scroll-smooth relative z-10">
+			<main class="flex-1 overflow-y-auto px-3.5 py-4 sm:px-6 md:p-8 lg:p-10 pb-24 md:pb-10 custom-scrollbar scroll-smooth relative z-10 bg-slate-50/60 dark:bg-slate-950">
 				{@render children()}
 			</main>
+			<AppBottomNav onOpenMenu={() => isMobileMenuOpen = true} />
 		</div>
 	</div>
+	<MobileNavDrawer bind:isOpen={isMobileMenuOpen} items={navItems} {isDarkMode} />
 {:else}
 	<div class="orga-layout-wrapper">
 		<div class="orga-layout-content">
@@ -172,12 +234,8 @@
 <UpdateLogModal />
 
 <style>
-	/* Verhindert das Invertieren von Bildern und Canvas im Dark Mode */
-	:global(.theme-negative img:not(.mix-blend-multiply)),
-	:global(.theme-negative canvas) {
-		filter: invert(1) hue-rotate(180deg);
-	}
-	/* Unterschriften auf weißem Grund werden im Dark Mode nahtlos als weißer Schriftzug eingefügt */
+	/* Unterschriften auf weißem Grund werden im Dark Mode als nahtloser Schriftzug eingefügt */
+	:global(.dark img.mix-blend-multiply),
 	:global(.theme-negative img.mix-blend-multiply) {
 		mix-blend-mode: screen;
 	}

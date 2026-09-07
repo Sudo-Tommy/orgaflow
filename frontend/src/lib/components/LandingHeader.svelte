@@ -16,11 +16,11 @@
     let isDarkMode = $state(false);
 
     onMount(() => {
-        isDarkMode = document.documentElement.classList.contains('theme-negative');
+        isDarkMode = document.documentElement.classList.contains('dark') || document.documentElement.classList.contains('theme-negative');
         
         // Beobachtet Änderungen an der HTML-Klasse, falls die Automatik einspringt
         const observer = new MutationObserver(() => {
-            isDarkMode = document.documentElement.classList.contains('theme-negative');
+            isDarkMode = document.documentElement.classList.contains('dark') || document.documentElement.classList.contains('theme-negative');
         });
         observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
         
@@ -30,6 +30,11 @@
     function toggleTheme() {
         const newTheme = isDarkMode ? 'light' : 'dark';
         localStorage.setItem('theme_preference', newTheme);
+        if (newTheme === 'dark') {
+            document.documentElement.classList.add('dark', 'theme-negative');
+        } else {
+            document.documentElement.classList.remove('dark', 'theme-negative');
+        }
         window.dispatchEvent(new Event('theme-changed'));
     }
 </script>
@@ -37,28 +42,42 @@
 <header class="w-full flex flex-col sticky top-0 z-50 shadow-[0_4px_20px_-10px_rgba(0,0,0,0.05)] transition-all">
     
     <!-- Haupt-Navigation -->
-    <div class="w-full px-4 sm:px-6 py-3 sm:py-4 flex justify-between items-center bg-white/95 backdrop-blur-md border-b border-neutral-100">
-        <button onclick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} class="flex items-center gap-2 sm:gap-3 group text-left">
+    <div class="w-full px-4 sm:px-6 py-3 sm:py-4 flex justify-between items-center bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-neutral-100 dark:border-slate-800">
+        <button onclick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} class="flex items-center gap-2 sm:gap-3 group text-left cursor-pointer">
             <img src="/favicon.png" alt="Logo" class="w-8 h-8 sm:w-10 sm:h-10 object-contain group-hover:scale-105 transition-transform duration-300 drop-shadow-sm" />
-            <span class="text-lg sm:text-xl font-black tracking-tight text-neutral-900 group-hover:text-brand-800 transition-colors">Ihre Seniorenassistenz</span>
+            <span class="text-lg sm:text-xl font-black tracking-tight text-neutral-900 dark:text-slate-100 group-hover:text-brand-800 dark:group-hover:text-brand-400 transition-colors">Ihre Seniorenassistenz</span>
         </button>
 
-        <nav class="hidden lg:flex items-center gap-8 font-semibold text-sm text-neutral-600">
-            <button onclick={() => leistungenModal?.open()} class="hover:text-brand-800 transition-colors">Leistungen</button>
-            <button onclick={() => kostenModal?.open()} class="hover:text-brand-800 transition-colors">Kostenübernahme</button>
-            <button onclick={() => scrollToSection('kontakt')} class="hover:text-brand-800 transition-colors">Kontakt</button>
+        <nav class="hidden lg:flex items-center gap-8 font-semibold text-sm text-neutral-600 dark:text-slate-300">
+            <a href="#leistungen" onclick={(e) => { e.preventDefault(); leistungenModal?.open(); }} class="hover:text-brand-800 dark:hover:text-brand-400 transition-colors">Leistungen</a>
+            <a href="#kosten" onclick={(e) => { e.preventDefault(); kostenModal?.open(); }} class="hover:text-brand-800 dark:hover:text-brand-400 transition-colors">Kostenübernahme</a>
+            <a href="#kontakt" onclick={(e) => { e.preventDefault(); scrollToSection('kontakt'); }} class="hover:text-brand-800 dark:hover:text-brand-400 transition-colors">Kontakt</a>
         </nav>
 
-        <div class="flex items-center gap-2 sm:gap-4">
-            <button onclick={toggleTheme} class="p-2 text-neutral-500 hover:text-brand-800 transition-colors text-lg" title="Tag/Nacht Modus umschalten">
+        <div class="flex items-center gap-2 sm:gap-3">
+            <button 
+                onclick={toggleTheme} 
+                class="w-10 h-10 min-w-[40px] rounded-xl flex items-center justify-center text-neutral-500 hover:text-brand-800 dark:text-slate-400 dark:hover:text-amber-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-lg cursor-pointer focus-visible:ring-2 focus-visible:ring-brand-500 outline-none" 
+                aria-label="Tag- und Nachtmodus umschalten" 
+                title="Tag/Nacht Modus umschalten"
+            >
                 {isDarkMode ? '☀️' : '🌙'}
             </button>
-            <button onclick={() => kostenModal?.open()} class="orga-button-ghost py-2 px-4 text-xs bg-amber-100 hover:bg-amber-200 text-amber-900 border-none shadow-sm hidden xl:flex font-bold">Zahlt die Pflegekasse?</button>
+            <button 
+                onclick={() => kostenModal?.open()} 
+                class="orga-button-ghost py-2 px-4 min-h-[40px] text-xs bg-amber-100 hover:bg-amber-200 text-amber-900 dark:bg-amber-950/50 dark:hover:bg-amber-900/60 dark:text-amber-300 dark:border dark:border-amber-800/60 shadow-xs hidden xl:flex font-bold rounded-xl cursor-pointer"
+            >
+                Zahlt die Pflegekasse?
+            </button>
             
-            
-            <!-- Login Button -->            
-            <button onclick={() => appModal?.open()} class="orga-button-ghost py-2 px-4 text-xs bg-amber-100 hover:bg-amber-200 text-amber-900 border-none shadow-sm hidden xl:flex font-bold">Kostenloses Kennenlernen</button>
-            <div class="flex items-center justify-center opacity-70 hover:opacity-100 transition-opacity">
+            <button 
+                onclick={() => appModal?.open()} 
+                class="orga-button-ghost py-2 px-4 min-h-[40px] text-xs bg-amber-100 hover:bg-amber-200 text-amber-900 dark:bg-amber-950/50 dark:hover:bg-amber-900/60 dark:text-amber-300 dark:border dark:border-amber-800/60 shadow-xs hidden xl:flex font-bold rounded-xl cursor-pointer"
+            >
+                Kostenloses Kennenlernen
+            </button>
+
+            <div class="flex items-center justify-center opacity-80 hover:opacity-100 transition-opacity">
                 <LoginLogout iconOnly={true} />
             </div>
         </div>

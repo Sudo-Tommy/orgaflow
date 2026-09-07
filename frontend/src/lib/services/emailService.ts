@@ -2,7 +2,7 @@ import { pb } from '$lib/services/pocketbase';
 import { dev } from '$app/environment';
 
 // Dynamische URL: Lokal direkt an den Port 3000, Live via relativer URL an den Nginx-Proxy
-export const MICROSERVICE_URL = dev ? 'http://127.0.0.1:3000/api/emails' : 'https://ihre-seniorenassistenz.com/api/emails';
+export const MICROSERVICE_URL = dev ? 'http://127.0.0.1:3000/api/emails' : '/api/emails';
 
 export interface SendEmailPayload {
     to: string;
@@ -37,25 +37,27 @@ export async function fetchInbox(): Promise<EmailMessage[]> {
     const response = await fetch(`${MICROSERVICE_URL}/inbox`, {
         method: 'GET',
         headers: {
-            'Authorization': `Bearer ${pb.authStore.token}`,
+            'Authorization': pb.authStore.token ? `Bearer ${pb.authStore.token}` : '',
             'Content-Type': 'application/json'
         }
-    });
+    }).catch(err => { throw new Error('Microservice nicht erreichbar. Prüfe die Server-Verbindung.'); });
 
     const contentType = response.headers.get("content-type");
     if (!contentType || !contentType.includes("application/json")) {
         const text = await response.text();
         const snippet = text.substring(0, 150).replace(/\n/g, ' ');
-        throw new Error(`Server-Fehler: HTML statt JSON erhalten. Antwort des Servers: '${snippet}...'`);
+        console.warn(`[emailService] Microservice lieferte HTML statt JSON: ${snippet}`);
+        return [];
     }
 
     const result = await response.json();
 
     if (!response.ok || !result.success) {
-        throw new Error(result.error || 'Fehler beim Abrufen der E-Mails.');
+        console.warn(`[emailService] Inbox Abruf: ${result.error || response.statusText}`);
+        return [];
     }
 
-    return result.data;
+    return result.data || [];
 }
 
 /**
@@ -74,7 +76,7 @@ export async function markEmailAsRead(uid: string): Promise<boolean> {
             body: JSON.stringify({ uid })
         });
         const result = await response.json();
-        return result.success;
+        return result?.success || false;
     } catch (err) {
         console.error("Fehler beim Markieren als gelesen:", err);
         return false;
@@ -92,11 +94,11 @@ export async function sendEmail(payload: SendEmailPayload): Promise<{ messageId:
     const response = await fetch(`${MICROSERVICE_URL}/send`, {
         method: 'POST',
         headers: {
-            'Authorization': `Bearer ${pb.authStore.token}`,
+            'Authorization': pb.authStore.token ? `Bearer ${pb.authStore.token}` : '',
             'Content-Type': 'application/json'
         },
         body: JSON.stringify(payload)
-    });
+    }).catch(err => { throw new Error('Senden fehlgeschlagen: Microservice nicht erreichbar.'); });
 
     const contentType = response.headers.get("content-type");
     if (!contentType || !contentType.includes("application/json")) {

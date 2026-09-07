@@ -1,15 +1,19 @@
 import { orgaStore } from "$lib/stores/orgaStore.svelte";
+import { rbacService } from "$lib/services/rbacService.svelte";
 
 export function useClientFilter(clientsProvider: () => any[]) {
     let searchQuery = $state("");
     let statusFilter = $state("all");
-    let companyFilter = $state("all");
+    let companyFilter = $state(rbacService.isFacilityAdmin && rbacService.userCompanyId ? rbacService.userCompanyId : "all");
 
     let filtered = $derived.by(() => {
         const list = clientsProvider();
         if (!list) return [];
         
         return list.filter(client => {
+            // HRBAC Scoping: Facility Admin sees only their facility, Caregiver sees only assigned
+            if (!rbacService.isRecordInScope(client)) return false;
+
             const query = searchQuery.toLowerCase();
             const fullName = `${client?.name_first || ''} ${client?.name_last || ''}`.toLowerCase();
             const matchQuery = !query || fullName.includes(query) || (client?.email || '').toLowerCase().includes(query);
@@ -17,11 +21,13 @@ export function useClientFilter(clientsProvider: () => any[]) {
             // Case-Insensitive Abgleich für den Status, um Fehler zwischen 'Aktiv' und 'aktiv' zu vermeiden
             const matchStatus = statusFilter === 'all' || (client?.status || '').toLowerCase() === statusFilter.toLowerCase();
             
+            let effectiveCompanyFilter = rbacService.isFacilityAdmin && rbacService.userCompanyId ? rbacService.userCompanyId : companyFilter;
+
             let matchCompany = true;
-            if (companyFilter !== 'all') {
-                const clientHasCompany = client?.company === companyFilter || (Array.isArray(client?.company) && client.company.includes(companyFilter));
+            if (effectiveCompanyFilter !== 'all') {
+                const clientHasCompany = client?.company === effectiveCompanyFilter || (Array.isArray(client?.company) && client.company.includes(effectiveCompanyFilter));
                 
-                const selectedComp = orgaStore.company?.data?.find((c: any) => c.id === companyFilter);
+                const selectedComp = orgaStore.company?.data?.find((c: any) => c.id === effectiveCompanyFilter);
                 const companyHasClient = selectedComp && Array.isArray(selectedComp.clients) && selectedComp.clients.includes(client.id);
                 
                 matchCompany = !!(clientHasCompany || companyHasClient);

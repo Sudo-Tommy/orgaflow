@@ -1,5 +1,3 @@
-import { json } from '@sveltejs/kit';
-import type { RequestHandler } from '@sveltejs/kit';
 import PDFDocument from 'pdfkit';
 import { Buffer } from 'buffer';
 
@@ -10,12 +8,20 @@ const corsHeaders = {
     'Access-Control-Allow-Headers': 'Content-Type, Authorization'
 };
 
+// Helper function to replace @sveltejs/kit json
+function json(data: any, init?: ResponseInit) {
+    return new Response(JSON.stringify(data), {
+        ...init,
+        headers: { ...init?.headers, 'Content-Type': 'application/json' }
+    });
+}
+
 // Separater Handler für CORS-Preflight Anfragen
-export const OPTIONS: RequestHandler = async () => {
+export const OPTIONS = async () => {
     return new Response(null, { headers: corsHeaders });
 };
 
-export const POST: RequestHandler = async ({ request }: { request: Request }) => {
+export const POST = async ({ request }: { request: Request }) => {
     try {
         const body = await request.json();
 

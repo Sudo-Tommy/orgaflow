@@ -1,16 +1,19 @@
 <script lang="ts">
     import { slide } from 'svelte/transition';
-    import { ChevronLeft, Type, Image as ImageIcon, Table, Save, Loader2, ChevronDown, Check } from 'lucide-svelte';
+    import { ChevronLeft, Type, Image as ImageIcon, Table, Save, Loader2, ChevronDown, Check, Copy, FileText, Stamp } from 'lucide-svelte';
 
-    let { title = $bindable(), type = $bindable(), marginTop = $bindable(250), marginBottom = $bindable(150), saveMessage, isSaving, onSave, onAdd } = $props<{
+    let { title = $bindable(), type = $bindable(), marginTop = $bindable(250), marginBottom = $bindable(150), saveMessage, isSaving, selectedFieldId, onSave, onAdd, onDuplicate, onInsertLetterhead } = $props<{
         title: string;
         type: string;
         marginTop?: number;
         marginBottom?: number;
         saveMessage: string;
         isSaving: boolean;
+        selectedFieldId: string | null;
         onSave: () => void;
         onAdd: (type: 'text' | 'logo' | 'table') => void;
+        onDuplicate: (id: string) => void;
+        onInsertLetterhead?: (variant: 'formA' | 'formB') => void;
     }>();
 
     let isTypeDropdownOpen = $state(false);
@@ -25,6 +28,7 @@
     ];
 
     let selectedDocType = $derived(docTypes.find(t => t.value === type) ?? docTypes[0]);
+    let isLetterheadMenuOpen = $state(false);
 
     function selectType(val: string) {
         type = val;
@@ -33,7 +37,7 @@
 </script>
 
 <!-- Wird nun als linkes Menü (Sidebar) gerendert -->
-<aside class="bg-neutral-900 text-neutral-300 w-72 flex flex-col border-r border-neutral-800 shrink-0 h-full shadow-2xl z-20 relative overflow-hidden">
+<aside class="hidden md:flex bg-neutral-900 text-neutral-300 w-72 flex-col border-r border-neutral-800 shrink-0 h-full shadow-2xl z-20 relative overflow-hidden">
     <div class="absolute top-0 left-0 w-full h-40 bg-brand-500/5 blur-3xl pointer-events-none"></div>
 
     <!-- Back Button & Header -->
@@ -103,6 +107,49 @@
         
         <div class="h-px w-full bg-neutral-800"></div>
         
+        <!-- Vorlagen-Presets (DIN 5008 Briefkopf) -->
+        <div class="space-y-3">
+            <div class="flex items-center justify-between">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-neutral-500">Briefkopf (DIN 5008)</h3>
+                <span class="text-[9px] uppercase tracking-wider font-bold bg-brand-500/20 text-brand-400 px-1.5 py-0.5 rounded">Neu</span>
+            </div>
+
+            <div class="bg-neutral-950/60 border border-brand-500/30 rounded-2xl p-3 shadow-inner">
+                <div class="flex items-center gap-2.5 mb-2.5">
+                    <div class="w-8 h-8 rounded-lg bg-brand-500/20 text-brand-400 flex items-center justify-center shrink-0">
+                        <Stamp class="w-4 h-4" />
+                    </div>
+                    <div>
+                        <p class="text-xs font-bold text-white">Geschäftsbriefkopf</p>
+                        <p class="text-[10px] text-neutral-400">Mit Firmenlogo & Anschrift</p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2">
+                    <button 
+                        type="button"
+                        onclick={() => onInsertLetterhead?.('formB')} 
+                        class="px-2.5 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold transition-all shadow-sm active:scale-95 text-center flex flex-col items-center justify-center min-h-12"
+                        title="Standard für moderne Geschäftsbriefe (45mm Kopfbereich)"
+                    >
+                        <span>Form B</span>
+                        <span class="text-[9px] font-normal text-brand-200">Standard</span>
+                    </button>
+                    <button 
+                        type="button"
+                        onclick={() => onInsertLetterhead?.('formA')} 
+                        class="px-2.5 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white text-xs font-bold transition-all shadow-sm active:scale-95 text-center flex flex-col items-center justify-center min-h-12"
+                        title="Kompakter Kopfbereich (27mm)"
+                    >
+                        <span>Form A</span>
+                        <span class="text-[9px] font-normal text-neutral-400">Kompakt</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="h-px w-full bg-neutral-800"></div>
+
         <!-- Elemente hinzufügen -->
         <div class="space-y-3">
             <h3 class="text-xs font-bold uppercase tracking-wider text-neutral-500 mb-2">Elemente einfügen</h3>
@@ -136,6 +183,19 @@
                     <p class="text-[10px] text-neutral-500 group-hover:text-neutral-400 transition-colors mt-0.5 truncate">Für Rechnungspositionen</p>
                 </div>
             </button>
+
+            <!-- Duplizieren Button -->
+            <div class="pt-4 mt-4 border-t border-neutral-800/80">
+                <button onclick={() => selectedFieldId && onDuplicate(selectedFieldId)} disabled={!selectedFieldId} class="w-full flex items-center gap-3 p-3 min-h-12 rounded-xl bg-neutral-950/40 hover:bg-neutral-800 border border-neutral-800 hover:border-indigo-500/50 transition-all group shadow-sm hover:shadow-md active:scale-95 disabled:opacity-30 disabled:pointer-events-none" title={selectedFieldId ? "Kopiert das aktuell markierte Element" : "Bitte zuerst ein Element anklicken"}>
+                    <div class="w-10 h-10 rounded-lg bg-neutral-900 group-hover:bg-indigo-500/20 text-neutral-400 group-hover:text-indigo-400 flex items-center justify-center shadow-inner transition-colors border border-neutral-800 group-hover:border-indigo-500/30 shrink-0">
+                        <Copy class="w-4 h-4" />
+                    </div>
+                    <div class="text-left flex-1 min-w-0">
+                        <p class="text-xs font-bold text-neutral-200 group-hover:text-white transition-colors truncate">Duplizieren</p>
+                        <p class="text-[10px] text-neutral-500 group-hover:text-neutral-400 transition-colors mt-0.5 truncate">Kopiert das markierte Element</p>
+                    </div>
+                </button>
+            </div>
         </div>
     </div>
     

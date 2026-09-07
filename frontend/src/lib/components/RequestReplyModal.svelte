@@ -3,6 +3,7 @@
     import { sendEmail } from "$lib/services/emailService";
     import { toastStore } from "$lib/services/toastService.svelte";
     import { orgaStore } from "$lib/stores/orgaStore.svelte";
+    import { buildPrioritizedContacts } from "$lib/services/contactPickerService";
     import AppointmentDetailModal from "./AppointmentDetailModal.svelte";
 
     // svelte-ignore non_reactive_update
@@ -27,32 +28,8 @@
     let showContactDropdown = $state(false);
     let selectedContactRefs = $state<any[]>([]);
 
-    function buildAvailableContacts() {
-        let list: any[] = [];
-        const add = (name: string, email: string, phone: string, salutation: string) => {
-            if (email || phone) list.push({ name, email, phone, salutation });
-        };
-        orgaStore.clients?.data?.forEach((c: any) => {
-            let sal = c.salutation === 'Herr' ? `Sehr geehrter Herr ${c.name_last}` : (c.salutation === 'Frau' ? `Sehr geehrte Frau ${c.name_last}` : `Guten Tag ${c.name_first} ${c.name_last}`);
-            add(`${c.name_first} ${c.name_last} (Klient)`, c.email, c.phone || c.handy, sal + ',');
-        });
-        orgaStore.contacts?.data?.forEach((c: any) => {
-            let sal = c.salutation === 'Herr' ? `Sehr geehrter Herr ${c.name_last}` : (c.salutation === 'Frau' ? `Sehr geehrte Frau ${c.name_last}` : `Guten Tag ${c.name_first} ${c.name_last}`);
-            add(`${c.name_first} ${c.name_last} (${c.company_name || 'Kontakt'})`, c.email, c.phone, sal + ',');
-        });
-        orgaStore.retirement_homes?.data?.forEach((h: any) => {
-            add(`${h.name} (Pflegeheim)`, h.email, h.phone, `Sehr geehrte Damen und Herren vom ${h.name},`);
-        });
-        orgaStore.insurancies?.data?.forEach((i: any) => {
-            add(`${i.name} (Krankenkasse)`, i.email, i.phone, `Sehr geehrte Damen und Herren,`);
-        });
-        const unique: any[] = [];
-        const seen = new Set();
-        for (const item of list) {
-            const key = `${item.email}-${item.phone}`;
-            if (!seen.has(key)) { seen.add(key); unique.push(item); }
-        }
-        return unique.sort((a, b) => a.name.localeCompare(b.name));
+    function buildAvailableContacts(targetClient?: any) {
+        return buildPrioritizedContacts(targetClient);
     }
 
     function toggleRecipient(contact: any, isChecked: boolean) {
@@ -166,7 +143,11 @@
         status = newStatus;
         emailTo = toEmail;
         
-        availableContacts = buildAvailableContacts();
+        const matchedClient = req?.expand?.client?.[0] || req?.expand?.client || 
+            (req?.client && orgaStore.clients?.data?.find(c => c.id === (Array.isArray(req.client) ? req.client[0] : req.client))) ||
+            (req?.sender_email && orgaStore.clients?.data?.find(c => c.email && c.email.toLowerCase() === req.sender_email.toLowerCase()));
+
+        availableContacts = buildAvailableContacts(matchedClient);
         selectedContactRefs = [];
         if (emailTo) {
             const matched = availableContacts.find(c => c.email === emailTo);
@@ -407,11 +388,37 @@
                         {#if showContactDropdown}
                             <!-- svelte-ignore a11y_consider_explicit_label -->
                             <button type="button" class="fixed inset-0 z-40 w-full h-full cursor-default" onclick={() => showContactDropdown = false} tabindex="-1"></button>
-                            <div class="absolute top-full right-0 mt-1 w-64 bg-white border border-neutral-200 shadow-xl rounded-xl z-50 max-h-60 overflow-y-auto custom-scrollbar p-1">
-                                {#each availableContacts.filter(c => c.email) as c}
-                                    <label class="flex items-center gap-3 p-2 hover:bg-neutral-50 rounded-lg cursor-pointer transition-colors"><input type="checkbox" checked={emailTo.includes(c.email)} onchange={(e) => toggleRecipient(c, e.currentTarget.checked)} class="w-4 h-4 text-indigo-600 border-neutral-300 rounded focus:ring-indigo-500" /><div class="min-w-0"><p class="text-sm font-bold text-neutral-900 truncate">{c.name}</p><p class="text-[10px] text-neutral-500 truncate">{c.email}</p></div></label>
+                            <div class="absolute top-full right-0 mt-1 w-72 bg-white border border-neutral-200 shadow-xl rounded-xl z-50 max-h-72 overflow-y-auto custom-scrollbar p-1.5">
+                                {#if availableContacts.some(c => c.isDirect && c.email)}
+                                    <div class="px-2 py-1 text-[11px] font-black text-brand-700 bg-brand-50 rounded-md mb-1 uppercase tracking-wider flex items-center justify-between">
+                                        <span>⭐ Direkte Klienten-Kontakte</span>
+                                    </div>
+                                    {#each availableContacts.filter(c => c.isDirect && c.email) as c}
+                                        <label class="flex items-center gap-2.5 p-2 hover:bg-brand-50/60 bg-brand-50/25 rounded-lg cursor-pointer transition-colors mb-0.5 border border-brand-100/70">
+                                            <input type="checkbox" checked={emailTo.includes(c.email)} onchange={(e) => toggleRecipient(c, e.currentTarget.checked)} class="w-4 h-4 text-brand-600 border-neutral-300 rounded focus:ring-brand-500" />
+                                            <div class="min-w-0 flex-1">
+                                                <p class="text-xs font-bold text-neutral-900 truncate">{c.name}</p>
+                                                <p class="text-[10px] text-brand-600 font-semibold truncate">{c.email}</p>
+                                            </div>
+                                        </label>
+                                    {/each}
+                                    <div class="border-t border-neutral-200 my-1.5"></div>
+                                    <div class="px-2 py-1 text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
+                                        <span>Weitere Adressbuch-Kontakte</span>
+                                    </div>
+                                {/if}
+                                {#each availableContacts.filter(c => !c.isDirect && c.email) as c}
+                                    <label class="flex items-center gap-2.5 p-2 hover:bg-neutral-50 rounded-lg cursor-pointer transition-colors">
+                                        <input type="checkbox" checked={emailTo.includes(c.email)} onchange={(e) => toggleRecipient(c, e.currentTarget.checked)} class="w-4 h-4 text-indigo-600 border-neutral-300 rounded focus:ring-indigo-500" />
+                                        <div class="min-w-0 flex-1">
+                                            <p class="text-xs font-medium text-neutral-800 truncate">{c.name}</p>
+                                            <p class="text-[10px] text-neutral-500 truncate">{c.email}</p>
+                                        </div>
+                                    </label>
                                 {/each}
-                                {#if availableContacts.filter(c => c.email).length === 0}<p class="text-xs text-neutral-500 p-2 text-center">Keine E-Mails gefunden</p>{/if}
+                                {#if availableContacts.filter(c => c.email).length === 0}
+                                    <p class="text-xs text-neutral-500 p-2 text-center">Keine E-Mails gefunden</p>
+                                {/if}
                             </div>
                         {/if}
                     </div>

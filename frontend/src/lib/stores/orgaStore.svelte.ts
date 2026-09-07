@@ -4,7 +4,7 @@ import type {
     ClientRecord, CompanyRecord, ContactRecord, DocumentTemplateRecord, 
     DriveRecordRecord, ExpenditureRecord, InsuranceRecord, InvoiceRecord, 
     LetterboxRecord, LiveChatRecord, MailboxMessageRecord, RetirementHomeRecord, 
-    TaskRecord, TimeRecordRecord, UpdateRecord 
+    TaskRecord, TimeRecordRecord, UpdateRecord, SystemPromptRecord 
 } from '$lib/types/orgaTypes';
 
 // Hier definieren wir unsere zentralen Daten-Töpfe.
@@ -24,7 +24,7 @@ export const orgaStore = {
     
     appointments: new OrgaLiveCollection<AppointmentRecord>('appointments', { 
         sort: '-appointment', // Neueste Termine zuerst
-        expand: 'user,client,drive_record,time_record,tasks,expenditures' // WIRKLICH ALLE Verknüpfungen
+        expand: 'user,client,drive_record,time_record,tasks,expenditures,appointment_at' // WIRKLICH ALLE Verknüpfungen
     }),
     
     clients: new OrgaLiveCollection<ClientRecord>('clients', { 
@@ -68,5 +68,6 @@ export const orgaStore = {
     
     tasks: new OrgaLiveCollection<TaskRecord>('tasks', { sort: '-created' }),
     time_records: new OrgaLiveCollection<TimeRecordRecord>('time_records', { sort: '-start' }),
-    updates: new OrgaLiveCollection<UpdateRecord>('updates', { sort: '-date' })
+    updates: new OrgaLiveCollection<UpdateRecord>('updates', { sort: '-date' }),
+    system_prompts: new OrgaLiveCollection<SystemPromptRecord>('system_prompts', { sort: '-created' })
 };

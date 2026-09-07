@@ -1,12 +1,15 @@
 <script lang="ts">
     import type { CanvasField } from "$lib/services/editorService.svelte";
     import { slide } from "svelte/transition";
-    import { Trash2 } from "lucide-svelte";
+    import { Trash2, Copy } from "lucide-svelte";
 
-    let { fields, selectedFieldId, onDelete } = $props<{
+    let { fields, selectedFieldId, onDelete, onDuplicate, isMobile = false, onClose } = $props<{
         fields: CanvasField[];
         selectedFieldId: string | null;
         onDelete: (id: string) => void;
+        onDuplicate: (id: string) => void;
+        isMobile?: boolean;
+        onClose?: () => void;
     }>();
 
     let activeField = $derived(fields.find((f: CanvasField) => f.id === selectedFieldId) || null);
@@ -26,6 +29,21 @@
             textareaRef?.setSelectionRange(start + placeholder.length, start + placeholder.length);
         }, 10);
     }
+
+    function applyFormat(startTag: string, endTag: string) {
+        if (!activeField || !textareaRef) return;
+        const start = textareaRef.selectionStart;
+        const end = textareaRef.selectionEnd;
+        const current = activeField.content || '';
+        const selectedText = current.substring(start, end);
+        
+        activeField.content = current.substring(0, start) + startTag + selectedText + endTag + current.substring(end);
+        
+        setTimeout(() => {
+            textareaRef?.focus();
+            textareaRef?.setSelectionRange(start + startTag.length, end + startTag.length);
+        }, 10);
+    }
 </script>
 
 {#snippet toggleSwitch(label: string, checked: boolean, onToggle: (val: boolean) => void)}
@@ -43,10 +61,22 @@
     </button>
 {/snippet}
 
-<aside class="w-88 bg-white border-l border-neutral-200 flex flex-col h-full shrink-0 z-10 shadow-[-10px_0_30px_-15px_rgba(0,0,0,0.1)] relative">
-    <div class="p-6 border-b border-neutral-100 bg-neutral-50/50">
-        <h3 class="font-black text-neutral-900 text-lg">Eigenschaften</h3>
-        <p class="text-[11px] uppercase tracking-widest text-neutral-400 font-bold mt-1">Element konfigurieren</p>
+<aside class="{isMobile ? 'w-full h-full flex flex-col bg-white overflow-hidden' : 'w-88 bg-white border-l border-neutral-200 hidden md:flex flex-col h-full shrink-0 z-10 shadow-[-10px_0_30px_-15px_rgba(0,0,0,0.1)] relative'}">
+    <div class="p-4 sm:p-6 border-b border-neutral-100 bg-neutral-50/50 flex items-center justify-between">
+        <div>
+            <h3 class="font-black text-neutral-900 text-base sm:text-lg">Eigenschaften</h3>
+            <p class="text-[10px] sm:text-[11px] uppercase tracking-widest text-neutral-400 font-bold mt-0.5">Element konfigurieren</p>
+        </div>
+        {#if isMobile && onClose}
+            <button 
+                type="button" 
+                onclick={onClose}
+                class="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 text-neutral-600 flex items-center justify-center font-bold text-sm transition-colors active:scale-95 cursor-pointer"
+                aria-label="Eigenschaften schließen"
+            >
+                ✕
+            </button>
+        {/if}
     </div>
 
     <div class="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-8">
@@ -59,21 +89,61 @@
             <div class="space-y-6 animate-enter">
                 <div class="flex justify-between items-center">
                 <span class="text-[10px] font-black uppercase tracking-widest text-brand-600 bg-brand-50 px-3 py-1.5 rounded-lg border border-brand-100">{activeField.type} Element</span>
-                    <button onclick={() => onDelete(activeField.id)} class="text-rose-500 hover:text-white hover:bg-rose-500 p-2 rounded-xl transition-all shadow-sm border border-transparent hover:border-rose-600 active:scale-95" title="Element Löschen">
-                        <Trash2 class="w-4 h-4" />
-                    </button>
+                    <div class="flex items-center gap-1">
+                        <button onclick={() => onDuplicate(activeField.id)} class="text-brand-500 hover:text-white hover:bg-brand-500 p-2 rounded-xl transition-all shadow-sm border border-transparent hover:border-brand-600 active:scale-95" title="Element duplizieren">
+                            <Copy class="w-4 h-4" />
+                        </button>
+                        <button onclick={() => onDelete(activeField.id)} class="text-rose-500 hover:text-white hover:bg-rose-500 p-2 rounded-xl transition-all shadow-sm border border-transparent hover:border-rose-600 active:scale-95" title="Element Löschen">
+                            <Trash2 class="w-4 h-4" />
+                        </button>
+                    </div>
                 </div>
 
                 <div class="grid grid-cols-2 gap-3">
-                    <div><label for="prop-x" class="block text-[11px] font-bold text-neutral-500 uppercase tracking-wider mb-1.5">X Pos (px)</label><input id="prop-x" type="number" bind:value={activeField.x} class="orga-input-clear py-2.5 text-sm" /></div>
-                    <div><label for="prop-y" class="block text-[11px] font-bold text-neutral-500 uppercase tracking-wider mb-1.5">Y Pos (px)</label><input id="prop-y" type="number" bind:value={activeField.y} class="orga-input-clear py-2.5 text-sm" /></div>
-                    <div><label for="prop-w" class="block text-[11px] font-bold text-neutral-500 uppercase tracking-wider mb-1.5">Breite (px)</label><input id="prop-w" type="number" bind:value={activeField.w} class="orga-input-clear py-2.5 text-sm" /></div>
-                    <div><label for="prop-h" class="block text-[11px] font-bold text-neutral-500 uppercase tracking-wider mb-1.5">Höhe (px)</label><input id="prop-h" type="number" bind:value={activeField.h} class="orga-input-clear py-2.5 text-sm" /></div>
+                    <div>
+                        <label for="prop-x" class="block text-[11px] font-bold text-neutral-500 uppercase tracking-wider mb-1.5">X Pos (px)</label>
+                        <div class="flex items-center gap-1">
+                            <button type="button" onclick={() => activeField.x = Math.max(0, activeField.x - 10)} class="w-7 h-8 rounded-lg bg-neutral-100 hover:bg-neutral-200 text-neutral-600 font-bold text-xs flex items-center justify-center active:scale-90 cursor-pointer" title="-10px">-10</button>
+                            <input id="prop-x" type="number" bind:value={activeField.x} class="orga-input-clear py-1 px-2 text-center text-sm font-mono flex-1 min-w-0" />
+                            <button type="button" onclick={() => activeField.x = activeField.x + 10} class="w-7 h-8 rounded-lg bg-neutral-100 hover:bg-neutral-200 text-neutral-600 font-bold text-xs flex items-center justify-center active:scale-90 cursor-pointer" title="+10px">+10</button>
+                        </div>
+                    </div>
+                    <div>
+                        <label for="prop-y" class="block text-[11px] font-bold text-neutral-500 uppercase tracking-wider mb-1.5">Y Pos (px)</label>
+                        <div class="flex items-center gap-1">
+                            <button type="button" onclick={() => activeField.y = Math.max(0, activeField.y - 10)} class="w-7 h-8 rounded-lg bg-neutral-100 hover:bg-neutral-200 text-neutral-600 font-bold text-xs flex items-center justify-center active:scale-90 cursor-pointer" title="-10px">-10</button>
+                            <input id="prop-y" type="number" bind:value={activeField.y} class="orga-input-clear py-1 px-2 text-center text-sm font-mono flex-1 min-w-0" />
+                            <button type="button" onclick={() => activeField.y = activeField.y + 10} class="w-7 h-8 rounded-lg bg-neutral-100 hover:bg-neutral-200 text-neutral-600 font-bold text-xs flex items-center justify-center active:scale-90 cursor-pointer" title="+10px">+10</button>
+                        </div>
+                    </div>
+                    <div>
+                        <label for="prop-w" class="block text-[11px] font-bold text-neutral-500 uppercase tracking-wider mb-1.5">Breite (px)</label>
+                        <div class="flex items-center gap-1">
+                            <button type="button" onclick={() => activeField.w = Math.max(20, activeField.w - 10)} class="w-7 h-8 rounded-lg bg-neutral-100 hover:bg-neutral-200 text-neutral-600 font-bold text-xs flex items-center justify-center active:scale-90 cursor-pointer" title="-10px">-10</button>
+                            <input id="prop-w" type="number" bind:value={activeField.w} class="orga-input-clear py-1 px-2 text-center text-sm font-mono flex-1 min-w-0" />
+                            <button type="button" onclick={() => activeField.w = activeField.w + 10} class="w-7 h-8 rounded-lg bg-neutral-100 hover:bg-neutral-200 text-neutral-600 font-bold text-xs flex items-center justify-center active:scale-90 cursor-pointer" title="+10px">+10</button>
+                        </div>
+                    </div>
+                    <div>
+                        <label for="prop-h" class="block text-[11px] font-bold text-neutral-500 uppercase tracking-wider mb-1.5">Höhe (px)</label>
+                        <div class="flex items-center gap-1">
+                            <button type="button" onclick={() => activeField.h = Math.max(20, activeField.h - 10)} class="w-7 h-8 rounded-lg bg-neutral-100 hover:bg-neutral-200 text-neutral-600 font-bold text-xs flex items-center justify-center active:scale-90 cursor-pointer" title="-10px">-10</button>
+                            <input id="prop-h" type="number" bind:value={activeField.h} class="orga-input-clear py-1 px-2 text-center text-sm font-mono flex-1 min-w-0" />
+                            <button type="button" onclick={() => activeField.h = activeField.h + 10} class="w-7 h-8 rounded-lg bg-neutral-100 hover:bg-neutral-200 text-neutral-600 font-bold text-xs flex items-center justify-center active:scale-90 cursor-pointer" title="+10px">+10</button>
+                        </div>
+                    </div>
                 </div>
 
                 {#if activeField.type === 'text'}
                     <div class="pt-2 border-t border-neutral-100">
-                        <label for="prop-text" class="block text-[11px] font-bold text-neutral-500 uppercase tracking-wider mb-1.5">Text-Inhalt</label>
+                        <div class="flex justify-between items-center mb-1.5">
+                            <label for="prop-text" class="block text-[11px] font-bold text-neutral-500 uppercase tracking-wider">Text-Inhalt</label>
+                            <div class="flex items-center gap-1">
+                                <button type="button" onclick={() => applyFormat('<b>', '</b>')} class="w-6 h-6 flex items-center justify-center bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded text-xs font-bold transition-colors shadow-sm active:scale-95" title="Fett (Bold)">B</button>
+                                <button type="button" onclick={() => applyFormat('<i>', '</i>')} class="w-6 h-6 flex items-center justify-center bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded text-xs italic transition-colors shadow-sm active:scale-95 font-serif" title="Kursiv (Italic)">I</button>
+                                <button type="button" onclick={() => applyFormat('<u>', '</u>')} class="w-6 h-6 flex items-center justify-center bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded text-xs underline transition-colors shadow-sm active:scale-95" title="Unterstrichen (Underline)">U</button>
+                            </div>
+                        </div>
                         <textarea id="prop-text" bind:this={textareaRef} bind:value={activeField.content} rows="6" class="orga-input-clear py-3 text-sm resize-none custom-scrollbar font-mono leading-relaxed"></textarea>
                         
                         <div class="mt-3">
@@ -104,6 +174,32 @@
                                     <option value={"{{insurance.phone}}"}>Telefon</option>
                                     <option value={"{{insurance.email}}"}>E-Mail</option>
                                 </optgroup>
+                                <optgroup label="Betreuer (Klient)">
+                                    <option value={"{{caregiver.salutation}}"}>Anrede</option>
+                                    <option value={"{{caregiver.name_first}}"}>Vorname</option>
+                                    <option value={"{{caregiver.name_last}}"}>Nachname</option>
+                                    <option value={"{{caregiver.company_name}}"}>Firmenname</option>
+                                    <option value={"{{caregiver.street}} {{caregiver.housenr}}"}>Straße & Hausnr.</option>
+                                    <option value={"{{caregiver.zip}} {{caregiver.city}}"}>PLZ & Stadt</option>
+                                    <option value={"{{caregiver.phone}}"}>Telefon</option>
+                                    <option value={"{{caregiver.email}}"}>E-Mail</option>
+                                    <option value={"{{caregiver.signature}}"}>Unterschrift (Betreuer)</option>
+                                </optgroup>
+                                <optgroup label="Antrag Verhinderungspflege (Pflegeperson)">
+                                    <option value={"{{careperson.name}}"}>Name der Pflegeperson</option>
+                                    <option value={"{{careperson.relation}}"}>Verwandtschaftsverhältnis</option>
+                                    <option value={"{{careperson.birthdate}}"}>Geburtsdatum</option>
+                                    <option value={"{{careperson.street}} {{careperson.housenr}}"}>Straße & Hausnr.</option>
+                                    <option value={"{{careperson.zip}} {{careperson.city}}"}>PLZ & Stadt</option>
+                                    <option value={"{{careperson.phone}}"}>Telefon</option>
+                                    <option value={"{{careperson.email}}"}>E-Mail</option>
+                                    <option value={"{{careperson.reason}}"}>Verhinderungsgrund (Urlaub/Krankheit)</option>
+                                    <option value={"{{careperson.care_type}}"}>Art (stundenweise/tageweise)</option>
+                                    <option value={"{{careperson.pre_care}}"}>Vorpflegezeit (≥ 6 Monate)</option>
+                                    <option value={"{{careperson.signature}}"}>Unterschrift (Pflegeperson)</option>
+                                    <option value={"{{inheritor.name_first}} {{inheritor.name_last}}"}>Name (vormals Erbe)</option>
+                                    <option value={"{{inheritor.signature}}"}>Unterschrift (vormals Erbe)</option>
+                                </optgroup>
                                 <optgroup label="Kontakt (Adressat)">
                                     <option value={"{{contact.name_first}}"}>Vorname</option>
                                     <option value={"{{contact.name_last}}"}>Nachname</option>
@@ -121,6 +217,7 @@
                                 </optgroup>
                                 <optgroup label="Firma (Absender)">
                                     <option value={"{{company.name}}"}>Firmenname</option>
+                                    <option value={"{{company.return_address_line}}"}>DIN 5008 Rücksendezeile</option>
                                     <option value={"{{company.street}} {{company.housenr}}"}>Straße & Hausnr.</option>
                                     <option value={"{{company.zip}} {{company.city}}"}>PLZ & Stadt</option>
                                     <option value={"{{company.number_telephone}}"}>Telefon</option>
@@ -130,6 +227,12 @@
                                     <option value={"{{company.vatcode}}"}>Steuernummer</option>
                                     <option value={"{{company.ik_number}}"}>IK-Nummer</option>
                                 </optgroup>
+                                <optgroup label="Pflegegrade & Budgets (§ 39 & § 45b SGB XI)">
+                                    <option value={"{{paragraph.39}}"}>§ 39 SGB XI Verhinderungspflege (Bezeichnung)</option>
+                                    <option value={"{{paragraph.45b}}"}>§ 45b SGB XI Entlastungsbetrag (Bezeichnung)</option>
+                                    <option value={"{{careperson.budget_39}}"}>Budget Verhinderungspflege (1.612,00 €)</option>
+                                    <option value={"{{client.budget_45b}}"}>Budget Entlastungsbetrag (125,00 €/Monat)</option>
+                                </optgroup>
                                 <optgroup label="Bankverbindung">
                                     <option value={"{{company.bank_name}}"}>Bank Name</option>
                                     <option value={"{{company.bank_iban}}"}>IBAN</option>
@@ -138,6 +241,8 @@
                                 <optgroup label="Rechnung & Datum">
                                     <option value={"{{invoice.number}}"}>Rechnungsnummer</option>
                                     <option value={"{{date.today}}"}>Heutiges Datum</option>
+                                    <option value={"{{current_year}}"}>Aktuelles Jahr (YYYY)</option>
+                                    <option value={"{{date.today_+1y}}"}>Heute + 1 Jahr</option>
                                     <option value={"{{invoice.issue_date}}"}>Rechnungsdatum</option>
                                     <option value={"{{invoice.due_date}}"}>Fälligkeitsdatum</option>
                                     <option value={"{{invoice.service_period}}"}>Leistungszeitraum (Monat Jahr)</option>

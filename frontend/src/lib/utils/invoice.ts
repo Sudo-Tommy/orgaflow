@@ -16,6 +16,10 @@ export interface InvoicePayload {
     };
     pdf?: string | string[];
     appointments?: string[] | any;
+    is_cancellation?: boolean;
+    cancellation_reason?: string;
+    cancellation_nr?: string;
+    reference_invoice_id?: string;
 }
 
 export interface SyncAction {

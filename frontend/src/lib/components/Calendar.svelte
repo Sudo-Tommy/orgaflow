@@ -3,6 +3,9 @@
     import AppointmentDetailModal from './AppointmentDetailModal.svelte';
     import BulkBlockModal from './BulkBlockModal.svelte';
     import BulkVisibilityModal from './BulkVisibilityModal.svelte';
+    import GoogleCalendarModal from './GoogleCalendarModal.svelte';
+    import GoogleEventDetailModal from './GoogleEventDetailModal.svelte';
+    import { googleCalendarService, type GoogleCalendarStatus } from "$lib/services/googleCalendarService";
     import { pb } from "$lib/services/pocketbase";
     import { orgaStore } from "$lib/stores/orgaStore.svelte";
     import { toastStore } from "$lib/services/toastService.svelte";
@@ -27,6 +30,46 @@
     // svelte-ignore state_referenced_locally
     let selectedUserId = $state<string>(isSuperAdmin ? "all" : (currentUser?.id || "all"));
     let selectedCompanyId = $state<string>("all");
+
+    // svelte-ignore non_reactive_update
+    let googleModal: ReturnType<typeof GoogleCalendarModal>;
+    let googleDetailModal: ReturnType<typeof GoogleEventDetailModal>;
+    let googleStatus = $state<GoogleCalendarStatus | null>(null);
+    let externalGoogleEvents = $state<any[]>([]);
+    let showGoogleEvents = $state(true);
+    let isLoadingGoogleEvents = $state(false);
+
+    export function openGoogleModal() {
+        googleModal?.open();
+    }
+
+    async function loadExternalGoogleEvents() {
+        if (!googleStatus?.connected || !canEdit) {
+            externalGoogleEvents = [];
+            return;
+        }
+        isLoadingGoogleEvents = true;
+        try {
+            const y = currentDate.getFullYear();
+            const m = currentDate.getMonth();
+            const timeMin = new Date(y, m - 1, 1).toISOString();
+            const timeMax = new Date(y, m + 2, 0).toISOString();
+            const events = await googleCalendarService.getExternalEvents(timeMin, timeMax);
+            externalGoogleEvents = events;
+        } catch (err) {
+            console.warn('[Calendar] Fehler beim Abruf externer Google-Termine:', err);
+        } finally {
+            isLoadingGoogleEvents = false;
+        }
+    }
+
+    $effect(() => {
+        if (googleStatus?.connected && canEdit) {
+            const _y = currentDate.getFullYear();
+            const _m = currentDate.getMonth();
+            loadExternalGoogleEvents();
+        }
+    });
 
     let myCompId = $derived.by(() => {
         let cId = currentUser?.company;
@@ -102,9 +145,43 @@
             }).catch(() => {});
         }
 
+        if (canEdit) {
+            googleCalendarService.getStatus().then(s => {
+                googleStatus = s;
+                if (s?.connected) loadExternalGoogleEvents();
+            }).catch(() => {});
+        }
+
+        const handleGoogleMessage = (event: MessageEvent) => {
+            if (event.data?.type === 'GOOGLE_CALENDAR_CONNECTED') {
+                googleCalendarService.getStatus().then(s => {
+                    googleStatus = s;
+                    if (s?.connected) loadExternalGoogleEvents();
+                }).catch(() => {});
+            }
+        };
+        window.addEventListener('message', handleGoogleMessage);
+
+        // Automatischer Live-Sync alle 45 Sekunden und bei Tab-Fokus
+        const googleSyncInterval = setInterval(() => {
+            if (googleStatus?.connected && !document.hidden) {
+                loadExternalGoogleEvents();
+            }
+        }, 45000);
+
+        const handleVisibilityChange = () => {
+            if (!document.hidden && googleStatus?.connected) {
+                loadExternalGoogleEvents();
+            }
+        };
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
         return () => {
             clearInterval(timeInterval);
+            clearInterval(googleSyncInterval);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
             window.removeEventListener('global-company-changed', handleSync);
+            window.removeEventListener('message', handleGoogleMessage);
             pb.collection('appointments').unsubscribe('*');
             unsub();
         };
@@ -113,7 +190,16 @@
     // Filtert die Termine basierend auf dem gewählten Klienten
     let filteredAppointments = $derived.by(() => {
         // Svelte 5 Reaktivität: Direkt an den Live-Store binden, falls vorhanden, sonst Fallback auf Props
-        let list = orgaStore.appointments?.data || appointments;
+        let rawList = orgaStore.appointments?.data || appointments;
+
+        // Eindeutigkeit nach ID garantieren (verhindert Dopplungen im Kalender)
+        const seenIds = new Set<string>();
+        let list = rawList.filter((app: any) => {
+            if (!app?.id) return true;
+            if (seenIds.has(app.id)) return false;
+            seenIds.add(app.id);
+            return true;
+        });
 
         let filterCompId = selectedCompanyId;
         if (!isGodMode && myCompId) {
@@ -154,11 +240,69 @@
                d1.getFullYear() === d2.getFullYear();
     }
 
+    function matchesAppointmentDate(app: any, targetDate: Date): boolean {
+        if (!app.appointment) return false;
+        const appDate = new Date(app.appointment);
+
+        // 1. Normaler Einzeltermin ohne Multiday oder Recurrence
+        if (!app.is_multiday && !app.recurrence_rule) {
+            return isSameDay(appDate, targetDate);
+        }
+
+        const target = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
+        const start = new Date(appDate.getFullYear(), appDate.getMonth(), appDate.getDate());
+
+        // Liegt vor dem Startdatum
+        if (target < start) return false;
+
+        // 2. Mehrtages-Event (z.B. Urlaub über 14 Tage)
+        if (app.is_multiday) {
+            const tr = app.expand?.time_record?.[0] || app.time_record?.[0];
+            let end = start;
+            if (tr?.end) {
+                const trEnd = new Date(tr.end);
+                end = new Date(trEnd.getFullYear(), trEnd.getMonth(), trEnd.getDate());
+            }
+            return target >= start && target <= end;
+        }
+
+        // 3. Wiederkehrender Serientermin via RRULE (z.B. Sa & So jedes Wochenende)
+        if (app.recurrence_rule) {
+            // UNTIL-Bedingung prüfen (z.B. UNTIL=20261231T235959Z)
+            const untilMatch = app.recurrence_rule.match(/UNTIL=(\d{4})(\d{2})(\d{2})/);
+            if (untilMatch) {
+                const untilDate = new Date(parseInt(untilMatch[1]), parseInt(untilMatch[2]) - 1, parseInt(untilMatch[3]), 23, 59, 59);
+                if (target > untilDate) return false;
+            }
+
+            // BYDAY prüfen (z.B. BYDAY=SA,SU)
+            const byDayMatch = app.recurrence_rule.match(/BYDAY=([A-Z,]+)/);
+            if (byDayMatch) {
+                const allowedDays = byDayMatch[1].split(',');
+                // JavaScript getDay(): 0=Sonntag, 1=Montag, ..., 6=Samstag
+                const dayCodeMap = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
+                const targetDayCode = dayCodeMap[target.getDay()];
+                return allowedDays.includes(targetDayCode);
+            }
+
+            // Fallback: gleicher Wochentag wie Starttermin
+            return target.getDay() === start.getDay();
+        }
+
+        return isSameDay(appDate, targetDate);
+    }
+
     function getAppsForDate(date: Date): any[] {
-        return filteredAppointments.filter((app: any) => {
-            if (!app.appointment) return false;
-            return isSameDay(new Date(app.appointment), date);
-        }).sort((a: any, b: any) => {
+        let list = filteredAppointments.filter((app: any) => {
+            return matchesAppointmentDate(app, date);
+        });
+
+        if (showGoogleEvents && externalGoogleEvents.length > 0) {
+            const gEvents = externalGoogleEvents.filter((g: any) => isSameDay(new Date(g.appointment), date));
+            list = [...list, ...gEvents];
+        }
+
+        return list.sort((a: any, b: any) => {
             const aIsBlock = a.description?.includes('[BLOCK]') ? 1 : 0;
             const bIsBlock = b.description?.includes('[BLOCK]') ? 1 : 0;
             if (aIsBlock !== bIsBlock) {
@@ -321,6 +465,7 @@
     const getBlockText = (app: any) => app.description?.replace('[BLOCK]', '').trim() || 'Sperrzeit / Abwesend';
 
     function getCardTitle(app: any) {
+        if (app.is_google) return app.description || app.title || 'Privater Termin';
         if (isGuest) return "Belegt";
         if (app.is_private && app.user !== currentUser?.id && !isGodMode) return "Privater Termin";
         if (isBlock(app)) return getBlockText(app);
@@ -329,6 +474,7 @@
     }
 
     function getCardSubtitle(app: any) {
+        if (app.is_google) return "🗓️ Google Kalender";
         if (isGuest || (app.is_private && app.user !== currentUser?.id && !isGodMode)) return "";
         if (isBlock(app)) return "Sperrzeit";
         return app.description || '';
@@ -391,6 +537,9 @@
             // PocketBase erwartet UTC. toISOString wandelt das lokale Datum in UTC um.
             await pb.collection('appointments').update(appId, { appointment: newDate.toISOString() });
             
+            // Google Kalender Sync im Hintergrund anstoßen
+            googleCalendarService.syncAppointment(appId, 'upsert').catch(() => {});
+
             // Aktualisiere den Store, damit die UI sofort reagiert (inkl. der Relationen)
             const updatedApp = await pb.collection<any>('appointments').getOne(appId, { expand: 'user,client,drive_record,time_record,tasks,expenditures,appointment_at' });
             if (orgaStore.appointments) {
@@ -476,20 +625,25 @@
 
 {#snippet statusIcons(app: any)}
     <div class="flex items-center gap-0.75 opacity-60 hover:opacity-100 shrink-0 text-[10px] transition-opacity cursor-help">
-        {#if isSuperAdmin}
-            <!-- svelte-ignore a11y_click_events_have_key_events -->
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <span onclick={(e) => { e.stopPropagation(); toggleVisibility(app); }} class="hover:scale-125 transition-transform cursor-pointer mr-0.5" title={app.is_visible ? "Öffentlich sichtbar (Klick zum Verbergen)" : "Unsichtbar (Klick zum Veröffentlichen)"}>
-                {app.is_visible ? '👁️' : '🙈'}
-            </span>
+        {#if app.is_google}
+            <span class="text-blue-600 font-bold" title="Google Kalender (Nur-Lese-Ansicht)">🗓️</span>
+        {:else}
+            {#if isSuperAdmin}
+                <!-- svelte-ignore a11y_click_events_have_key_events -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <span onclick={(e) => { e.stopPropagation(); toggleVisibility(app); }} class="hover:scale-125 transition-transform cursor-pointer mr-0.5" title={app.is_visible ? "Öffentlich sichtbar (Klick zum Verbergen)" : "Unsichtbar (Klick zum Veröffentlichen)"}>
+                    {app.is_visible ? '👁️' : '🙈'}
+                </span>
+            {/if}
+            {#if app.is_private}<span title="Privater Termin">🔒</span>{/if}
+            {#if app.is_series}<span class="text-indigo-600" title="Wiederkehrender Serientermin">🔁</span>{/if}
+            {#if app.settled}<span class="text-emerald-600" title="Bereits abgerechnet">✓</span>{/if}
+            {#if app.google_event_id}<span title="In Google Kalender synchronisiert">📅</span>{/if}
+            {#if app.expand?.time_record?.length > 0}<span title="Zeiterfassung liegt vor">⏱️</span>{/if}
+            {#if app.expand?.drive_record?.length > 0}<span title="Fahrtenbuch-Eintrag liegt vor">🚗</span>{/if}
+            {#if app.expand?.expenditures?.length > 0}<span title="Ausgaben/Kassenbon hinterlegt">💶</span>{/if}
+            {#if app.expand?.tasks?.length > 0}<span title="Besuchsbericht/Aufgabe vorhanden">📝</span>{/if}
         {/if}
-        {#if app.is_private}<span title="Privater Termin">🔒</span>{/if}
-        {#if app.is_series}<span class="text-indigo-600" title="Wiederkehrender Serientermin">🔁</span>{/if}
-        {#if app.settled}<span class="text-emerald-600" title="Bereits abgerechnet">✓</span>{/if}
-        {#if app.expand?.time_record?.length > 0}<span title="Zeiterfassung liegt vor">⏱️</span>{/if}
-        {#if app.expand?.drive_record?.length > 0}<span title="Fahrtenbuch-Eintrag liegt vor">🚗</span>{/if}
-        {#if app.expand?.expenditures?.length > 0}<span title="Ausgaben/Kassenbon hinterlegt">💶</span>{/if}
-        {#if app.expand?.tasks?.length > 0}<span title="Besuchsbericht/Aufgabe vorhanden">📝</span>{/if}
     </div>
 {/snippet}
 
@@ -545,6 +699,52 @@
                     <span>👁️</span> <span class="hidden sm:inline">Sichtbarkeit</span>
                 </button>
             {/if}
+
+            <!-- Google Kalender Verknüpfung Button -->
+            {#if canEdit}
+                <button 
+                    type="button" 
+                    onclick={() => googleModal?.open()} 
+                    class="bg-white border text-xs sm:text-sm font-bold rounded-lg px-2.5 py-1.5 sm:px-3 shadow-sm transition-all flex items-center gap-2 shrink-0 cursor-pointer active:scale-95 {googleStatus?.connected ? 'border-emerald-200 text-emerald-800 hover:bg-emerald-50/50' : 'border-neutral-200 text-neutral-700 hover:bg-neutral-50'}"
+                    title={googleStatus?.connected ? `Google Kalender verbunden (${googleStatus.googleEmail})` : 'Google Kalender verknüpfen'}
+                >
+                    <svg class="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" viewBox="0 0 24 24">
+                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                    </svg>
+
+                    {#if googleStatus?.connected}
+                        <span class="flex items-center gap-1.5">
+                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                            <span class="hidden md:inline font-semibold text-emerald-900">Google Kalender</span>
+                            <span class="inline md:hidden">Google</span>
+                        </span>
+                    {:else}
+                        <span class="hidden sm:inline">Google Kalender</span>
+                        <span class="inline sm:hidden">Google</span>
+                    {/if}
+                </button>
+
+                {#if googleStatus?.connected}
+                    <!-- Toggle zum Ein-/Ausblenden externer Google-Termine -->
+                    <button 
+                        type="button" 
+                        onclick={() => showGoogleEvents = !showGoogleEvents}
+                        class="bg-white border text-xs sm:text-sm font-bold rounded-lg px-2.5 py-1.5 sm:px-3 shadow-sm transition-all flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95 {showGoogleEvents ? 'border-blue-300 text-blue-800 bg-blue-50/60' : 'border-neutral-200 text-neutral-400 hover:bg-neutral-50'}"
+                        title={showGoogleEvents ? "Google-Termine ausblenden" : "Google-Termine einblenden"}
+                    >
+                        <span>🗓️</span>
+                        <span class="hidden sm:inline">Google Termine</span>
+                        {#if externalGoogleEvents.length > 0}
+                            <span class="text-[10px] font-extrabold px-1.5 py-0.2 rounded-full {showGoogleEvents ? 'bg-blue-200 text-blue-900' : 'bg-neutral-200 text-neutral-600'}">
+                                {externalGoogleEvents.length}
+                            </span>
+                        {/if}
+                    </button>
+                {/if}
+            {/if}
         </div>
     </div>
 
@@ -590,7 +790,17 @@
                             <div class="flex-col gap-1 mt-1.5 flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-0.5 pb-0.5 {isWidget ? 'hidden' : 'hidden md:flex'}">
                                 {#each day.apps as app}
                                     {@const cColor = getCompanyColor(app)}
-                                    {#if isBlock(app)}
+                                    {#if app.is_google}
+                                        <button type="button" onclick={(e) => { e.stopPropagation(); googleDetailModal?.open(app); }} class="w-full text-left flex flex-col gap-0.5 px-1.5 py-1 rounded-md border border-blue-200/90 bg-blue-50/80 text-blue-900 hover:bg-blue-100 hover:border-blue-300 transition-all cursor-pointer shadow-xs" title="Google Kalender: {app.description}">
+                                            <div class="flex items-center justify-between w-full">
+                                                <span class="font-bold text-[9px] leading-none truncate pr-1 text-blue-700">{getDisplayTime(app)}</span>
+                                                <span class="text-[8px] font-extrabold bg-blue-200/90 text-blue-800 px-1 rounded">G-Cal</span>
+                                            </div>
+                                            <div class="flex items-center gap-1 w-full mt-0.5">
+                                                <span class="text-[10px] font-semibold truncate flex-1 leading-tight">{app.description}</span>
+                                            </div>
+                                        </button>
+                                    {:else if isBlock(app)}
                                         <button type="button" onclick={canEdit ? (e) => { e.stopPropagation(); detailModal?.open(app.id); } : (e) => e.stopPropagation()} class="w-full text-left block px-1.5 py-1 rounded-md bg-rose-50/50 border border-rose-100 text-rose-800 hover:bg-rose-100 transition-colors truncate {getCardStateClasses(app)}">
                                             <div class="flex justify-between items-center w-full">
                                                 <div class="truncate"><span class="font-bold text-[9px] mr-1">🚫</span> <span class="text-[10px] font-semibold">{getBlockText(app)}</span></div>
@@ -639,7 +849,20 @@
                     {:else}
                         <div class="flex flex-col gap-2 overflow-y-auto custom-scrollbar pr-1 max-h-60 md:max-h-100">
                             {#each selectedDayAppointments as app}
-                                    {#if isBlock(app)}
+                                    {#if app.is_google}
+                                        <button type="button" onclick={(e) => { e.stopPropagation(); googleDetailModal?.open(app); }} class="w-full text-left flex items-center bg-blue-50/70 p-2 sm:p-3 rounded-xl border border-blue-200 hover:border-blue-400 transition-colors gap-3 cursor-pointer shadow-xs">
+                                            <div class="w-14 sm:w-16 shrink-0 flex flex-col items-center justify-center bg-blue-100/60 rounded-lg py-1 gap-0.5">
+                                                <span class="text-[8px] font-extrabold text-blue-700">GOOGLE</span>
+                                                <span class="text-[10px] font-bold text-blue-900">{getDisplayTime(app)}</span>
+                                            </div>
+                                            <div class="flex-1 min-w-0">
+                                                <p class="text-[11px] sm:text-xs text-blue-950 font-bold truncate pr-1">{app.description}</p>
+                                                {#if app.location_address}
+                                                    <p class="text-[9px] text-blue-600 truncate mt-0.5">📍 {app.location_address}</p>
+                                                {/if}
+                                            </div>
+                                        </button>
+                                    {:else if isBlock(app)}
                                         <button type="button" onclick={canEdit ? (e) => { e.stopPropagation(); detailModal?.open(app.id); } : (e) => e.stopPropagation()} class="w-full text-left flex items-center bg-rose-50/50 p-2 sm:p-3 rounded-xl border border-rose-100 hover:border-rose-300 transition-colors gap-3 {getCardStateClasses(app)}">
                                             <div class="w-14 sm:w-16 shrink-0 flex flex-col items-center justify-center gap-0.5">
                                                 {@render userTag(app)}
@@ -757,7 +980,7 @@
                             {#each day.apps.filter((a) => !isBlock(a)) as app}
                                 {@const normalApps = day.apps.filter((a: any) => !isBlock(a))}
                                 {@const cColor = getCompanyColor(app)}
-                                <button type="button" draggable={canEdit ? "true" : "false"} ondragstart={canEdit ? (e) => handleDragStart(e, app.id) : null} ondragend={handleDragEnd} onclick={canEdit ? (e) => { e.stopPropagation(); detailModal?.open(app.id); } : (e) => e.stopPropagation()} class="{canEdit ? 'cursor-grab active:cursor-grabbing hover:shadow-md hover:z-20' : 'cursor-default'} flex flex-col text-left absolute left-0.5 right-0.5 sm:left-1 sm:right-1 rounded-md p-1.5 overflow-hidden transition-all border shadow-sm {cColor ? 'hover:brightness-95' : (app.is_private ? 'bg-rose-50/90 border-rose-200 text-rose-800' : 'bg-white/90 border-neutral-200 text-neutral-800')} backdrop-blur-md {draggedAppId === app.id ? 'opacity-40 z-50 pointer-events-none' : ''} {getCardStateClasses(app)}" style="top: {getAppTop(app)}px; height: {getAppHeight(app)}px; {cColor ? `background-color: color-mix(in srgb, ${cColor} 10%, white); border-color: color-mix(in srgb, ${cColor} 30%, white); color: color-mix(in srgb, ${cColor} 90%, black); border-left: 3px solid ${cColor};` : 'border-left: 3px solid #6366f1;'}" title={getCardSubtitle(app)}>
+                                <button type="button" draggable={canEdit && !app.is_google ? "true" : "false"} ondragstart={canEdit ? (e) => handleDragStart(e, app.id) : null} ondragend={handleDragEnd} onclick={canEdit ? (e) => { e.stopPropagation(); if (app.is_google) googleDetailModal?.open(app); else detailModal?.open(app.id); } : (e) => e.stopPropagation()} class="{canEdit ? 'cursor-grab active:cursor-grabbing hover:shadow-md hover:z-20' : 'cursor-default'} flex flex-col text-left absolute left-0.5 right-0.5 sm:left-1 sm:right-1 rounded-md p-1.5 overflow-hidden transition-all border shadow-sm {app.is_google ? 'bg-blue-50/95 border-blue-200 text-blue-900 shadow-xs' : (cColor ? 'hover:brightness-95' : (app.is_private ? 'bg-rose-50/90 border-rose-200 text-rose-800' : 'bg-white/90 border-neutral-200 text-neutral-800'))} backdrop-blur-md {draggedAppId === app.id ? 'opacity-40 z-50 pointer-events-none' : ''} {getCardStateClasses(app)}" style="top: {getAppTop(app)}px; height: {getAppHeight(app)}px; {app.is_google ? 'border-left: 3px solid #3b82f6;' : (cColor ? `background-color: color-mix(in srgb, ${cColor} 10%, white); border-color: color-mix(in srgb, ${cColor} 30%, white); color: color-mix(in srgb, ${cColor} 90%, black); border-left: 3px solid ${cColor};` : 'border-left: 3px solid #6366f1;')}" title={getCardSubtitle(app)}>
                                     <div class="flex items-start justify-between w-full gap-1">
                                         <span class="font-bold text-[9px] leading-none">{getDisplayTime(app)}</span>
                                         {@render statusIcons(app)}
@@ -801,7 +1024,32 @@
                 {:else}
                     <div class="flex flex-col gap-3">
                         {#each selectedDayAppointments as app}
-                                {#if isBlock(app)}
+                                {#if app.is_google}
+                                    <button type="button" onclick={(e) => { e.stopPropagation(); googleDetailModal?.open(app); }} class="hover:border-blue-300 hover:shadow-md cursor-pointer w-full text-left flex bg-blue-50/40 p-3 sm:p-4 rounded-xl border border-blue-200/80 shadow-sm transition-all group gap-3 sm:gap-4">
+                                        <div class="w-16 sm:w-20 shrink-0 flex flex-col items-center justify-center bg-blue-100/70 rounded-xl border border-blue-200 py-2 sm:py-3 gap-1">
+                                            <span class="text-[9px] font-bold text-blue-700 uppercase">Google</span>
+                                            <span class="text-xs sm:text-sm font-black text-blue-800 text-center flex flex-col leading-tight">
+                                                {#each getDisplayTime(app).split(' - ') as t, i}
+                                                    <span>{t}</span>
+                                                    {#if i === 0 && getDisplayTime(app).includes(' - ')}<span class="text-[9px] sm:text-[10px] text-blue-400 opacity-60 my-0.5 font-bold">bis</span>{/if}
+                                                {/each}
+                                            </span>
+                                        </div>
+                                        
+                                        <div class="flex-1 min-w-0 flex flex-col justify-center">
+                                            <div class="flex items-start justify-between mb-1.5 gap-2">
+                                                <span class="text-sm font-bold text-blue-950 truncate">{app.description}</span>
+                                                <span class="text-[10px] font-extrabold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-md shrink-0">🗓️ Google</span>
+                                            </div>
+                                            {#if app.location_address}
+                                                <p class="text-xs text-neutral-600 line-clamp-1 leading-relaxed">📍 {app.location_address}</p>
+                                            {/if}
+                                            {#if app.notes}
+                                                <p class="text-xs text-neutral-400 line-clamp-1 leading-relaxed mt-0.5">{app.notes}</p>
+                                            {/if}
+                                        </div>
+                                    </button>
+                                {:else if isBlock(app)}
                                     <button type="button" onclick={canEdit ? (e) => { e.stopPropagation(); detailModal?.open(app.id); } : (e) => e.stopPropagation()} class="w-full text-left flex items-center bg-rose-50/50 p-3 sm:p-4 rounded-xl border border-rose-100 hover:border-rose-300 transition-colors gap-4 {getCardStateClasses(app)}">
                                         <div class="w-16 sm:w-20 shrink-0 flex flex-col items-center justify-center gap-0.5">
                                             {@render userTag(app)}
@@ -855,3 +1103,5 @@
 <AppointmentDetailModal bind:this={detailModal} />
 <BulkBlockModal bind:this={bulkBlockModal} />
 <BulkVisibilityModal bind:this={bulkVisibilityModal} />
+<GoogleCalendarModal bind:this={googleModal} />
+<GoogleEventDetailModal bind:this={googleDetailModal} />

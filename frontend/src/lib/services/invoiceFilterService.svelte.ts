@@ -1,13 +1,19 @@
+import { rbacService } from "$lib/services/rbacService.svelte";
+
 export function useInvoiceFilter(invoicesProvider: () => any[]) {
     let searchQuery = $state("");
     let statusFilter = $state("all");
-    let companyFilter = $state("all");
+    let companyFilter = $state(rbacService.isFacilityAdmin && rbacService.userCompanyId ? rbacService.userCompanyId : "all");
 
     let filtered = $derived.by(() => {
+        if (!rbacService.canAccessFinances) return [];
         const list = invoicesProvider();
         if (!list) return [];
         
         return list.filter(inv => {
+            // HRBAC Scoping: Invoices only visible in appropriate scope
+            if (!rbacService.isRecordInScope(inv)) return false;
+
             const query = searchQuery.toLowerCase();
             
             // Klienten sicher entpacken (kann in PocketBase Array oder Einzelobjekt sein)
@@ -22,7 +28,8 @@ export function useInvoiceFilter(invoicesProvider: () => any[]) {
             
             // Filter nach Status
             const matchStatus = statusFilter === 'all' || (inv.status || '') === statusFilter;
-            const matchCompany = companyFilter === 'all' || inv.company === companyFilter || (Array.isArray(inv.company) && inv.company.includes(companyFilter));
+            const effectiveCompanyFilter = rbacService.isFacilityAdmin && rbacService.userCompanyId ? rbacService.userCompanyId : companyFilter;
+            const matchCompany = effectiveCompanyFilter === 'all' || inv.company === effectiveCompanyFilter || (Array.isArray(inv.company) && inv.company.includes(effectiveCompanyFilter));
             
             return matchQuery && matchStatus && matchCompany;
         });

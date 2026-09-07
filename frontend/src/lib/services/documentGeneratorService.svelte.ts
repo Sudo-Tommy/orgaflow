@@ -15,6 +15,8 @@ export function useDocumentGenerator() {
     let selectedAppointmentIds = $state<string[]>([]);
     let selectedCompanyId = $state<string>("all");
     let templateTypeFilter = $state<string>("all");
+    // Admin: Im Namen eines anderen Nutzers generieren (leer = eigener Account)
+    let onBehalfOfUserId = $state<string>("");
 
     let showBilledAppointments = $state(false);
     let hourlyWage = $state(40);
@@ -112,17 +114,37 @@ export function useDocumentGenerator() {
     }
 
     let template = $derived(orgaStore.document_templates?.data.find(t => t.id === selectedTemplateId));
+
+    // Effektiver Nutzer-Kontext: entweder eigener Account oder der gewählte "Im Namen von"-Nutzer
+    let effectiveUser = $derived.by(() => {
+        if (onBehalfOfUserId) {
+            return (orgaStore.users?.data as any[])?.find((u: any) => u.id === onBehalfOfUserId) || pb.authStore.model || pb.authStore.record || {};
+        }
+        return pb.authStore.model || pb.authStore.record || {};
+    });
+
+    // Klienten gefiltert auf den effektiven Nutzer
+    let availableClients = $derived.by(() => {
+        const allClients = orgaStore.clients?.data || [];
+        if (!onBehalfOfUserId) return allClients;
+        return allClients.filter((c: any) => {
+            if (c.id === selectedClientId) return true;
+            const emp = Array.isArray(c.assigned_employee) ? c.assigned_employee : (c.assigned_employee ? [c.assigned_employee] : []);
+            return emp.includes(onBehalfOfUserId);
+        });
+    });
+
     let client = $derived(orgaStore.clients?.data.find(c => c.id === selectedClientId));
-    
-    // Holt gezielt die Firma des aktuell eingeloggten Nutzers (Rechnungserstellers)
+
+    // Firma: Wenn im Namen von, Firma des Ziel-Nutzers bevorzugen
     let company = $derived.by(() => {
         if (selectedCompanyId && selectedCompanyId !== "all") {
             return orgaStore.company?.data.find((c: any) => c.id === selectedCompanyId) || orgaStore.company?.data[0];
         }
-        const user = pb.authStore.record;
+        const user: any = effectiveUser;
         if (!user || !user.company) return orgaStore.company?.data[0];
         const userCompanyId = Array.isArray(user.company) ? user.company[0] : user.company;
-        return orgaStore.company?.data.find(c => c.id === userCompanyId) || orgaStore.company?.data[0];
+        return orgaStore.company?.data.find((c: any) => c.id === userCompanyId) || orgaStore.company?.data[0];
     });
 
     // --- AUTO-FILL LOGIK FÜR KLIENTEN-KONDITIONEN ---
@@ -155,14 +177,19 @@ export function useDocumentGenerator() {
         return orgaStore.appointments.data.filter((a: any) => {
             const isClient = Array.isArray(a.client) ? a.client.includes(selectedClientId) : a.client === selectedClientId;
             if (!isClient) return false;
-            
-            // "Termine Ohne Zeitnachweis in den tabellen ausblenden"
+
+            // Wenn im Namen von: nur Termine des Ziel-Nutzers
+            if (onBehalfOfUserId) {
+                const apptUser = Array.isArray(a.user) ? a.user : (a.user ? [a.user] : []);
+                if (!apptUser.includes(onBehalfOfUserId)) return false;
+            }
+
+            // Termine ohne Zeitnachweis ausblenden
             const hasTime = a.expand?.time_record && a.expand.time_record.length > 0;
             if (!hasTime) return false;
-            
-            // Bereits abgerechnete Termine ausblenden, außer der Nutzer will sie sehen
+
+            // Bereits abgerechnete Termine ausblenden
             if (!showBilledAppointments && a.settled) {
-                // Wenn der Termin bereits (z.B. aus Versehen) markiert ist, bleibt er trotzdem sichtbar
                 if (!selectedAppointmentIds.includes(a.id)) return false;
             }
 
@@ -387,7 +414,7 @@ export function useDocumentGenerator() {
 
     function replacePlaceholders(text: string, isTimesheet: boolean = false, overrideData?: any) {
         if (!text) return "";
-        
+
         function safeFormatDate(val: string) {
             if (!val) return '';
             const clean = val.trim().replace(' ', 'T');
@@ -398,156 +425,302 @@ export function useDocumentGenerator() {
             return val.split(' ')[0];
         }
 
+        // Resiliente Regex-Ersetzung: fängt {key}}, {{key}}, {{ key }} etc. ab
+        function escapeRegex(s: string) {
+            return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        }
+        function applyReplacement(src: string, key: string, value: string): string {
+            if (src.includes(key)) {
+                src = src.split(key).join(value);
+            }
+            const inner = escapeRegex(key.replace(/^\{\{/, '').replace(/\}\}$/, ''));
+            const re = new RegExp('\\{\\{?\\s*' + inner + '\\s*\\}\\}?', 'g');
+            return src.replace(re, value);
+        }
+
         let res = text.replace(/\n/g, '<br/>');
-        let rec: any = getRecipientData() || {};
+
+        // rec = Empfänger (Adressfeld-Briefkopf), cl = immer echter Klient
+        // usr = effektiver Nutzer (eingeloggt ODER gewählter "Im Namen von"-Nutzer)
+        const rec: any = getRecipientData() || {};
+        const cl: any = client || {};
         const comp: any = company || {};
-        const usr: any = pb.authStore.record || {};
-        const ins: any = client?.expand?.insurance || {};
+        const usr: any = (onBehalfOfUserId ? effectiveUser : null) || pb.authStore.record || {};
+        const ins: any = cl.expand?.insurance || {};
 
-        let clientSignUrl = rec.sign ? pb.files.getURL(rec, rec.sign) : '';
+        // --- URLs ---
+        let clSignUrl = cl.sign ? pb.files.getURL(cl, cl.sign) : '';
         let userSignUrl = usr.sign ? pb.files.getURL(usr, usr.sign) : '';
-
-        // Authentifizierungs-Token anhängen, damit fetch() nicht von PocketBase blockiert wird!
-        if (clientSignUrl && pb.authStore.token) clientSignUrl += (clientSignUrl.includes('?') ? '&' : '?') + 'token=' + pb.authStore.token;
+        if (clSignUrl && pb.authStore.token) clSignUrl += (clSignUrl.includes('?') ? '&' : '?') + 'token=' + pb.authStore.token;
         if (userSignUrl && pb.authStore.token) userSignUrl += (userSignUrl.includes('?') ? '&' : '?') + 'token=' + pb.authStore.token;
 
         const dueDate = new Date(new Date(manualIssueDate).getTime() + 14 * 24 * 60 * 60 * 1000);
 
+        // date.today_+1y
+        const issueDateObj = new Date(manualIssueDate + 'T00:00:00Z');
+        const plusOneYear = new Date(issueDateObj);
+        plusOneYear.setUTCFullYear(plusOneYear.getUTCFullYear() + 1);
+        const dateToday1y = plusOneYear.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' });
+        const dateTodayStr = issueDateObj.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' });
+
         const dataToUse = overrideData || (isTimesheet ? timesheetData : invoiceData);
 
-        let clientNameFirst = rec.name_first || rec.name || '';
-        let clientNameLast = rec.name_last || '';
-        let clientStreetHousenr = `${rec.street || ''} ${rec.housenr || ''}`.trim();
-        let clientZipCity = `${rec.zip || ''} ${rec.city || ''}`.trim();
-        
-        let rawStreet = rec.street || '';
-        let rawCity = rec.city || '';
-        
+        // --- Empfänger-Adressblock (für Briefkopf) ---
+        let recNameFirst = rec.name_first || rec.name || '';
+        let recNameLast = rec.name_last || '';
+        let recRawStreet = rec.street || '';
+        let recRawCity = rec.city || '';
         let addressSalutation = '';
-        if (rec.salutation === 'Herr') {
-            addressSalutation = 'Herr';
-        } else if (rec.salutation === 'Frau') {
-            addressSalutation = 'Frau';
-        } else if (rec.salutation && rec.salutation !== 'Keine Angabe' && rec.salutation !== 'Divers') {
-            addressSalutation = rec.salutation;
-        }
+        if (rec.salutation === 'Herr') addressSalutation = 'Herr';
+        else if (rec.salutation === 'Frau') addressSalutation = 'Frau';
+        else if (rec.salutation && rec.salutation !== 'Keine Angabe' && rec.salutation !== 'Divers') addressSalutation = rec.salutation;
 
-        const cStatus = (client?.status || '').toLowerCase();
-        if (cStatus === 'verstorben') {
-            addressSalutation = '';
-        }
+        const cStatus = (cl?.status || '').toLowerCase();
+        if (cStatus === 'verstorben') addressSalutation = '';
 
-        if (recipientType === 'inheritor' && client) {
+        if (recipientType === 'inheritor' && cl) {
             addressSalutation = '';
-            clientNameFirst = client.name_first || '';
-            clientNameLast = client.name_last || '';
-            clientStreetHousenr = `c/o ${rec.name_first || ''} ${rec.name_last || ''}<br>${rec.street || ''} ${rec.housenr || ''}`.trim();
-            rawStreet = `c/o ${rec.name_first || ''} ${rec.name_last || ''}<br>${rec.street || ''}`.trim();
-            
-            let city = rec.city || '';
+            recNameFirst = cl.name_first || '';
+            recNameLast = cl.name_last || '';
+            recRawStreet = `c/o ${rec.name_first || ''} ${rec.name_last || ''}<br>${rec.street || ''}`.trim();
+            const city = rec.city || '';
             const otMatch = city.match(/\b(?:ot|o\.t\.|ortsteil)\b\s*(.*)/i);
             if (otMatch) {
                 const mainCity = city.substring(0, otMatch.index).replace(/[\s,\-]+$/, '').replace(/\($/, '').trim();
-                const otName = otMatch[1].replace(/^[,\-\s]+/, '').replace(/\)$/, '').trim();
-                clientZipCity = `${rec.zip || ''} ${mainCity}<br>OT ${otName}`.trim();
-                rawCity = `${mainCity}<br>OT ${otName}`.trim();
+                const otName = (otMatch[1] || '').replace(/^[,\-\s]+/, '').replace(/\)$/, '').trim();
+                recRawCity = `${mainCity}<br>OT ${otName}`.trim();
             } else {
-                clientZipCity = `${rec.zip || ''} ${city}`.trim();
+                recRawCity = city;
             }
         }
 
-        const map: Record<string, string> = {
-            '{{client.salutation}}': addressSalutation,
-            '{{client.salutation_formal}}': rec.salutation === 'Herr' ? `Sehr geehrter Herr ${rec.name_last},` : (rec.salutation === 'Frau' ? `Sehr geehrte Frau ${rec.name_last},` : `Guten Tag ${rec.name_first} ${rec.name_last},`),
-            '{{client.name_first}}': clientNameFirst,
-            '{{client.name_last}}': clientNameLast,
-            '{{client.street}} {{client.housenr}}': clientStreetHousenr,
-            '{{client.zip}} {{client.city}}': clientZipCity,
-            '{{client.company_name}}': rec.company_name || '',
-            '{{client.addition}}': rec.company_name || '',
-            '{{client.email}}': rec.email || '',
-            '{{client.phone}}': rec.phone || '',
-            '{{client.handy}}': rec.handy || '',
-            '{{client.insurance_nr}}': rec.insurance_nr || '',
-            '{{client.birthdate}}': safeFormatDate(rec.birthdate),
-            '{{client.level_of_care}}': rec.level_of_care || '',
-            '{{client.hourly_wage}}': formatMoney(client?.hourly_wage ?? 0),
-            '{{client.km_rate}}': formatMoney(client?.km_rate ?? 0),
-            '{{client.tax_rate}}': (client?.tax_rate ?? 0).toLocaleString('de-DE'),
-            '{{client.signature}}': clientSignUrl ? `<img src="${clientSignUrl}" style="max-height: 60px; object-fit: contain;" crossorigin="anonymous" />` : '',
-            
-            '{{insurance.name}}': ins.name || '',
-            '{{insurance.department}}': ins.department || '',
-            '{{insurance.addition}}': ins.addition || '',
-            '{{insurance.type}}': ins.type || '',
-            '{{insurance.street}}': ins.street || '',
-            '{{insurance.zip}} {{insurance.city}}': `${ins.zip || ''} ${ins.city || ''}`.trim(),
-            '{{insurance.phone}}': ins.phone || '',
-            '{{insurance.email}}': ins.email || '',
-            
-            '{{user.name_first}}': usr.name_first || '',
-            '{{user.name_last}}': usr.name_last || '',
-            '{{user.street}} {{user.housenr}}': `${usr.street || ''} ${usr.housenr || ''}`.trim(),
-            '{{user.zip}} {{user.city}}': `${usr.zip || ''} ${usr.city || ''}`.trim(),
-            '{{user.email}}': usr.email || '',
-            '{{user.tel}}': usr.tel || '',
-            '{{user.handy}}': usr.handy || '',
-            '{{user.signature}}': userSignUrl ? `<img src="${userSignUrl}" style="max-height: 60px; object-fit: contain;" crossorigin="anonymous" />` : '',
-            
-            '{{company.name}}': comp.name || '',
-            '{{company.street}} {{company.housenr}}': `${comp.street || ''} ${comp.housenr || ''}`.trim(),
-            '{{company.zip}} {{company.city}}': `${comp.zip || ''} ${comp.city || ''}`.trim(),
-            '{{company.email}}': comp.email || '',
-            '{{company.website}}': comp.website || '',
-            '{{company.number_telephone}}': comp.number_telephone || '',
-            '{{company.number_mobile}}': comp.number_mobile || '',
-            '{{company.vatcode}}': comp.vatcode || '',
-            '{{company.ik_number}}': comp.ik_number || '',
-            '{{company.bank_name}}': comp.bank_name || '',
-            '{{company.bank_iban}}': comp.bank_iban || '',
-            '{{company.bank_bic}}': comp.bank_bic || '',
-            '{{date.today}}': new Date(manualIssueDate).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' }),
-            '{{invoice.issue_date}}': new Date(manualIssueDate).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' }),
-            '{{invoice.due_date}}': dueDate.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' }),
-            
-            // Rückwärtskompatibilität für alte HTML-Vorlagen
-            '{{anrede}}': rec.salutation === 'Herr' ? `Sehr geehrter Herr ${rec.name_last},` : (rec.salutation === 'Frau' ? `Sehr geehrte Frau ${rec.name_last},` : `Guten Tag ${rec.name_first} ${rec.name_last},`),
-            '{{company_name}}': comp.name || '',
-            '{{company_street}}': comp.street || '',
-            '{{company_housenr}}': comp.housenr || '',
-            '{{company_zip}}': comp.zip || '',
-            '{{company_city}}': comp.city || '',
-            '{{salutation}}': addressSalutation,
-            '{{name_first}}': clientNameFirst,
-            '{{name_last}}': clientNameLast,
-            '{{street}}': rawStreet,
-            '{{housenr}}': rec.housenr || '',
-            '{{zip}}': rec.zip || '',
-            '{{city}}': rawCity,
-            '{{rechnungsdatum}}': new Date(manualIssueDate).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' }),
-            
-            // Rückwärtskompatibilität für alte User-Platzhalter
-            '{{user_name_first}}': usr.name_first || '',
-            '{{user_name_last}}': usr.name_last || '',
-            '{{user_street}}': usr.street || '',
-            '{{user_housenr}}': usr.housenr || '',
-            '{{user_zip}}': usr.zip || '',
-            '{{user_city}}': usr.city || '',
-            '{{user_email}}': usr.email || '',
-            '{{user_tel}}': usr.tel || '',
-            '{{user_handy}}': usr.handy || ''
-        };
+        // --- Klient (IMMER aus cl, unabhängig vom Empfänger-Typ) ---
+        const clSalMap = (sal: string) => sal === 'Herr' ? 'Herr' : (sal === 'Frau' ? 'Frau' : (sal && sal !== 'Keine Angabe' && sal !== 'Divers' ? sal : ''));
+        const clSalutation = cStatus === 'verstorben' ? '' : clSalMap(cl.salutation || '');
+        const clFormal = cl.salutation === 'Herr'
+            ? `Sehr geehrter Herr ${cl.name_last || ''},`
+            : (cl.salutation === 'Frau' ? `Sehr geehrte Frau ${cl.name_last || ''},` : `Guten Tag ${cl.name_first || ''} ${cl.name_last || ''},`);
+
+        // --- Pflegeperson/Erbe ---
+        const cpInfo: any = cl?.inheritor_info || {};
+        const inheritorContact: any = cl?.expand?.inheritor
+            ? (Array.isArray(cl.expand.inheritor) ? cl.expand.inheritor[0] : cl.expand.inheritor) : {};
+        let inheritorSignUrl = inheritorContact.sign ? pb.files.getURL(inheritorContact, inheritorContact.sign) : '';
+        if (inheritorSignUrl && pb.authStore.token) inheritorSignUrl += (inheritorSignUrl.includes('?') ? '&' : '?') + 'token=' + pb.authStore.token;
+        const cpName = cpInfo.name || `${inheritorContact.name_first || ''} ${inheritorContact.name_last || ''}`.trim();
+        const cpNameFirst = cpName ? cpName.split(' ')[0] : (inheritorContact.name_first || '');
+        const cpNameLast = cpName ? cpName.split(' ').slice(1).join(' ') : (inheritorContact.name_last || '');
+        const cpRelation = cpInfo.relation || inheritorContact.company_name || '';
+        const cpBirthdate = cpInfo.birthdate ? safeFormatDate(cpInfo.birthdate) : (inheritorContact.birthdate ? safeFormatDate(inheritorContact.birthdate) : '');
+        const cpStreet = cpInfo.street || inheritorContact.street || '';
+        const cpHousenr = cpInfo.housenr || inheritorContact.housenr || '';
+        const cpZip = cpInfo.zip || inheritorContact.zip || '';
+        const cpCity = cpInfo.city || inheritorContact.city || '';
+        const cpPhone = cpInfo.phone || inheritorContact.phone || '';
+        const cpEmail = cpInfo.email || inheritorContact.email || '';
+        const cpReason = cpInfo.reason || 'Erholungsurlaub';
+        const cpCareType = cpInfo.care_type === 'tageweise' ? 'Tageweise (> 8 Stunden)' : 'Stundenweise (< 8 Stunden)';
+        const cpPreCare = cpInfo.pre_care_fulfilled !== false ? 'Ja (mind. 6 Monate häusliche Pflege erbracht)' : 'Nein';
+        const cpSigImg = inheritorSignUrl ? `<img src="${inheritorSignUrl}" style="max-height: 60px; object-fit: contain;" crossorigin="anonymous" />` : '';
+
+        // --- Betreuer ---
+        const caregiverRaw: any = (Array.isArray(cl.expand?.caregiver) ? cl.expand.caregiver[0] : cl.expand?.caregiver) || {};
+        let cgSignUrl = caregiverRaw.sign ? pb.files.getURL(caregiverRaw, caregiverRaw.sign) : '';
+        if (cgSignUrl && pb.authStore.token) cgSignUrl += (cgSignUrl.includes('?') ? '&' : '?') + 'token=' + pb.authStore.token;
+
+        // --- Kontakt ---
+        const contactRaw: any = (Array.isArray(cl.expand?.contacts) ? cl.expand.contacts[0] : cl.expand?.contacts) || {};
+        let contactSignUrl = contactRaw.sign ? pb.files.getURL(contactRaw, contactRaw.sign) : '';
+        if (contactSignUrl && pb.authStore.token) contactSignUrl += (contactSignUrl.includes('?') ? '&' : '?') + 'token=' + pb.authStore.token;
+
+        // =================================================================
+        // MAP: Array (Combined Keys VOR Einzelkeys)
+        // =================================================================
+        const map: Array<[string, string]> = [
+            // Careperson / Pflegeperson
+            ['{{careperson.street}} {{careperson.housenr}}', `${cpStreet} ${cpHousenr}`.trim()],
+            ['{{careperson.zip}} {{careperson.city}}',       `${cpZip} ${cpCity}`.trim()],
+            ['{{careperson.name}}',       cpName],
+            ['{{careperson.name_first}}', cpNameFirst],
+            ['{{careperson.name_last}}',  cpNameLast],
+            ['{{careperson.salutation}}', inheritorContact.salutation || 'Herr/Frau'],
+            ['{{careperson.relation}}',   cpRelation],
+            ['{{careperson.birthdate}}',  cpBirthdate],
+            ['{{careperson.street}}',     cpStreet],
+            ['{{careperson.housenr}}',    cpHousenr],
+            ['{{careperson.zip}}',        cpZip],
+            ['{{careperson.city}}',       cpCity],
+            ['{{careperson.phone}}',      cpPhone],
+            ['{{careperson.email}}',      cpEmail],
+            ['{{careperson.reason}}',     cpReason],
+            ['{{careperson.care_type}}',  cpCareType],
+            ['{{careperson.pre_care}}',   cpPreCare],
+            ['{{careperson.notes}}',      cpInfo.notes || ''],
+            ['{{careperson.signature}}',  cpSigImg],
+            // Inheritor (Alias)
+            ['{{inheritor.street}} {{inheritor.housenr}}', `${cpStreet} ${cpHousenr}`.trim()],
+            ['{{inheritor.zip}} {{inheritor.city}}',       `${cpZip} ${cpCity}`.trim()],
+            ['{{inheritor.salutation}}',   inheritorContact.salutation || ''],
+            ['{{inheritor.name_first}}',   cpNameFirst],
+            ['{{inheritor.name_last}}',    cpNameLast],
+            ['{{inheritor.company_name}}', cpRelation],
+            ['{{inheritor.street}}',       cpStreet],
+            ['{{inheritor.housenr}}',      cpHousenr],
+            ['{{inheritor.zip}}',          cpZip],
+            ['{{inheritor.city}}',         cpCity],
+            ['{{inheritor.phone}}',        cpPhone],
+            ['{{inheritor.email}}',        cpEmail],
+            ['{{inheritor.signature}}',    cpSigImg],
+            // Client (IMMER echte Klientendaten)
+            ['{{client.street}} {{client.housenr}}', `${cl.street || ''} ${cl.housenr || ''}`.trim()],
+            ['{{client.zip}} {{client.city}}',       `${cl.zip || ''} ${cl.city || ''}`.trim()],
+            ['{{client.salutation}}',        clSalutation],
+            ['{{client.salutation_formal}}', clFormal],
+            ['{{client.name_first}}',        cl.name_first || ''],
+            ['{{client.name_last}}',         cl.name_last || ''],
+            ['{{client.street}}',            cl.street || ''],
+            ['{{client.housenr}}',           cl.housenr || ''],
+            ['{{client.zip}}',               cl.zip || ''],
+            ['{{client.city}}',              cl.city || ''],
+            ['{{client.company_name}}',      cl.company_name || ''],
+            ['{{client.addition}}',          cl.company_name || ''],
+            ['{{client.email}}',             cl.email || ''],
+            ['{{client.phone}}',             cl.phone || ''],
+            ['{{client.handy}}',             cl.handy || ''],
+            ['{{client.insurance_nr}}',      cl.insurance_nr || ''],
+            ['{{client.birthdate}}',         safeFormatDate(cl.birthdate)],
+            ['{{client.level_of_care}}',     cl.level_of_care || ''],
+            ['{{client.hourly_wage}}',       formatMoney(cl?.hourly_wage ?? 0)],
+            ['{{client.km_rate}}',           formatMoney(cl?.km_rate ?? 0)],
+            ['{{client.tax_rate}}',          (cl?.tax_rate ?? 0).toLocaleString('de-DE')],
+            ['{{client.signature}}',         clSignUrl ? `<img src="${clSignUrl}" style="max-height: 60px; object-fit: contain;" crossorigin="anonymous" />` : ''],
+            // Insurance
+            ['{{insurance.zip}} {{insurance.city}}', `${ins.zip || ''} ${ins.city || ''}`.trim()],
+            ['{{insurance.name}}',       ins.name || ''],
+            ['{{insurance.department}}', ins.department || ''],
+            ['{{insurance.addition}}',   ins.addition || ''],
+            ['{{insurance.type}}',       ins.type || ''],
+            ['{{insurance.street}}',     ins.street || ''],
+            ['{{insurance.zip}}',        ins.zip || ''],
+            ['{{insurance.city}}',       ins.city || ''],
+            ['{{insurance.phone}}',      ins.phone || ''],
+            ['{{insurance.email}}',      ins.email || ''],
+            // Caregiver / Betreuer
+            ['{{caregiver.street}} {{caregiver.housenr}}', `${caregiverRaw.street || ''} ${caregiverRaw.housenr || ''}`.trim()],
+            ['{{caregiver.zip}} {{caregiver.city}}',       `${caregiverRaw.zip || ''} ${caregiverRaw.city || ''}`.trim()],
+            ['{{caregiver.salutation}}',   caregiverRaw.salutation || ''],
+            ['{{caregiver.name_first}}',   caregiverRaw.name_first || ''],
+            ['{{caregiver.name_last}}',    caregiverRaw.name_last || ''],
+            ['{{caregiver.company_name}}', caregiverRaw.company_name || ''],
+            ['{{caregiver.street}}',       caregiverRaw.street || ''],
+            ['{{caregiver.housenr}}',      caregiverRaw.housenr || ''],
+            ['{{caregiver.zip}}',          caregiverRaw.zip || ''],
+            ['{{caregiver.city}}',         caregiverRaw.city || ''],
+            ['{{caregiver.phone}}',        caregiverRaw.phone || caregiverRaw.handy || ''],
+            ['{{caregiver.email}}',        caregiverRaw.email || ''],
+            ['{{caregiver.signature}}',    cgSignUrl ? `<img src="${cgSignUrl}" style="max-height: 60px; object-fit: contain;" crossorigin="anonymous" />` : ''],
+            // Contact / Kontakt
+            ['{{contact.street}} {{contact.housenr}}', `${contactRaw.street || ''} ${contactRaw.housenr || ''}`.trim()],
+            ['{{contact.zip}} {{contact.city}}',       `${contactRaw.zip || ''} ${contactRaw.city || ''}`.trim()],
+            ['{{contact.name_first}}',   contactRaw.name_first || ''],
+            ['{{contact.name_last}}',    contactRaw.name_last || ''],
+            ['{{contact.company_name}}', contactRaw.company_name || ''],
+            ['{{contact.street}}',       contactRaw.street || ''],
+            ['{{contact.housenr}}',      contactRaw.housenr || ''],
+            ['{{contact.zip}}',          contactRaw.zip || ''],
+            ['{{contact.city}}',         contactRaw.city || ''],
+            ['{{contact.phone}}',        contactRaw.phone || contactRaw.handy || ''],
+            ['{{contact.email}}',        contactRaw.email || ''],
+            ['{{contact.signature}}',    contactSignUrl ? `<img src="${contactSignUrl}" style="max-height: 60px; object-fit: contain;" crossorigin="anonymous" />` : ''],
+            // User / Mitarbeiter
+            ['{{user.street}} {{user.housenr}}', `${usr.street || ''} ${usr.housenr || ''}`.trim()],
+            ['{{user.zip}} {{user.city}}',       `${usr.zip || ''} ${usr.city || ''}`.trim()],
+            ['{{user.name_first}}', usr.name_first || ''],
+            ['{{user.name_last}}',  usr.name_last || ''],
+            ['{{user.street}}',     usr.street || ''],
+            ['{{user.housenr}}',    usr.housenr || ''],
+            ['{{user.zip}}',        usr.zip || ''],
+            ['{{user.city}}',       usr.city || ''],
+            ['{{user.email}}',      usr.email || ''],
+            ['{{user.tel}}',        usr.tel || ''],
+            ['{{user.phone}}',      usr.tel || usr.phone || ''],
+            ['{{user.mobile}}',     usr.handy || ''],
+            ['{{user.handy}}',      usr.handy || ''],
+            ['{{user.signature}}',  userSignUrl ? `<img src="${userSignUrl}" style="max-height: 60px; object-fit: contain;" crossorigin="anonymous" />` : ''],
+            // Company / Firma
+            ['{{company.return_address_line}}', `${comp.name || ''} • ${comp.street || ''} ${comp.housenr || ''} • ${comp.zip || ''} ${comp.city || ''}`.trim()],
+            ['{{company.street}} {{company.housenr}}', `${comp.street || ''} ${comp.housenr || ''}`.trim()],
+            ['{{company.zip}} {{company.city}}',       `${comp.zip || ''} ${comp.city || ''}`.trim()],
+            ['{{company.name}}',             comp.name || ''],
+            ['{{company.street}}',           comp.street || ''],
+            ['{{company.housenr}}',          comp.housenr || ''],
+            ['{{company.zip}}',              comp.zip || ''],
+            ['{{company.city}}',             comp.city || ''],
+            ['{{company.email}}',            comp.email || ''],
+            ['{{company.website}}',          comp.website || ''],
+            ['{{company.number_telephone}}', comp.number_telephone || ''],
+            ['{{company.number_mobile}}',    comp.number_mobile || ''],
+            ['{{company.phone}}',            comp.number_telephone || ''],
+            ['{{company.mobile}}',           comp.number_mobile || ''],
+            ['{{company.vatcode}}',          comp.vatcode || ''],
+            ['{{company.ik_number}}',        comp.ik_number || ''],
+            ['{{company.bank_name}}',        comp.bank_name || ''],
+            ['{{company.bank_iban}}',        comp.bank_iban || ''],
+            ['{{company.bank_bic}}',         comp.bank_bic || ''],
+            ['{{company.iban}}',             comp.bank_iban || ''],
+            ['{{company.bic}}',              comp.bank_bic || ''],
+            ['{{company.bank}}',             comp.bank_name || ''],
+            // Gesetzes-Paragraphen & Budgets nach SGB XI
+            ['{{paragraph.39}}', '§ 39 SGB XI - Häusliche Pflege bei Verhinderung der Pflegeperson (Verhinderungspflege)'],
+            ['{{paragraph.45b}}', '§ 45b SGB XI - Entlastungsbetrag zur Unterstützung im Alltag (125,00 € monatlich)'],
+            ['{{careperson.budget_39}}', '1.612,00 €'],
+            ['{{client.budget_45b}}', '125,00 €'],
+            // Datum & Jahr (date.today_+1y VOR date.today)
+            ['{{current_year}}', new Date().getFullYear().toString()],
+            ['{{current_date}}', dateTodayStr],
+            // Datum (date.today_+1y VOR date.today)
+            ['{{date.today_+1y}}', dateToday1y],
+            ['{{date.today}}',     dateTodayStr],
+            ['{{invoice.issue_date}}', dateTodayStr],
+            ['{{invoice.due_date}}',   dueDate.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' })],
+            // Legacy-Platzhalter (Briefkopf nutzt rec)
+            ['{{anrede}}', rec.salutation === 'Herr'
+                ? `Sehr geehrter Herr ${recNameLast},`
+                : (rec.salutation === 'Frau' ? `Sehr geehrte Frau ${recNameLast},` : `Guten Tag ${recNameFirst} ${recNameLast},`)],
+            ['{{company_name}}',    comp.name || ''],
+            ['{{company_street}}',  comp.street || ''],
+            ['{{company_housenr}}', comp.housenr || ''],
+            ['{{company_zip}}',     comp.zip || ''],
+            ['{{company_city}}',    comp.city || ''],
+            ['{{salutation}}',      addressSalutation],
+            ['{{name_first}}',      recNameFirst],
+            ['{{name_last}}',       recNameLast],
+            ['{{street}}',          recRawStreet],
+            ['{{housenr}}',         rec.housenr || ''],
+            ['{{zip}}',             rec.zip || ''],
+            ['{{city}}',            recRawCity],
+            ['{{rechnungsdatum}}',  dateTodayStr],
+            ['{{user_name_first}}', usr.name_first || ''],
+            ['{{user_name_last}}',  usr.name_last || ''],
+            ['{{user_street}}',     usr.street || ''],
+            ['{{user_housenr}}',    usr.housenr || ''],
+            ['{{user_zip}}',        usr.zip || ''],
+            ['{{user_city}}',       usr.city || ''],
+            ['{{user_email}}',      usr.email || ''],
+            ['{{user_tel}}',        usr.tel || ''],
+            ['{{user_handy}}',      usr.handy || ''],
+        ];
 
         if (dataToUse) {
-            map['{{invoice.number}}'] = dataToUse.invoice_nr || '';
-            map['{{invoice.total}}'] = dataToUse.brutto ? `${formatMoney(dataToUse.brutto)} €` : '';
-            map['{{rechnungs_nr}}'] = dataToUse.invoice_nr || '';
-            map['{{invoice.service_period}}'] = dataToUse.service_period || '';
-            map['{{leistungszeitraum}}'] = dataToUse.service_period || '';
+            map.push(['{{invoice.number}}',         dataToUse.invoice_nr || '']);
+            map.push(['{{invoice.total}}',          dataToUse.brutto ? `${formatMoney(dataToUse.brutto)} €` : '']);
+            map.push(['{{rechnungs_nr}}',           dataToUse.invoice_nr || '']);
+            map.push(['{{invoice.service_period}}', dataToUse.service_period || '']);
+            map.push(['{{leistungszeitraum}}',      dataToUse.service_period || '']);
         }
 
-        for (const [key, val] of Object.entries(map)) {
-            res = res.split(key).join(val);
+        for (const [key, val] of map) {
+            res = applyReplacement(res, key, val);
         }
         return res;
     }
@@ -574,6 +747,7 @@ export function useDocumentGenerator() {
         existingTaxSum = null;
         existingBrutto = null;
         templateTypeFilter = "all";
+        onBehalfOfUserId = "";
     }
 
     return {
@@ -594,6 +768,9 @@ export function useDocumentGenerator() {
         get existingInvoiceId() { return existingInvoiceId; }, set existingInvoiceId(v) { existingInvoiceId = v; },
         get existingStatus() { return existingStatus; }, set existingStatus(v) { existingStatus = v; },
         get templateTypeFilter() { return templateTypeFilter; }, set templateTypeFilter(v) { templateTypeFilter = v; },
+        get onBehalfOfUserId() { return onBehalfOfUserId; }, set onBehalfOfUserId(v) { onBehalfOfUserId = v; },
+        get effectiveUser() { return effectiveUser; },
+        get availableClients() { return availableClients; },
         get template() { return template; },
         get availableTemplates() { return availableTemplates; },
         get timesheetTemplate() { return timesheetTemplate; },

@@ -1,4 +1,4 @@
-import { pb, keepPocketBaseAlive } from "$lib/services/pocketbase";
+import { pb, keepPocketBaseAlive } from "./lib/services/pocketbase";
 
 export function authManager() {
 	// Svelte 5 $state für UI Reactivity

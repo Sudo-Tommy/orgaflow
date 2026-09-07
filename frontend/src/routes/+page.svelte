@@ -16,7 +16,7 @@
     <meta name="description" content="Professionelle und liebevolle Seniorenassistenz in Halle (Saale) und Wittenberg. Wir unterstützen Sie im Alltag, bei Behördengängen und bieten eine verlässliche Betreuung." />
 </svelte:head>
 
-<div class="flex flex-col min-h-screen bg-white">
+<div class="flex flex-col min-h-screen bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors selection:bg-amber-500 selection:text-white">
     <LandingHeader />
     <main class="flex-1">
         <LandingHero />

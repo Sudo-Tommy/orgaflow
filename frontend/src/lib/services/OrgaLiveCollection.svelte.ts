@@ -32,7 +32,8 @@ export class OrgaLiveCollection<T extends BaseRecord> {
             this.data = await pb.collection(this.collectionName).getFullList<T>({
                 sort: this.options.sort,
                 filter: this.options.filter,
-                expand: this.options.expand
+                expand: this.options.expand,
+                requestKey: null
             });
 
             const subOptions: any = {};
@@ -41,13 +42,20 @@ export class OrgaLiveCollection<T extends BaseRecord> {
 
             await pb.collection(this.collectionName).subscribe<T>('*', (e) => {
                 if (e.action === 'create') {
-                    this.data.push(e.record as T);
+                    const index = this.data.findIndex(item => item.id === e.record.id);
+                    if (index !== -1) {
+                        this.data[index] = { ...e.record, expand: e.record.expand || this.data[index].expand } as T;
+                    } else {
+                        this.data.push(e.record as T);
+                    }
                 } else if (e.action === 'update') {
                     const index = this.data.findIndex(item => item.id === e.record.id);
                     if (index !== -1) {
                         // Sofortiges Update mit intelligentem Fallback für das alte 'expand' Objekt.
                         // Verhindert Flackern/Verschwinden von Relationen, komplett ohne Server-Überlastung!
                         this.data[index] = { ...e.record, expand: e.record.expand || this.data[index].expand } as T;
+                    } else {
+                        this.data.push(e.record as T);
                     }
                 } else if (e.action === 'delete') {
                     this.data = this.data.filter(item => item.id !== e.record.id);

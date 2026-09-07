@@ -1,11 +1,15 @@
 <script lang="ts">
     import { pb } from "$lib/services/pocketbase";
     import { sendEmail } from "$lib/services/emailService";
+    import { googleCalendarService, type GoogleCalendarStatus } from "$lib/services/googleCalendarService";
     import { toastStore } from "$lib/services/toastService.svelte";
     import { orgaStore } from "$lib/stores/orgaStore.svelte";
+    import { buildPrioritizedContacts } from "$lib/services/contactPickerService";
+    import { resolveCompanyData, resolveUserData, buildEmailHeader, buildEmailFooter, buildTextSignature, getPortalButtonRegex, getPortalButtonHtml } from "$lib/services/emailCompanyService";
 
     // svelte-ignore non_reactive_update
     let dialog: HTMLDialogElement;
+    let googleStatus = $state<GoogleCalendarStatus | null>(null);
     let invoices = $state<any[]>([]);
     let invoice = $derived(invoices[0] || null);
     
@@ -35,32 +39,8 @@
     let selectedFutureAppIds = $state<string[]>([]);
     let includeFutureApps = $state(false);
 
-    function buildAvailableContacts() {
-        let list: any[] = [];
-        const add = (name: string, email: string, phone: string, salutation: string, isClient: boolean = false) => {
-            if (email || phone) list.push({ name, email, phone, salutation, isClient });
-        };
-        orgaStore.clients?.data?.forEach((c: any) => {
-            let sal = c.salutation === 'Herr' ? `Sehr geehrter Herr ${c.name_last}` : (c.salutation === 'Frau' ? `Sehr geehrte Frau ${c.name_last}` : `Guten Tag ${c.name_first} ${c.name_last}`);
-            add(`${c.name_first} ${c.name_last} (Klient)`, c.email, c.phone || c.handy, sal + ',', true);
-        });
-        orgaStore.contacts?.data?.forEach((c: any) => {
-            let sal = c.salutation === 'Herr' ? `Sehr geehrter Herr ${c.name_last}` : (c.salutation === 'Frau' ? `Sehr geehrte Frau ${c.name_last}` : `Guten Tag ${c.name_first} ${c.name_last}`);
-            add(`${c.name_first} ${c.name_last} (${c.company_name || 'Kontakt'})`, c.email, c.phone, sal + ',', false);
-        });
-        orgaStore.retirement_homes?.data?.forEach((h: any) => {
-            add(`${h.name} (Pflegeheim)`, h.email, h.phone, `Sehr geehrte Damen und Herren vom ${h.name},`, false);
-        });
-        orgaStore.insurancies?.data?.forEach((i: any) => {
-            add(`${i.name} (Krankenkasse)`, i.email, i.phone, `Sehr geehrte Damen und Herren,`, false);
-        });
-        const unique: any[] = [];
-        const seen = new Set();
-        for (const item of list) {
-            const key = `${item.email}-${item.phone}`;
-            if (!seen.has(key)) { seen.add(key); unique.push(item); }
-        }
-        return unique.sort((a, b) => a.name.localeCompare(b.name));
+    function buildAvailableContacts(targetClients?: any[]) {
+        return buildPrioritizedContacts(targetClients);
     }
 
     function toggleRecipient(contact: any, isChecked: boolean) {
@@ -169,6 +149,7 @@
         bcc = "";
         showCcBcc = false;
         showContactDropdown = false;
+        googleCalendarService.getStatus().then(s => googleStatus = s).catch(() => {});
 
         availablePdfs = [];
         selectedPdfFiles = [];
@@ -182,7 +163,17 @@
             }
         }
         
-        availableContacts = buildAvailableContacts();
+        const targetClients = invList.map(inv => {
+            if (Array.isArray(inv?.expand?.client)) return inv.expand.client[0];
+            if (inv?.expand?.client) return inv.expand.client;
+            if (inv?.client) {
+                const cId = Array.isArray(inv.client) ? inv.client[0] : inv.client;
+                return orgaStore.clients?.data?.find((c: any) => c.id === cId);
+            }
+            return null;
+        }).filter(Boolean);
+
+        availableContacts = buildAvailableContacts(targetClients);
         selectedContactRefs = [];
         if (emailTo) {
             const matched = availableContacts.find(c => c.email === emailTo);
@@ -281,7 +272,8 @@
             
             // Lade alle angehängten PDFs der Rechnungen herunter und wandle sie um
             for (const pdf of selectedPdfFiles) {
-                const fileUrl = pb.files.getURL(pdf.record, pdf.filename);
+                let fileUrl = pb.files.getURL(pdf.record, pdf.filename);
+                if (pb.authStore.token) fileUrl += (fileUrl.includes('?') ? '&' : '?') + 'token=' + pb.authStore.token;
                 const response = await fetch(fileUrl);
                 const blob = await response.blob();
                 const base64 = await blobToBase64(blob);
@@ -292,38 +284,11 @@
                 });
             }
 
-            const user = pb.authStore.model;
-            const userName = user ? `${user.name_first || ''} ${user.name_last || ''}`.trim() : 'Ihre Seniorenassistenz';
-            const userEmail = user?.email || 'info@ihre-seniorenassistenz.com';
-            const userPhone = user?.handy || user?.tel || '0151 57515432';
-
-            let compName = 'Ihre Seniorenassistenz';
-            let compStreet = 'Dreyhauptstraße 2';
-            let compCity = '06108 Halle (Saale)';
-            let compWeb = 'www.ihre-seniorenassistenz.com';
-            let compLogo = '';
-            let companyId: string | null = null;
-            if (user && user.company) {
-                companyId = Array.isArray(user.company) ? user.company[0] : user.company;
-                const comp = orgaStore.company?.data?.find((c: any) => c.id === companyId);
-                if (comp) {
-                    compName = comp.name || compName;
-                    compStreet = `${comp.street || ''} ${comp.housenr || ''}`.trim() || compStreet;
-                    compCity = `${comp.zip || ''} ${comp.city || ''}`.trim() || compCity;
-                    compWeb = comp.website || compWeb;
-                    if (comp.logo) {
-                        const logoFilename = Array.isArray(comp.logo) ? comp.logo[0] : comp.logo;
-                        const rawUrl = pb.files.getURL(comp, logoFilename);
-                        try {
-                            const parsedUrl = new URL(rawUrl, 'https://ihre-seniorenassistenz.com');
-                            if (parsedUrl.hostname === 'localhost' || parsedUrl.hostname === '127.0.0.1') { parsedUrl.protocol = 'https:'; parsedUrl.hostname = 'ihre-seniorenassistenz.com'; parsedUrl.port = ''; }
-                            compLogo = parsedUrl.toString();
-                        } catch (e) {
-                            compLogo = rawUrl;
-                        }
-                    }
-                }
-            }
+            const compData = resolveCompanyData(orgaStore);
+            const { compName, compStreet, compCity, compWeb, compLogo } = compData;
+            const senderEmail = googleStatus?.connected ? googleStatus.googleEmail : undefined;
+            const userData = resolveUserData(undefined, undefined, senderEmail);
+            const { userName, userEmail, userPhone } = userData;
 
             // HTML & Text für die Besuchsberichte generieren
             let reportsHtml = '';
@@ -392,55 +357,18 @@
                 }
             }
 
-            const textEmail = `${emailText.trim()}${reportsText}${futureAppsText}\n\n--\n${userName}\n${compName}\n${compStreet}, ${compCity}\nTelefon: ${userPhone}\nE-Mail: ${userEmail}\nWeb: ${compWeb}`;
+            const textEmail = `${emailText.trim()}${reportsText}${futureAppsText}${buildTextSignature(userData, compData)}`;
 
             const htmlEmail = `
                 <div style="font-family: 'Segoe UI', Helvetica, Arial, sans-serif; color: #374151; max-width: 650px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);">
-                    <div style="background-color: #fdf8f6; padding: 30px; border-bottom: 3px solid #c66a4d;">
-                        <table width="100%" cellpadding="0" cellspacing="0" border="0">
-                            <tr>
-                                <td valign="middle">
-                                    <h1 style="color: #954028; margin: 0; font-size: 24px; letter-spacing: -0.5px; font-weight: 800;">${compName}</h1>
-                                    <p style="color: #c66a4d; margin: 4px 0 0 0; font-size: 14px; font-weight: 600;">Alltagshilfe • Betreuung • Organisation</p>
-                                </td>
-                                ${compLogo ? `<td valign="middle" align="right" style="width: 100px;"><img src="${compLogo}" alt="Logo" width="100" style="max-height: 60px; max-width: 100px; object-fit: contain; border-radius: 6px;" /></td>` : ''}
-                            </tr>
-                        </table>
-                    </div>
+                    ${buildEmailHeader(compData)}
                     <div style="padding: 35px 30px; font-size: 15px; line-height: 1.7; color: #1f2937; background-color: #ffffff;">
-                        ${emailText.trim().replace(/\n/g, '<br>').replace(/(?:<br>|\s)*(?:👉\s*)?(?:&lt;|<)?\s*https?:\/\/(?:www\.)?ihre-seniorenassistenz\.com\/portal\/?\s*(?:&gt;|>)?/gi, '<br><table role="presentation" border="0" cellpadding="0" cellspacing="0" style="margin: 15px 0;"><tr><td align="center" bgcolor="#c66a4d" style="border-radius: 8px;"><a href="https://www.ihre-seniorenassistenz.com/portal" style="display: inline-block; padding: 12px 24px; color: #ffffff; text-decoration: none; font-weight: bold; font-family: Arial, sans-serif; font-size: 15px;">Zum Klienten-Portal</a></td></tr></table><br>')}
+                        ${emailText.trim().replace(/\n/g, '<br>').replace(getPortalButtonRegex(), getPortalButtonHtml())}
                         
                         ${reportsHtml}
                         ${futureAppsHtml}
                     </div>
-                    <div style="background-color: #f8fafc; padding: 30px; border-top: 1px solid #e5e7eb;">
-                        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size: 14px; color: #4b5563;">
-                            <tr>
-                                <td valign="top" style="padding-bottom: 20px;">
-                                    <strong style="color: #111827; font-size: 16px;">${userName}</strong><br>
-                                    <span style="color: #c66a4d; font-weight: 600; font-size: 13px;">Ihre Ansprechperson</span>
-                                </td>
-                            </tr>
-                            <tr>
-                                <td valign="top">
-                                    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size: 13px; color: #4b5563; line-height: 1.6;">
-                                        <tr>
-                                            <td width="50%" valign="top" style="padding-right: 15px; border-right: 1px solid #e5e7eb;">
-                                                <strong style="color: #374151; font-size: 14px;">${compName}</strong><br>
-                                                ${compStreet}<br>
-                                                ${compCity}
-                                            </td>
-                                            <td width="50%" valign="top" style="padding-left: 20px;">
-                                                <div style="margin-bottom: 4px;">📞 <a href="tel:${userPhone}" style="color: #c66a4d; text-decoration: none; font-weight: 500;">${userPhone}</a></div>
-                                                <div style="margin-bottom: 4px;">✉️ <a href="mailto:${userEmail}" style="color: #c66a4d; text-decoration: none; font-weight: 500;">${userEmail}</a></div>
-                                                <div>🌐 <a href="${compWeb.startsWith('http') ? compWeb : 'https://' + compWeb}" style="color: #c66a4d; text-decoration: none; font-weight: 500;">${compWeb.replace(/^https?:\/\//, '')}</a></div>
-                                            </td>
-                                        </tr>
-                                    </table>
-                                </td>
-                            </tr>
-                        </table>
-                    </div>
+                    ${buildEmailFooter(userData, compData)}
                 </div>
             `;
 
@@ -508,16 +436,16 @@
     }
 </script>
 
-<dialog bind:this={dialog} class="p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-full max-w-4xl m-0 sm:m-auto max-h-none sm:max-h-fit rounded-none sm:rounded-3xl" onclick={(e) => { if (e.target === dialog) close(); }}>
-    <div class="bg-neutral-50 sm:rounded-3xl w-full h-dvh sm:h-auto sm:max-h-[90dvh] relative shadow-2xl flex flex-col overflow-hidden">
-        <div class="bg-white px-5 sm:px-8 py-5 border-b border-neutral-200 shrink-0 flex items-center justify-between sticky top-0 z-20 shadow-sm">
-            <h2 class="text-xl sm:text-2xl font-bold text-neutral-900 flex items-center gap-3"><span class="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shadow-inner text-lg">✉️</span> Dokumente versenden</h2>
-            <button aria-label="Schließen" title="Schließen" onclick={close} class="w-10 h-10 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-colors active:scale-95">
+<dialog bind:this={dialog} class="p-0 bg-transparent backdrop:bg-slate-950/65 backdrop:backdrop-blur-md w-full max-w-4xl m-0 sm:m-auto max-h-none sm:max-h-fit rounded-none sm:rounded-3xl" onclick={(e) => { if (e.target === dialog) close(); }}>
+    <div class="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 sm:rounded-3xl w-full h-dvh sm:h-auto sm:max-h-[90dvh] relative shadow-2xl flex flex-col overflow-hidden border border-slate-200/80 dark:border-slate-800">
+        <div class="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-5 sm:px-8 py-5 border-b border-slate-200/80 dark:border-slate-800 shrink-0 flex items-center justify-between sticky top-0 z-20 shadow-sm">
+            <h2 class="text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-3"><span class="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shadow-inner text-lg">✉️</span> Dokumente versenden</h2>
+            <button aria-label="Schließen" title="Schließen" onclick={close} class="w-10 h-10 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-full flex items-center justify-center transition-colors active:scale-95 cursor-pointer">
             <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
         </button>
         </div>
 
-        <div class="p-5 sm:p-8 overflow-y-auto custom-scrollbar flex-1 bg-white">
+        <div class="p-5 sm:p-8 overflow-y-auto custom-scrollbar flex-1 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100">
         {#if successMsg}
             <div class="bg-emerald-50 text-emerald-600 p-4 rounded-xl mb-6 text-sm font-medium border border-emerald-100 flex items-center gap-2 animate-enter">
                 <span class="text-xl">✅</span> {successMsg}
@@ -530,6 +458,15 @@
         {/if}
 
         <form onsubmit={(e) => { e.preventDefault(); sendInvoiceEmail(); }} class="space-y-5">
+            {#if googleStatus?.connected}
+                <div class="flex items-center gap-2.5 p-3 rounded-xl bg-blue-50/80 border border-blue-200/90 text-xs text-blue-950 shadow-xs">
+                    <span class="text-base shrink-0">✉️</span>
+                    <div class="flex-1 min-w-0 leading-relaxed">
+                        <span class="font-bold text-blue-900">Versand via Google Mail (OAuth2):</span>
+                        <span class="text-blue-700 ml-1">E-Mail wird direkt über <strong>{googleStatus.googleEmail}</strong> versendet und liegt automatisch in Ihrem Google-Ordner <em>„Gesendet“</em>.</span>
+                    </div>
+                </div>
+            {/if}
             <div>
                 <div class="flex items-center justify-between mb-1.5">
                     <label for="email-to" class="block text-sm font-semibold text-neutral-700">Empfänger (An)</label>
@@ -545,11 +482,37 @@
                         {#if showContactDropdown}
                             <!-- svelte-ignore a11y_consider_explicit_label -->
                             <button type="button" class="fixed inset-0 z-40 w-full h-full cursor-default" onclick={() => showContactDropdown = false} tabindex="-1"></button>
-                            <div class="absolute top-full right-0 mt-1 w-64 bg-white border border-neutral-200 shadow-xl rounded-xl z-50 max-h-60 overflow-y-auto custom-scrollbar p-1">
-                                {#each availableContacts.filter(c => c.email) as c}
-                                    <label class="flex items-center gap-3 p-2 hover:bg-neutral-50 rounded-lg cursor-pointer transition-colors"><input type="checkbox" checked={emailTo.includes(c.email)} onchange={(e) => toggleRecipient(c, e.currentTarget.checked)} class="w-4 h-4 text-indigo-600 border-neutral-300 rounded focus:ring-indigo-500" /><div class="min-w-0"><p class="text-sm font-bold text-neutral-900 truncate">{c.name}</p><p class="text-[10px] text-neutral-500 truncate">{c.email}</p></div></label>
+                            <div class="absolute top-full right-0 mt-1 w-72 bg-white border border-neutral-200 shadow-xl rounded-xl z-50 max-h-72 overflow-y-auto custom-scrollbar p-1.5">
+                                {#if availableContacts.some(c => c.isDirect && c.email)}
+                                    <div class="px-2 py-1 text-[11px] font-black text-brand-700 bg-brand-50 rounded-md mb-1 uppercase tracking-wider flex items-center justify-between">
+                                        <span>⭐ Direkte Klienten-Kontakte</span>
+                                    </div>
+                                    {#each availableContacts.filter(c => c.isDirect && c.email) as c}
+                                        <label class="flex items-center gap-2.5 p-2 hover:bg-brand-50/60 bg-brand-50/25 rounded-lg cursor-pointer transition-colors mb-0.5 border border-brand-100/70">
+                                            <input type="checkbox" checked={emailTo.includes(c.email)} onchange={(e) => toggleRecipient(c, e.currentTarget.checked)} class="w-4 h-4 text-brand-600 border-neutral-300 rounded focus:ring-brand-500" />
+                                            <div class="min-w-0 flex-1">
+                                                <p class="text-xs font-bold text-neutral-900 truncate">{c.name}</p>
+                                                <p class="text-[10px] text-brand-600 font-semibold truncate">{c.email}</p>
+                                            </div>
+                                        </label>
+                                    {/each}
+                                    <div class="border-t border-neutral-200 my-1.5"></div>
+                                    <div class="px-2 py-1 text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
+                                        <span>Weitere Adressbuch-Kontakte</span>
+                                    </div>
+                                {/if}
+                                {#each availableContacts.filter(c => !c.isDirect && c.email) as c}
+                                    <label class="flex items-center gap-2.5 p-2 hover:bg-neutral-50 rounded-lg cursor-pointer transition-colors">
+                                        <input type="checkbox" checked={emailTo.includes(c.email)} onchange={(e) => toggleRecipient(c, e.currentTarget.checked)} class="w-4 h-4 text-indigo-600 border-neutral-300 rounded focus:ring-indigo-500" />
+                                        <div class="min-w-0 flex-1">
+                                            <p class="text-xs font-medium text-neutral-800 truncate">{c.name}</p>
+                                            <p class="text-[10px] text-neutral-500 truncate">{c.email}</p>
+                                        </div>
+                                    </label>
                                 {/each}
-                                {#if availableContacts.filter(c => c.email).length === 0}<p class="text-xs text-neutral-500 p-2 text-center">Keine E-Mails gefunden</p>{/if}
+                                {#if availableContacts.filter(c => c.email).length === 0}
+                                    <p class="text-xs text-neutral-500 p-2 text-center">Keine E-Mails gefunden</p>
+                                {/if}
                             </div>
                         {/if}
                     </div>

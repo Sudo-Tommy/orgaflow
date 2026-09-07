@@ -1,15 +1,27 @@
 <script lang="ts">
+    import { onMount } from "svelte";
     import { orgaStore } from "$lib/stores/orgaStore.svelte";
     import ContactModal from "$lib/components/contacts/ContactModal.svelte";
     import RetirementHomeModal from "$lib/components/RetirementHomeModal.svelte";
+    import ClientPortalAccessModal from "$lib/components/portal/ClientPortalAccessModal.svelte";
+    import { rbacService } from "$lib/services/rbacService.svelte";
 
     let activeTab = $state<"contacts" | "homes">("contacts");
     let searchQuery = $state("");
+
+    onMount(async () => {
+        await Promise.allSettled([
+            orgaStore.contacts.init(),
+            orgaStore.retirement_homes.init()
+        ]);
+    });
 
     // svelte-ignore non_reactive_update
     let contactModal: ReturnType<typeof ContactModal>;
     // svelte-ignore non_reactive_update
     let homeModal: ReturnType<typeof RetirementHomeModal>;
+    // svelte-ignore non_reactive_update
+    let portalAccessModal: ReturnType<typeof ClientPortalAccessModal>;
 
     // Dynamischer Filter für alle normalen Kontaktpersonen (Angehörige, Betreuer etc.)
     let filteredContacts = $derived.by(() => {
@@ -93,54 +105,60 @@
                 <!-- Desktop Table View -->
                 <div class="hidden md:block overflow-x-auto custom-scrollbar">
                     <table class="w-full text-left border-collapse min-w-150">
-                        <thead class="bg-neutral-50/50 border-b border-neutral-100">
+                        <thead class="bg-slate-100/90 dark:bg-slate-800/90 border-b border-slate-200 dark:border-slate-700">
                             <tr>
-                                <th class="p-4 font-bold text-neutral-500 text-xs uppercase tracking-wider">Name</th>
-                                <th class="p-4 font-bold text-neutral-500 text-xs uppercase tracking-wider">Firma</th>
-                                <th class="p-4 font-bold text-neutral-500 text-xs uppercase tracking-wider">Kontakt</th>
-                                <th class="p-4 font-bold text-neutral-500 text-xs uppercase tracking-wider">Adresse</th>
+                                <th class="p-3.5 sm:p-4 font-bold text-slate-700 dark:text-slate-200 text-xs uppercase tracking-wider">Name</th>
+                                <th class="p-3.5 sm:p-4 font-bold text-slate-700 dark:text-slate-200 text-xs uppercase tracking-wider">Firma</th>
+                                <th class="p-3.5 sm:p-4 font-bold text-slate-700 dark:text-slate-200 text-xs uppercase tracking-wider">Kontakt</th>
+                                <th class="p-3.5 sm:p-4 font-bold text-slate-700 dark:text-slate-200 text-xs uppercase tracking-wider">Adresse</th>
+                                <th class="p-3.5 sm:p-4 font-bold text-slate-700 dark:text-slate-200 text-xs uppercase tracking-wider text-right">Portal</th>
                             </tr>
                         </thead>
-                        <tbody class="divide-y divide-neutral-50">
+                        <tbody class="divide-y divide-slate-100 dark:divide-slate-800/80 bg-white dark:bg-slate-900">
                             {#each filteredContacts as contact (contact.id)}
-                                <tr onclick={() => contactModal?.open(contact)} class="hover:bg-indigo-50 transition-colors group cursor-pointer">
-                                    <td class="p-4">
+                                <tr onclick={() => contactModal?.open(contact)} class="hover:bg-indigo-50/60 dark:hover:bg-slate-800/60 transition-colors group cursor-pointer">
+                                    <td class="p-3.5 sm:p-4">
                                         <div class="flex items-center gap-3">
-                                            <div class="w-9 h-9 rounded-full bg-neutral-100 text-neutral-600 font-bold flex items-center justify-center text-sm shrink-0 shadow-inner">
+                                            <div class="w-9 h-9 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold flex items-center justify-center text-sm shrink-0 shadow-inner">
                                                 {(contact.name_first?.charAt(0) || contact.company_name?.charAt(0) || '?').toUpperCase()}
                                             </div>
                                             <div>
-                                                <p class="font-bold text-neutral-900 group-hover:text-indigo-600 transition-colors">
+                                                <p class="font-bold text-slate-900 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
                                                     {#if contact.name_first || contact.name_last}{contact.name_first} {contact.name_last}{:else if contact.company_name}{contact.company_name}{:else}Unbekannt{/if}
                                                 </p>
                                             </div>
                                         </div>
                                     </td>
-                                    <td class="p-4 text-sm text-neutral-600">
+                                    <td class="p-3.5 sm:p-4 text-sm text-slate-700 dark:text-slate-200 font-medium">
                                         {#if contact.company_name && (contact.name_first || contact.name_last)}
                                             {contact.company_name}
                                         {:else}
                                             -
                                         {/if}
                                     </td>
-                                    <td class="p-4 text-sm text-neutral-600">
+                                    <td class="p-3.5 sm:p-4 text-sm text-slate-700 dark:text-slate-200 font-medium">
                                         {#if contact.phone}
-                                            <div class="flex items-center gap-1.5 truncate"><span class="text-indigo-400">📞</span> {contact.phone}</div>
+                                            <div class="flex items-center gap-1.5 truncate"><span class="text-indigo-500">📞</span> {contact.phone}</div>
                                         {/if}
                                         {#if contact.email}
-                                            <div class="flex items-center gap-1.5 truncate mt-1"><span class="text-emerald-400">✉️</span> {contact.email}</div>
+                                            <div class="flex items-center gap-1.5 truncate mt-1"><span class="text-emerald-500">✉️</span> {contact.email}</div>
                                         {/if}
                                         {#if !contact.phone && !contact.email}
                                             -
                                         {/if}
                                     </td>
-                                    <td class="p-4 text-sm text-neutral-600">
+                                    <td class="p-3.5 sm:p-4 text-sm text-slate-700 dark:text-slate-200 font-medium">
                                         {#if contact.street || contact.city}
                                             <p>{contact.street} {contact.housenr}</p>
-                                            <p>{contact.zip} {contact.city}</p>
+                                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{contact.zip} {contact.city}</p>
                                         {:else}
                                             -
                                         {/if}
+                                    </td>
+                                    <td class="p-3.5 sm:p-4 text-right" onclick={(e) => e.stopPropagation()}>
+                                        <button type="button" onclick={() => portalAccessModal?.open(contact, 'contact')} class="orga-button-ghost py-1.5 px-3 text-xs text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/80 border border-indigo-200 dark:border-indigo-800 inline-flex items-center gap-1.5 shadow-xs font-bold" title="Portal-Zugangskarte für diesen Kontakt öffnen">
+                                            <span>🪪</span> <span class="hidden lg:inline">Portal</span>
+                                        </button>
                                     </td>
                                 </tr>
                             {/each}
@@ -151,7 +169,7 @@
                 <!-- Mobile List View -->
                 <div class="block md:hidden divide-y divide-neutral-100">
                     {#each filteredContacts as contact (contact.id)}
-                        <button type="button" onclick={() => contactModal?.open(contact)} class="w-full text-left p-4 flex flex-col gap-3 hover:bg-neutral-50/50 transition-colors">
+                        <div role="button" tabindex="0" onclick={() => contactModal?.open(contact)} onkeydown={(e) => { if (e.key === 'Enter') contactModal?.open(contact); }} class="w-full text-left p-4 flex flex-col gap-3 hover:bg-neutral-50/50 transition-colors cursor-pointer">
                             <div class="flex items-center justify-between">
                                 <div class="flex items-center gap-3 min-w-0">
                                     <div class="w-10 h-10 rounded-full bg-neutral-100 text-neutral-600 font-bold flex items-center justify-center text-base shrink-0 shadow-inner">
@@ -169,19 +187,24 @@
                                     </div>
                                 </div>
                             </div>
-                            <div class="flex flex-row gap-4 text-xs mt-1 pt-3 border-t border-neutral-100 overflow-hidden">
-                                {#if contact.phone}
-                                    <div class="flex items-center gap-1.5 text-neutral-600 truncate shrink-0">
-                                        <span class="text-indigo-400">📞</span> {contact.phone}
-                                    </div>
-                                {/if}
-                                {#if contact.email}
-                                    <div class="flex items-center gap-1.5 text-neutral-600 truncate">
-                                        <span class="text-emerald-400">✉️</span> {contact.email}
-                                    </div>
-                                {/if}
+                            <div class="flex items-center justify-between gap-3 text-xs mt-1 pt-3 border-t border-neutral-100 overflow-hidden">
+                                <div class="flex flex-row gap-4 overflow-hidden min-w-0">
+                                    {#if contact.phone}
+                                        <div class="flex items-center gap-1.5 text-neutral-600 truncate shrink-0">
+                                            <span class="text-indigo-400">📞</span> {contact.phone}
+                                        </div>
+                                    {/if}
+                                    {#if contact.email}
+                                        <div class="flex items-center gap-1.5 text-neutral-600 truncate">
+                                            <span class="text-emerald-400">✉️</span> {contact.email}
+                                        </div>
+                                    {/if}
+                                </div>
+                                <button type="button" onclick={(e) => { e.stopPropagation(); portalAccessModal?.open(contact, 'contact'); }} class="orga-button-ghost py-1 px-2.5 text-xs text-indigo-700 bg-indigo-50 border border-indigo-200 inline-flex items-center gap-1 font-bold shrink-0 shadow-xs">
+                                    <span>🪪</span> <span>Portal</span>
+                                </button>
                             </div>
-                        </button>
+                        </div>
                     {/each}
                 </div>
             </div>
@@ -315,3 +338,4 @@
 
 <ContactModal bind:this={contactModal} />
 <RetirementHomeModal bind:this={homeModal} />
+<ClientPortalAccessModal bind:this={portalAccessModal} />

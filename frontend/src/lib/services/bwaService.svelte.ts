@@ -227,11 +227,20 @@ export function useBwaService() {
         };
     });
 
+    let forecastUpdateTrigger = $state(0);
+    if (typeof window !== 'undefined') {
+        window.addEventListener('orgaflow-forecast-saved', () => {
+            forecastUpdateTrigger++;
+        });
+    }
+
     let forecastStats = $derived.by(() => {
-        const months = [];
+        // Reaktiver Trigger für gespeicherte KI-Prognosen
+        const _trigger = forecastUpdateTrigger;
+        const timeline = [];
         const now = new Date();
-        let currentYear = selectedYear;
-        let currentMonth = now.getFullYear() === currentYear ? now.getMonth() : -1;
+        const currentRealYear = now.getFullYear();
+        const currentRealMonth = now.getMonth(); // 0..11
 
         let recurringMonthly = 0;
         let recurringQuarterly = 0;
@@ -242,21 +251,101 @@ export function useBwaService() {
             if (e.interval === 'yearly') recurringYearly += e.amount;
         });
 
-        for (let i = 1; i <= 12; i++) {
-            const forecastMonthIndex = (currentMonth + i) % 12;
-            const forecastYear = currentYear + Math.floor((currentMonth + i) / 12);
-            const monthName = new Date(forecastYear, forecastMonthIndex, 1).toLocaleString('de-DE', { month: 'long', year: 'numeric' });
+        const monthsWithRev = stats.monthly.filter(m => m.revenue > 0);
+        const avgMonthlyRev = monthsWithRev.length > 0
+            ? monthsWithRev.reduce((sum, m) => sum + m.revenue, 0) / monthsWithRev.length
+            : 0;
+
+        // 1. Reale Monate des gewählten Jahres bis zum aktuellen Monat (wenn im aktuellen Jahr) oder alle 12 (wenn vergangenes Jahr)
+        const maxRealMonth = selectedYear === currentRealYear ? currentRealMonth : (selectedYear < currentRealYear ? 11 : -1);
+
+        for (let i = 0; i <= maxRealMonth; i++) {
+            const m = stats.monthly[i];
+            if (m) {
+                const totalExp = m.compExpenses + m.appExpenses;
+                const profit = m.revenue - totalExp;
+                timeline.push({
+                    month: new Date(selectedYear, i, 1).toLocaleString('de-DE', { month: 'long', year: 'numeric' }),
+                    monthShort: m.month,
+                    monthIndex: i,
+                    year: selectedYear,
+                    revenue: m.revenue,
+                    revenuePaid: m.revenuePaid || 0,
+                    revenueOpen: m.revenueOpen || 0,
+                    expenses: totalExp,
+                    profit: profit,
+                    isHistorical: true,
+                    isAiProjected: false
+                });
+            }
+        }
+
+        // Gespeicherte KI-Prognose für dieses Jahr auslesen
+        let aiMonthsMap: Record<number, any> = {};
+        if (typeof localStorage !== 'undefined') {
+            try {
+                const uId = pb.authStore.model?.id || 'global';
+                const cached = localStorage.getItem(`orgaflow_ai_forecast_${uId}_${selectedYear}`);
+                if (cached) {
+                    const parsed = JSON.parse(cached);
+                    if (parsed?.data?.forecast_months) {
+                        parsed.data.forecast_months.forEach((fm: any, idx: number) => {
+                            aiMonthsMap[idx] = fm;
+                        });
+                    }
+                }
+            } catch {}
+        }
+
+        // 2. Prognosemonate für die nächsten 12 Monate anschließen
+        const startOffset = selectedYear === currentRealYear ? currentRealMonth + 1 : (selectedYear > currentRealYear ? 0 : 12);
+        const countForecast = 12;
+
+        for (let i = 0; i < countForecast; i++) {
+            const absMonth = startOffset + i;
+            const forecastMonthIndex = absMonth % 12;
+            const forecastYear = selectedYear + Math.floor(absMonth / 12);
+            const d = new Date(forecastYear, forecastMonthIndex, 1);
+            const monthName = d.toLocaleString('de-DE', { month: 'long', year: 'numeric' });
+            const monthShort = d.toLocaleString('de-DE', { month: 'short' });
 
             let projectedCompExpenses = recurringMonthly;
             if ((forecastMonthIndex + 1) % 3 === 1) projectedCompExpenses += recurringQuarterly;
             if (forecastMonthIndex === 0) projectedCompExpenses += recurringYearly;
-            
-            const projectedRevenue = 0; // Umsatz ist nicht verlässlich prognostizierbar
+
+            let projectedRevenue = avgMonthlyRev;
+            let keyDrivers = '';
+            let confidenceScore = 85;
+
+            // Wenn KI-Prognosedaten vorliegen: die präzise spekulierten Werte übernehmen
+            const aiMonth = aiMonthsMap[i];
+            if (aiMonth) {
+                projectedRevenue = Number(aiMonth.bwaRevenue) || projectedRevenue;
+                projectedCompExpenses = Number(aiMonth.bwaExpenses) || projectedCompExpenses;
+                keyDrivers = aiMonth.key_drivers || '';
+                confidenceScore = Number(aiMonth.confidence_score) || 90;
+            }
+
             const projectedProfit = projectedRevenue - projectedCompExpenses;
 
-            months.push({ month: monthName, revenue: projectedRevenue, expenses: projectedCompExpenses, profit: projectedProfit });
+            timeline.push({
+                month: monthName,
+                monthShort: monthShort,
+                monthIndex: forecastMonthIndex,
+                year: forecastYear,
+                revenue: projectedRevenue,
+                revenuePaid: projectedRevenue,
+                revenueOpen: 0,
+                expenses: projectedCompExpenses,
+                profit: projectedProfit,
+                isHistorical: false,
+                isAiProjected: !!aiMonth,
+                keyDrivers,
+                confidenceScore
+            });
         }
-        return months;
+
+        return timeline;
     });
 
     return {
@@ -267,8 +356,131 @@ export function useBwaService() {
         get companyExpenses() { return companyExpenses; },
         get isLoadingExpenses() { return isLoadingExpenses; },
         get forecastStats() { return forecastStats; },
+        get timelineStats() { return forecastStats; },
         loadExpenses,
         addExpense,
         deleteExpense
+    };
+}
+
+/**
+ * Errechnet alle relevanten und realen Steuerabgaben:
+ * - Gewerbesteuer (GewSt mit Freibetrag 24.500 €, Messzahl 3,5 %, Hebesatz 400 %)
+ * - Einkommensteuer (ESt nach § 32a EStG Einkommensteuertarif)
+ * - § 35 EStG Gewerbesteuer-Anrechnung (Ermäßigung bis 4,0-fache des GewSt-Messbetrags)
+ * - Solidaritätszuschlag (5,5 % mit bundesweiter Freigrenze)
+ * - Umsatzsteuer-Zahllast (Vereinnahmte USt abzüglich abziehbarer Vorsteuer für UStVA)
+ * - Betriebliche Steuern (Kfz-Steuer, Grundsteuer etc.)
+ * - Reingewinn nach Steuern & verbleibende Netto-Liquidität
+ */
+export function calculateTaxEstimate(
+    profit: number, 
+    viewMode: 'monthly' | 'quarterly' | 'yearly' = 'monthly',
+    umsatzsteuer: number = 0,
+    vorsteuer: number = 0,
+    operatingTaxes: number = 0
+) {
+    const factor = viewMode === 'monthly' ? 12 : (viewMode === 'quarterly' ? 4 : 1);
+    const safeProfit = profit || 0;
+    const ust = umsatzsteuer || 0;
+    const vst = vorsteuer || 0;
+    const opTaxes = operatingTaxes || 0;
+    const ustZahllast = ust - vst;
+
+    if (safeProfit <= 0) {
+        return {
+            profit: safeProfit,
+            factor,
+            gewerbeErtrag: 0,
+            gewStFreibetrag: Math.round(24500 / factor),
+            gewStMessbetrag: 0,
+            gewerbesteuer: 0,
+            rawESt: 0,
+            gewStAnrechnung: 0,
+            einkommensteuer: 0,
+            soli: 0,
+            totalTaxes: 0,
+            ertragsteuern: 0,
+            effectiveRate: 0,
+            netAfterTaxes: safeProfit,
+            umsatzsteuer: ust,
+            vorsteuer: vst,
+            ustZahllast,
+            isUStErstattung: ustZahllast < 0,
+            operatingTaxes: opTaxes,
+            gesamteAbgaben: Math.max(0, ustZahllast) + opTaxes,
+            liquiditaetNachAllenAbgaben: safeProfit - Math.max(0, ustZahllast)
+        };
+    }
+
+    const annualProfit = safeProfit * factor;
+
+    // 1. Gewerbesteuer: Freibetrag 24.500 € (für Einzelunternehmen / Personengesellschaften), Messzahl 3,5%, Hebesatz 400%
+    const gewerbeErtrag = Math.max(0, annualProfit - 24500);
+    const annualMessbetrag = gewerbeErtrag * 0.035;
+    const annualGewSt = annualMessbetrag * 4.0;
+    const gewerbesteuer = Math.round(annualGewSt / factor);
+
+    // 2. Einkommensteuer: Grundfreibetrag ~11.784 €, Einkommensteuertarif (§ 32a EStG)
+    let rawAnnualESt = 0;
+    const zvE = annualProfit;
+
+    if (zvE <= 11784) {
+        rawAnnualESt = 0;
+    } else if (zvE <= 17005) {
+        const y = (zvE - 11784) / 10000;
+        rawAnnualESt = (995.21 * y + 1400) * y;
+    } else if (zvE <= 66760) {
+        const z = (zvE - 17005) / 10000;
+        rawAnnualESt = (208.85 * z + 2397) * z + 1015.51;
+    } else if (zvE <= 277825) {
+        rawAnnualESt = 0.42 * zvE - 10636.31;
+    } else {
+        rawAnnualESt = 0.45 * zvE - 18971.06;
+    }
+
+    // § 35 EStG: Gewerbesteuer-Anrechnung auf die Einkommensteuer (bis zum 4,0-fachen des Messbetrags)
+    const annualGewStAnrechnung = Math.min(rawAnnualESt, annualMessbetrag * 4.0);
+    const annualESt = Math.max(0, rawAnnualESt - annualGewStAnrechnung);
+    const einkommensteuer = Math.round(annualESt / factor);
+
+    // Solidaritätszuschlag (5,5%, Freigrenze ab ca. 18.130 € ESt)
+    const annualSoli = annualESt > 18130 ? (annualESt * 0.055) : 0;
+    const soli = Math.round(annualSoli / factor);
+
+    const ertragsteuern = gewerbesteuer + einkommensteuer + soli;
+    const effectiveRate = safeProfit > 0 ? (ertragsteuern / safeProfit) * 100 : 0;
+    const netAfterTaxes = safeProfit - ertragsteuern;
+    const gesamteAbgaben = ertragsteuern + Math.max(0, ustZahllast) + opTaxes;
+    const liquiditaetNachAllenAbgaben = safeProfit - ertragsteuern - Math.max(0, ustZahllast);
+
+    return {
+        profit: safeProfit,
+        factor,
+        // Gewerbesteuer
+        gewerbeErtrag: Math.round(gewerbeErtrag / factor),
+        gewStFreibetrag: Math.round(24500 / factor),
+        gewStMessbetrag: Math.round(annualMessbetrag / factor),
+        gewerbesteuer,
+        // Einkommensteuer
+        rawESt: Math.round(rawAnnualESt / factor),
+        gewStAnrechnung: Math.round(annualGewStAnrechnung / factor),
+        einkommensteuer,
+        // Soli
+        soli,
+        // Summe Ertragssteuern
+        totalTaxes: ertragsteuern,
+        ertragsteuern,
+        effectiveRate,
+        netAfterTaxes,
+        // Umsatzsteuer & Zahllast
+        umsatzsteuer: ust,
+        vorsteuer: vst,
+        ustZahllast,
+        isUStErstattung: ustZahllast < 0,
+        operatingTaxes: opTaxes,
+        // Gesamte Abgaben & verbleibende Liquidität
+        gesamteAbgaben,
+        liquiditaetNachAllenAbgaben
     };
 }

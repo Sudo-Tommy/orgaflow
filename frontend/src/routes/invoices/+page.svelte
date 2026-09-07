@@ -17,11 +17,21 @@
     
     import type { InvoicePayload, SyncAction } from "$lib/utils/invoice";
     import { getPdfUrl } from "$lib/utils/invoiceHelpers";
+    import { rbacService } from "$lib/services/rbacService.svelte";
+    import { goto } from "$app/navigation";
+    import { syncInvoicePaymentToAccounting, syncInvoiceCancellationToAccounting } from "$lib/services/invoiceAccountingService";
     // @ts-ignore
     import { Plus, Mail, RefreshCw, Trash2, Search, Hourglass, Inbox } from "lucide-svelte";
 
     const invoicesStore = orgaStore.invoices;
     const filterService = useInvoiceFilter(() => invoicesStore?.data || []);
+
+    $effect(() => {
+        if (!rbacService.canAccessFinances) {
+            toastStore.warning("Keine Berechtigung für Rechnungsdaten.");
+            goto('/dashboard');
+        }
+    });
 
     // --- 2. Offline-First & Optimistic UI: Sync Queue ---
     let syncQueue = $state<SyncAction[]>([]);
@@ -114,10 +124,61 @@
         try {
             await pb.collection('invoices').update(id, payload);
             toastStore.success("Status erfolgreich aktualisiert.");
+
+            // Automatische Verbuchung als Einnahme im Haushaltsbuch wenn Status 'Abgeschlossen' (Bezahlt)
+            if (newStatus === 'Abgeschlossen') {
+                const targetInvoice = orgaStore.invoices?.data.find((i: any) => i.id === id);
+                if (targetInvoice) {
+                    await syncInvoicePaymentToAccounting(targetInvoice, paidAtDate);
+                }
+            } else if (newStatus === 'Storniert') {
+                const targetInvoice = orgaStore.invoices?.data.find((i: any) => i.id === id);
+                if (targetInvoice) {
+                    await syncInvoiceCancellationToAccounting(id, targetInvoice.invoice_nr);
+                }
+            }
         } catch (err) {
             console.error("Fehler beim Status-Update (Offline?):", err);
             toastStore.info("Offline: Status-Änderung in der Sync-Queue gespeichert.");
             syncQueue.push({ id, action: 'updateStatus', payload, timestamp: Date.now() });
+        }
+    }
+
+    async function cancelInvoice(id: string) {
+        const invoice = orgaStore.invoices?.data.find((i: any) => i.id === id);
+        if (!invoice) return;
+
+        const confirmation = await confirmStore.ask(
+            "Möchten Sie diese Rechnung wirklich stornieren? Der Status wird auf 'Storniert' gesetzt und es wird versucht, eine Stornorechnung zu generieren.",
+            "Rechnung stornieren?",
+            "Ja, stornieren",
+            "Abbrechen",
+            true
+        );
+
+        if (!confirmation) return;
+
+        try {
+            await performStatusUpdate(id, 'Storniert', null);
+            await syncInvoiceCancellationToAccounting(invoice.id, invoice.invoice_nr);
+
+            const stornoTemplate = orgaStore.document_templates?.data.find(
+                (t: any) => (t.name?.toLowerCase().includes('storno') || t.type?.toLowerCase().includes('storno'))
+            );
+
+            if (stornoTemplate) {
+                generatorModal?.open(
+                    stornoTemplate.id, 
+                    1, 
+                    Array.isArray(invoice.client) ? invoice.client[0] : invoice.client, 
+                    invoice.id
+                );
+                toastStore.info("Storno-Dokument wird erstellt...");
+            } else {
+                toastStore.warning("Rechnung storniert, aber es wurde keine Vorlage für 'Storno' gefunden.");
+            }
+        } catch (err) {
+            toastStore.error("Ein Fehler ist beim Stornieren aufgetreten.");
         }
     }
 
@@ -217,22 +278,24 @@
             <p class="orga-page-subtitle hidden sm:block">Verwalten Sie hier alle generierten Rechnungen, Einnahmen und deren Status.</p>
         </div>
         
-        <!-- Desktop Actions (Hidden on Mobile) -->
-        <div class="hidden md:flex items-center gap-2">
+        <!-- Actions: Desktop & Mobile Header Button -->
+        <div class="flex items-center gap-2">
             {#if selectedInvoiceIds.length > 0}
-                <button aria-label="Ausgewählte senden" onclick={() => emailModal?.open(selectedInvoices)} class="orga-button-primary bg-blue-600 hover:bg-blue-700 shadow-blue-600/20 py-2 px-4 min-h-12 text-sm flex items-center gap-1.5 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none">
-                    <Mail class="w-4 h-4" /> Senden ({selectedInvoiceIds.length})
-                </button>
-                <button aria-label="Layout neu generieren" onclick={() => generatorModal?.openForRegenerate(selectedInvoices)} class="orga-button-ghost bg-amber-50 text-amber-700 hover:bg-amber-100 border-amber-200 py-2 px-4 min-h-12 text-sm flex items-center gap-1.5 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none">
-                    <RefreshCw class="w-4 h-4" /> Refresh ({selectedInvoiceIds.length})
-                </button>
-                <button aria-label="Ausgewählte löschen" onclick={deleteSelected} class="orga-button-ghost bg-rose-50 text-rose-700 hover:bg-rose-100 border-rose-200 py-2 px-4 min-h-12 text-sm flex items-center gap-1.5 focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:outline-none">
-                    <Trash2 class="w-4 h-4" /> Löschen ({selectedInvoiceIds.length})
-                </button>
+                <div class="hidden md:flex items-center gap-2">
+                    <button aria-label="Ausgewählte senden" onclick={() => emailModal?.open(selectedInvoices)} class="orga-button-primary bg-blue-600 hover:bg-blue-700 shadow-blue-600/20 py-2 px-4 min-h-12 text-sm flex items-center gap-1.5 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none">
+                        <Mail class="w-4 h-4" /> Senden ({selectedInvoiceIds.length})
+                    </button>
+                    <button aria-label="Layout neu generieren" onclick={() => generatorModal?.openForRegenerate(selectedInvoices)} class="orga-button-ghost bg-amber-50 text-amber-700 hover:bg-amber-100 border-amber-200 py-2 px-4 min-h-12 text-sm flex items-center gap-1.5 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none">
+                        <RefreshCw class="w-4 h-4" /> Refresh ({selectedInvoiceIds.length})
+                    </button>
+                    <button aria-label="Ausgewählte löschen" onclick={deleteSelected} class="orga-button-ghost bg-rose-50 text-rose-700 hover:bg-rose-100 border-rose-200 py-2 px-4 min-h-12 text-sm flex items-center gap-1.5 focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:outline-none">
+                        <Trash2 class="w-4 h-4" /> Löschen ({selectedInvoiceIds.length})
+                    </button>
+                    <div class="w-px h-8 bg-neutral-200 mx-2" aria-hidden="true"></div>
+                </div>
             {/if}
-            <div class="w-px h-8 bg-neutral-200 mx-2" aria-hidden="true"></div>
-            <button aria-label="Neue Rechnung erstellen" onclick={openGenerator} class="orga-button-primary py-2 px-6 min-h-12 text-sm font-bold flex items-center gap-1.5 shadow-indigo-600/30 focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:outline-none">
-                <Plus class="w-4 h-4" /> Neue Rechnung
+            <button aria-label="Neue Rechnung erstellen" onclick={openGenerator} class="orga-button-primary py-2 px-4 sm:px-6 min-h-11 sm:min-h-12 text-sm font-bold flex items-center gap-1.5 shadow-indigo-600/30 focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:outline-none shrink-0">
+                <Plus class="w-4 h-4 sm:w-5 sm:h-5" /> <span>Neue Rechnung</span>
             </button>
         </div>
     </div>
@@ -316,6 +379,7 @@
     onEmail={(inv, isMahnung, mLevel) => emailModal?.open(inv, 'pdf', isMahnung, mLevel)}
     onRegenerate={(invs) => generatorModal?.openForRegenerate(invs)}
     onDelete={deleteInvoice}
+    onCancel={cancelInvoice}
 />
 
 <DocumentGeneratorModal bind:this={generatorModal} />

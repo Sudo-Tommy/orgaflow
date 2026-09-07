@@ -3,7 +3,26 @@ import { pb } from "$lib/services/pocketbase";
 export function useRequestAdmin() {
     let requests = $state<any[]>([]);
     let isLoading = $state(false);
-    let subscriptionCallback: ((e: any) => void) | null = null;
+    let subAppReqCallback: ((e: any) => void) | null = null;
+    let subInqCallback: ((e: any) => void) | null = null;
+
+    function normalizeInquiry(i: any) {
+        const isConverted = i.status === 'converted';
+        const isRejected = i.status === 'rejected';
+        return {
+            ...i,
+            _collection: 'inquiries',
+            sender_name: i.sender_name || 'Online-Anfrage',
+            email: i.sender_email || i.email || '',
+            phone: i.sender_phone || i.phone || '',
+            street: i.sender_address || i.street || '',
+            request_text: i.raw_text || i.request_text || '',
+            ai_summary: i.summary || i.ai_summary || '',
+            contact_method: 'Web-Anfrage',
+            status: isConverted ? 'accepted' : (isRejected ? 'denied' : 'requested'),
+            rawStatus: i.status
+        };
+    }
 
     async function init() {
         isLoading = true;
@@ -20,27 +39,55 @@ export function useRequestAdmin() {
             // Filter String bauen (Superadmins sehen alles, andere nur ihre Firma)
             let filterStr = (!isSuper && userCompanyId) ? `company ~ "${userCompanyId}"` : '';
 
-            const res = await pb.collection('appointment_requests').getList(1, 50, {
-                sort: '-created',
-                filter: filterStr,
-                requestKey: null
-            });
-            requests = res.items;
+            // Beide Quellen parallel abrufen: appointment_requests und inquiries
+            const [appReqRes, inqRes] = await Promise.allSettled([
+                pb.collection('appointment_requests').getList(1, 50, {
+                    sort: '-created',
+                    filter: filterStr,
+                    requestKey: null
+                }),
+                pb.collection('inquiries').getList(1, 50, {
+                    sort: '-created',
+                    requestKey: null
+                })
+            ]);
 
-            subscriptionCallback = (e: any) => {
+            const appItems = appReqRes.status === 'fulfilled' ? appReqRes.value.items.map(r => ({ ...r, _collection: 'appointment_requests' })) : [];
+            const inqItems = inqRes.status === 'fulfilled' ? inqRes.value.items.map(normalizeInquiry) : [];
+
+            // Zusammenführen und absteigend nach Erstellungsdatum sortieren
+            requests = [...appItems, ...inqItems].sort((a, b) => new Date(b.created).getTime() - new Date(a.created).getTime());
+
+            // 1. Realtime-Abo für appointment_requests
+            subAppReqCallback = (e: any) => {
+                const rec = { ...e.record, _collection: 'appointment_requests' };
                 if (e.action === 'create') {
-                    requests = [e.record, ...requests];
+                    requests = [rec, ...requests];
                 } else if (e.action === 'update') {
                     const idx = requests.findIndex(r => r.id === e.record.id);
-                    if (idx !== -1) requests[idx] = e.record;
+                    if (idx !== -1) requests[idx] = rec;
                 } else if (e.action === 'delete') {
                     requests = requests.filter(r => r.id !== e.record.id);
                 }
             };
-
-            pb.collection('appointment_requests').subscribe('*', subscriptionCallback, {
-                filter: filterStr, requestKey: null // Realtime-Updates auch filtern und nicht auto-cancelln!
+            pb.collection('appointment_requests').subscribe('*', subAppReqCallback, {
+                filter: filterStr, requestKey: null
             });
+
+            // 2. Realtime-Abo für inquiries
+            subInqCallback = (e: any) => {
+                const rec = normalizeInquiry(e.record);
+                if (e.action === 'create') {
+                    requests = [rec, ...requests];
+                } else if (e.action === 'update') {
+                    const idx = requests.findIndex(r => r.id === e.record.id);
+                    if (idx !== -1) requests[idx] = rec;
+                } else if (e.action === 'delete') {
+                    requests = requests.filter(r => r.id !== e.record.id);
+                }
+            };
+            pb.collection('inquiries').subscribe('*', subInqCallback, { requestKey: null });
+
         } catch(e) {
             console.error("Fehler beim Laden der Anfragen:", e);
         } finally {
@@ -49,17 +96,37 @@ export function useRequestAdmin() {
     }
 
     function cleanup() {
-        if (subscriptionCallback) {
+        if (subAppReqCallback) {
             pb.collection('appointment_requests').unsubscribe('*');
+            subAppReqCallback = null;
+        }
+        if (subInqCallback) {
+            pb.collection('inquiries').unsubscribe('*');
+            subInqCallback = null;
         }
     }
 
     async function updateStatus(id: string, status: 'requested' | 'accepted' | 'denied') {
-        await pb.collection('appointment_requests').update(id, { status });
+        const item = requests.find(r => r.id === id);
+        if (item?._collection === 'inquiries') {
+            const mapped = status === 'accepted' ? 'converted' : (status === 'denied' ? 'rejected' : 'new');
+            await pb.collection('inquiries').update(id, { status: mapped }, { requestKey: null });
+            item.status = status;
+            item.rawStatus = mapped;
+        } else {
+            await pb.collection('appointment_requests').update(id, { status }, { requestKey: null });
+            if (item) item.status = status;
+        }
     }
 
     async function deleteReq(id: string) {
-        await pb.collection('appointment_requests').delete(id);
+        const item = requests.find(r => r.id === id);
+        if (item?._collection === 'inquiries') {
+            await pb.collection('inquiries').delete(id);
+        } else {
+            await pb.collection('appointment_requests').delete(id);
+        }
+        requests = requests.filter(r => r.id !== id);
     }
 
     return {

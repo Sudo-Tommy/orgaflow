@@ -10,7 +10,7 @@ import type { RecordModel } from 'pocketbase';
  */
 
 export interface MailConfig extends RecordModel {
-  company: string;
+  user: string;
   smtp_host: string;
   smtp_port: number;
   smtp_user: string;
@@ -61,15 +61,10 @@ export function createMailConfigService() {
           throw new Error('User not authenticated');
         }
 
-        // Ermittelt die Firma des Nutzers
-        let companyId = '';
-        if (authData.company) {
-            companyId = Array.isArray(authData.company) ? authData.company[0] : authData.company;
-        }
-        if (!companyId) return null; // Keine Firma zugewiesen
-
+        // Lade die Konfiguration für den aktuell angemeldeten Nutzer
+        const userId = authData.id;
         const records = await pb.collection('userMailConfigs').getFullList<MailConfig>({
-          filter: `company = "${companyId}"`,
+          filter: `user = "${userId}"`,
           requestKey: null
         });
 
@@ -97,30 +92,27 @@ export function createMailConfigService() {
           throw new Error('User not authenticated');
         }
 
-        let companyId = '';
-        if (authData.company) {
-            companyId = Array.isArray(authData.company) ? authData.company[0] : authData.company;
-        }
-        if (!companyId) {
-            throw new Error('Keine Firma zugewiesen. E-Mail-Einstellungen erfordern eine Unternehmenszuordnung.');
-        }
-
+        const userId = authData.id;
         // Validate input
         const validation = this.validateConfig(input);
         if (!validation.valid) {
           throw new Error(validation.errors.join(', '));
         }
 
-        // Prepare data (password will be handled server-side)
         const formData = new FormData();
-        formData.append('company', companyId);
+        formData.append('user', userId);
         formData.append('smtp_host', input.smtp_host);
         formData.append('smtp_port', input.smtp_port.toString());
         formData.append('smtp_user', input.smtp_user);
-        formData.append('smtp_password', input.smtp_password); // Server will encrypt
         formData.append('imap_host', input.imap_host);
         formData.append('imap_port', input.imap_port.toString());
         formData.append('email_address', input.email_address);
+
+        // Nur wenn ein NEUES Passwort eingegeben wurde, wird es mitgesendet.
+        // Ansonsten behält PocketBase das alte, verschlüsselte Passwort.
+        if (input.smtp_password) {
+            formData.append('smtp_password', input.smtp_password);
+        }
 
         if (currentConfig?.id) {
           // Update existing
@@ -172,7 +164,10 @@ export function createMailConfigService() {
         errors.push('SMTP Port muss zwischen 1 und 65535 liegen');
       }
       if (!input.smtp_user) errors.push('SMTP Benutzer ist erforderlich');
-      if (!input.smtp_password) errors.push('SMTP Passwort ist erforderlich');
+      // Das Passwort ist nur bei der ERSTEN Erstellung zwingend erforderlich.
+      // Beim Bearbeiten kann es leer gelassen werden, um das alte zu behalten.
+      const isEditing = !!this.config?.id;
+      if (!input.smtp_password && !isEditing) errors.push('SMTP Passwort ist erforderlich');
       if (!input.imap_host) errors.push('IMAP Host ist erforderlich');
       if (!input.imap_port || input.imap_port < 1 || input.imap_port > 65535) {
         errors.push('IMAP Port muss zwischen 1 und 65535 liegen');
@@ -214,7 +209,4 @@ export function getMailConfigService() {
     mailConfigService = createMailConfigService();
   }
   return mailConfigService;
-}
-function $state<T>(arg0: T): T {
-  throw new Error('Function not implemented.');
 }

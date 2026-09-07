@@ -6,8 +6,18 @@
     import CompanyBankCard from "$lib/components/company/CompanyBankCard.svelte";
     import { pb } from "$lib/services/pocketbase";
     import { onMount } from "svelte";
+    import { rbacService } from "$lib/services/rbacService.svelte";
+    import { toastStore } from "$lib/services/toastService.svelte";
+    import { goto } from "$app/navigation";
 
     const companyService = useCompanyService();
+
+    $effect(() => {
+        if (!rbacService.isAdmin) {
+            toastStore.warning("Keine Berechtigung für Firmendaten.");
+            goto('/dashboard');
+        }
+    });
 
     // pb.authStore ist nicht nativ reaktiv in Svelte. Wir zwingen Svelte zum Update!
     let user = $state(pb.authStore.record || pb.authStore.model);

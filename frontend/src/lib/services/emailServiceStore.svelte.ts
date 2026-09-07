@@ -1,7 +1,7 @@
 import { pb } from './pocketbase';
 import type { RecordModel } from 'pocketbase';
 import { fetchInbox, MICROSERVICE_URL, markEmailAsRead as markImapRead } from './emailService';
-import { getMailboxService } from './mailboxService.svelte';
+import { getMailboxService } from './mailboxServiceStore.svelte';
 
 /**
  * Email Service

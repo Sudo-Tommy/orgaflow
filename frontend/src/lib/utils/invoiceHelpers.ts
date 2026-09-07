@@ -6,14 +6,19 @@ export function getClient(record: InvoicePayload) {
 }
 
 export function getPdfUrl(record: InvoicePayload, index: number, pbInstance: any) {
-    if (!record.pdf || record.pdf.length === 0) return null;
+    if (!record.pdf || (Array.isArray(record.pdf) && record.pdf.length === 0)) return null;
+    let url: string | null = null;
     if (Array.isArray(record.pdf)) {
         if (index < record.pdf.length) {
-            return pbInstance.files.getURL(record, record.pdf[index]);
+            url = pbInstance.files.getURL(record, record.pdf[index]);
         }
-        return null;
+    } else {
+        url = index === 0 ? pbInstance.files.getURL(record, record.pdf) : null;
     }
-    return index === 0 ? pbInstance.files.getURL(record, record.pdf) : null;
+    if (url && pbInstance?.authStore?.token) {
+        url += (url.includes('?') ? '&' : '?') + 'token=' + pbInstance.authStore.token;
+    }
+    return url;
 }
 
 export function getStatusClass(status: string) {

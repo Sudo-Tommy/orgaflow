@@ -1,5 +1,7 @@
 <script lang="ts">
     import { onMount } from 'svelte';
+    import { toastStore } from '$lib/services/toastService.svelte';
+    import PdfPreviewModal from '$lib/components/PdfPreviewModal.svelte';
     
     type ElementType = 'text' | 'box' | 'image';
     interface FlyerElement {
@@ -68,13 +70,19 @@
         ];
     }
 
-    let sheets = $state<Sheet[]>(getDefaultSheets());
+    let { sheets = $bindable(getDefaultSheets()) }: { sheets?: Sheet[] } = $props();
+    if (!sheets || sheets.length === 0) {
+        sheets = getDefaultSheets();
+    }
     let isLoaded = $state(false);
 
     let activeSheetIndex = $state(0);
     let selectedElementId = $state<string | null>(null);
     let isFullscreen = $state(false);
     let zoom = $state(0.7);
+    let isDownloadingPdf = $state(false);
+    let isLoadingPreview = $state(false);
+    let flyerPreviewModal = $state<ReturnType<typeof PdfPreviewModal>>();
     
     // Drag & Drop State
     let isDragging = false;
@@ -83,17 +91,23 @@
     let initX = 0;
     let initY = 0;
     
-    let activeSheet = $derived(sheets[activeSheetIndex]);
-    let selectedElementIndex = $derived(activeSheet.elements.findIndex(e => e.id === selectedElementId));
+    let activeSheet = $derived(sheets?.[activeSheetIndex] || getDefaultSheets()[0]);
+    let selectedElementIndex = $derived(activeSheet?.elements ? activeSheet.elements.findIndex(e => e.id === selectedElementId) : -1);
 
     onMount(() => {
         const stored = localStorage.getItem(STORAGE_KEY);
         if (stored) {
             try {
-                sheets = JSON.parse(stored);
+                const parsed = JSON.parse(stored);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    sheets = parsed;
+                }
             } catch (e) {
                 console.error("Gespeicherter Flyer konnte nicht geladen werden.", e);
             }
+        }
+        if (!sheets || sheets.length === 0) {
+            sheets = getDefaultSheets();
         }
         isLoaded = true;
     });
@@ -161,47 +175,116 @@
         }
     }
 
+    function getMarketingPdfUrl(): string {
+        const isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+        return isLocal ? 'http://localhost:3000/api/emails/generate-marketing-pdf' : '/api/emails/generate-marketing-pdf';
+    }
+
+    async function requestMarketingPdf(payload: any): Promise<Response> {
+        const primaryUrl = getMarketingPdfUrl();
+        try {
+            const res = await fetch(primaryUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (res.ok) return res;
+            console.warn(`Primary PDF endpoint ${primaryUrl} returned status ${res.status}, trying fallback...`);
+        } catch (e) {
+            console.warn(`Primary PDF endpoint ${primaryUrl} failed, trying fallback...`, e);
+        }
+        return fetch('/api/generate-marketing-pdf', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+    }
+
+    async function downloadFlyerPdf() {
+        isDownloadingPdf = true;
+        try {
+            const res = await requestMarketingPdf({ format: 'flyer', sheets });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.error || "Fehler bei der PDF-Generierung.");
+            }
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'Flyer-Seniorenassistenz-Wickelfalz.pdf';
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => {
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }, 100);
+            toastStore.success("Flyer-PDF erfolgreich heruntergeladen!");
+        } catch (e: any) {
+            console.error("Flyer PDF Fehler:", e);
+            toastStore.error("PDF-Download des Flyers fehlgeschlagen.");
+        } finally {
+            isDownloadingPdf = false;
+        }
+    }
+
+    async function openFlyerPreview() {
+        isLoadingPreview = true;
+        try {
+            const res = await requestMarketingPdf({ format: 'flyer', sheets });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.error || "Fehler bei der PDF-Generierung.");
+            }
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            flyerPreviewModal?.open(url, "Flyer 6-Seiter (Wickelfalz)", "Flyer-Seniorenassistenz-Wickelfalz.pdf");
+        } catch (e: any) {
+            console.error("Flyer Vorschau Fehler:", e);
+            toastStore.error("Vorschau konnte nicht geladen werden.");
+        } finally {
+            isLoadingPreview = false;
+        }
+    }
+
     function printFlyer() {
         selectedElementId = null;
-        
-        setTimeout(() => {
-            const printContent = document.getElementById('flyer-print-content');
-            if (printContent) {
-                const clonedNode = printContent.cloneNode(true) as HTMLElement;
-                clonedNode.classList.remove('hidden');
-                clonedNode.style.display = 'block';
-                
-                const printContainer = document.createElement('div');
-                printContainer.id = 'print-container';
-                printContainer.appendChild(clonedNode);
-                
-                const oldContainer = document.getElementById('print-container');
-                if (oldContainer) oldContainer.remove();
-                
-                document.body.appendChild(printContainer);
-                
-                window.print();
-                
-                setTimeout(() => {
-                    printContainer.remove();
-                }, 500);
+        const styleId = 'dynamic-flyer-print-style';
+        let styleEl = document.getElementById(styleId);
+        if (!styleEl) {
+            styleEl = document.createElement('style');
+            styleEl.id = styleId;
+            document.head.appendChild(styleEl);
+        }
+        styleEl.textContent = `
+            @page { size: A4 landscape; margin: 0; }
+            @media print {
+                body { margin: 0 !important; padding: 0 !important; background: white !important; }
             }
-        }, 100);
+        `;
+        window.print();
     }
 </script>
 
 <!-- svelte-ignore css_unused_selector -->
 <style>
     @media print {
-        @page { size: A4 landscape; margin: 0; padding: 0; }
-        body { margin: 0; padding: 0; background: white; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-        :global(body > div:not(#print-container)) { display: none !important; }
-        :global(#print-container) { display: block !important; margin: 0; padding: 0; width: 100%; background: white; }
+        :global(.flyer-print-sheet) {
+            width: 297mm !important;
+            height: 210mm !important;
+            page-break-after: always !important;
+            break-after: page !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            overflow: hidden !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+        }
     }
 </style>
 
 <!-- Root Container: Vollbild-Modus wenn aktiviert -->
-<div id="print-root-layer" class="flex overflow-hidden bg-neutral-200 {isFullscreen ? 'fixed inset-0 z-9999' : 'relative w-full h-full'}">
+<div id="print-root-layer" class="print:hidden flex overflow-hidden bg-neutral-200 {isFullscreen ? 'fixed inset-0 z-9999' : 'relative w-full h-[850px] rounded-2xl shadow-inner'}">
     
     <!-- Linke Toolbar (Werkzeuge & Bogen-Wechsel) -->
     <div class="w-16 sm:w-20 bg-neutral-900 flex flex-col items-center py-6 gap-6 no-print shrink-0 z-20 shadow-2xl">
@@ -220,7 +303,17 @@
             <button onclick={() => isFullscreen = !isFullscreen} title={isFullscreen ? 'Fenster-Modus' : 'Vollbild-Modus'} class="w-full aspect-square bg-neutral-800 hover:bg-neutral-700 text-white rounded-xl flex items-center justify-center transition-colors">
                 <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d={isFullscreen ? "M6 18L18 6M6 6l12 12" : "M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"} /></svg>
             </button>
-            <button onclick={printFlyer} title="Als PDF speichern / Drucken" class="w-full aspect-square bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl flex items-center justify-center transition-colors shadow-lg">
+            <button onclick={openFlyerPreview} disabled={isLoadingPreview} title="PDF-Druckvorschau öffnen" class="w-full aspect-square bg-sky-600 hover:bg-sky-500 text-white rounded-xl flex items-center justify-center transition-colors shadow-lg {isLoadingPreview ? 'opacity-50 cursor-wait' : ''}">
+                {#if isLoadingPreview}
+                    <div class="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                {:else}
+                    <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                {/if}
+            </button>
+            <button onclick={downloadFlyerPdf} disabled={isDownloadingPdf} title="Als echte PDF-Datei herunterladen" class="w-full aspect-square bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl flex items-center justify-center transition-colors shadow-lg {isDownloadingPdf ? 'opacity-50 cursor-wait' : ''}">
+                <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+            </button>
+            <button onclick={printFlyer} title="Druckansicht / Drucken" class="w-full aspect-square bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl flex items-center justify-center transition-colors shadow-lg">
                 <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
             </button>
             <button onclick={resetToDefault} title="Flyer auf Standard zurücksetzen" class="w-full aspect-square bg-rose-600 hover:bg-rose-500 text-white rounded-xl flex items-center justify-center transition-colors shadow-lg mt-2">
@@ -375,11 +468,11 @@
     {/if}
 </div>
 
-<!-- Spezielle, unsichtbare Render-Ebene NUR für den Drucker -->
-<!-- Hier rendern wir strikt beide Bögen nacheinander in 100% Skalierung -->
-<div id="flyer-print-content" class="hidden">
+<!-- Spezielle Render-Ebene NUR für den Drucker -->
+<!-- Rendert strikt beide Bögen nacheinander in 100% Skalierung -->
+<div id="flyer-print-content" class="hidden print:block w-[297mm] mx-auto bg-white">
     {#each sheets as sheet}
-        <div class="flyer-print-sheet" style="width: 297mm; height: 210mm; position: relative; overflow: hidden; page-break-after: always; background: white;">
+        <div class="flyer-print-sheet" style="width: 297mm; height: 210mm; position: relative; overflow: hidden; page-break-after: always; break-after: page; background: white; margin: 0; padding: 0;">
             {#each sheet.elements as el}
                 <div style="position: absolute; left: {el.x}mm; top: {el.y}mm; width: {el.w}mm; {el.h > 0 ? `height: ${el.h}mm;` : ''} font-size: {el.fontSize}pt; color: {el.color}; background-color: {el.bgColor}; text-align: {el.textAlign}; font-weight: {el.fontWeight}; border-radius: {el.borderRadius}mm; z-index: {el.zIndex}; padding: {el.padding || 0}mm; box-sizing: border-box; white-space: pre-wrap; word-break: break-word; line-height: 1.4; border: {el.borderWidth || 0}mm solid {el.borderColor || '#000000'};">
                     {#if el.type === 'image'}
@@ -393,3 +486,5 @@
         </div>
     {/each}
 </div>
+
+<PdfPreviewModal bind:this={flyerPreviewModal} />
