@@ -149,7 +149,49 @@ async function getAdminPb() {
     return pbAdminInstance;
 }
 
-// Bereinigt abgelaufene (HTTP 410 / 404) Web-Push-Abonnements aus PocketBase
+// Erkennt abgelaufene (HTTP 410 / 404) oder ungültige Web-Push-Subscriptions
+function isDeadSubscription(err) {
+    if (!err) return false;
+    const code = err.statusCode || err.status;
+    if (code === 404 || code === 410) return true;
+    const bodyText = typeof err.body === 'string' ? err.body : JSON.stringify(err.body || {});
+    const msg = `${err.message || ''} ${bodyText}`.toLowerCase();
+    return msg.includes('unregistered') ||
+           msg.includes('expired') ||
+           msg.includes('notregistered') ||
+           msg.includes('gone') ||
+           msg.includes('invalidregistration') ||
+           msg.includes('baddevicetoken') ||
+           msg.includes('devicenotregistered') ||
+           msg.includes('not a valid push subscription');
+}
+
+/**
+ * Sendet eine Web-Push-Benachrichtigung mit einem harten Timeout (max. 3500 ms).
+ * Verhindert das Einfrieren von Prozessen bei hängenden Apple/Google Push-Gateways.
+ */
+async function sendPushWithTimeout(sub, payload, options = {}, timeoutMs = 3500) {
+    let timer;
+    const timeoutPromise = new Promise((_, reject) => {
+        timer = setTimeout(() => {
+            const err = new Error(`Push notification timed out after ${timeoutMs}ms`);
+            err.name = 'TimeoutError';
+            err.statusCode = 408;
+            reject(err);
+        }, timeoutMs);
+    });
+
+    try {
+        return await Promise.race([
+            webpush.sendNotification(sub, payload, options),
+            timeoutPromise
+        ]);
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+// Bereinigt abgelaufene (HTTP 410 / 404 / ungültige Tokens) Web-Push-Abonnements aus PocketBase
 async function cleanupDeadPushSubscriptions(pbAdmin, collection, userId, deadEndpoints) {
     if (!deadEndpoints || deadEndpoints.size === 0 || !userId) return;
     try {
@@ -171,10 +213,10 @@ async function cleanupDeadPushSubscriptions(pbAdmin, collection, userId, deadEnd
             try { currentSubs = JSON.parse(currentSubs); } catch(e) { currentSubs = []; }
         }
         if (Array.isArray(currentSubs)) {
-            const filtered = currentSubs.filter(s => s && s.endpoint && !deadEndpoints.has(s.endpoint));
+            const filtered = currentSubs.filter(s => s && s.endpoint && typeof s.endpoint === 'string' && !deadEndpoints.has(s.endpoint));
             if (filtered.length !== currentSubs.length) {
                 await pbAdmin.collection(col).update(userId, { push_subscriptions: filtered }, { requestKey: null });
-                console.log(`[PUSH] ${currentSubs.length - filtered.length} abgelaufene Push-Abonnements (410/404) für ${userId} (${col}) automatisch bereinigt.`);
+                console.log(`[PUSH] ${currentSubs.length - filtered.length} abgelaufene/ungültige Push-Abonnements für ${userId} (${col}) automatisch bereinigt.`);
             }
         }
     } catch (cleanErr) {
@@ -1896,13 +1938,13 @@ app.post(['/api/emails/portal/notify-request', '/portal/notify-request'], async 
                                 if (!sub || !sub.endpoint || sentEndpoints.has(sub.endpoint)) continue;
                                 sentEndpoints.add(sub.endpoint);
                                 try {
-                                    await webpush.sendNotification(sub, payload);
+                                    await sendPushWithTimeout(sub, payload, {}, 3500);
                                 } catch (pErr) {
-                                    if (pErr.statusCode === 410 || pErr.statusCode === 404) {
-                                        console.warn(`[NOTIFY-REQUEST] 410/404 Subscription abgelaufen für ${admin.id}, wird entfernt.`);
+                                    if (isDeadSubscription(pErr)) {
+                                        console.warn(`[NOTIFY-REQUEST] Ungültige/abgelaufene Subscription für ${admin.id}, wird bereinigt.`);
                                         deadEndpoints.add(sub.endpoint);
                                     } else {
-                                        console.warn(`[NOTIFY-REQUEST] Push-Fehler für ${admin.id}:`, pErr.statusCode, pErr.message);
+                                        console.warn(`[NOTIFY-REQUEST] Push-Fehler für ${admin.id}:`, pErr.statusCode || pErr.name, pErr.message);
                                     }
                                 }
                             }
@@ -3303,40 +3345,49 @@ app.post([
     '/push/send'
 ], requireAuth, async (req, res) => {
     try {
-        const { userId, title, body, url } = req.body;
+        const { userId, title, body, url } = req.body || {};
         
-        if (!userId || !title) return res.status(400).json({ error: "Fehlende Parameter." });
-        if (!process.env.VAPID_PUBLIC_KEY) return res.status(500).json({ error: "VAPID Keys fehlen." });
+        if (!userId || !title) return res.status(400).json({ success: false, error: "Fehlende Parameter." });
+        if (!process.env.VAPID_PUBLIC_KEY) return res.json({ success: false, error: "VAPID Keys fehlen auf dem Server." });
 
         const pbAdmin = await getAdminPb();
         
         let targetUser;
-        try { targetUser = await pbAdmin.collection('_superusers').getOne(userId); } catch (e) {}
+        try { targetUser = await pbAdmin.collection('_superusers').getOne(userId, { requestKey: null }); } catch (e) {}
         if (!targetUser) {
-            try { targetUser = await pbAdmin.collection('users').getOne(userId); } catch (e) {}
+            try { targetUser = await pbAdmin.collection('users').getOne(userId, { requestKey: null }); } catch (e) {}
         }
 
-        if (targetUser && targetUser.push_subscriptions) {
-            let subs = targetUser.push_subscriptions;
-            if (typeof subs === 'string') { try { subs = JSON.parse(subs); } catch(e){} }
-            const payload = JSON.stringify({ title, body, url: url || '/' });
-            
-            let pushResults = [];
+        if (!targetUser || !targetUser.push_subscriptions) {
+            return res.json({ success: false, error: "Keine Abonnements gefunden." });
+        }
+
+        let subs = targetUser.push_subscriptions;
+        if (typeof subs === 'string') { try { subs = JSON.parse(subs); } catch(e){} }
+        if (!Array.isArray(subs) || subs.length === 0) {
+            return res.json({ success: false, error: "Keine aktiven Abonnements hinterlegt." });
+        }
+
+        const payload = JSON.stringify({ title, body, url: url || '/' });
+
+        // Asynchrone Ausführung mit striktem Promise.race Timeout-Schutz (max. 3500 ms)
+        const executePush = async () => {
+            const pushResults = [];
             const deadEndpoints = new Set();
-            if (Array.isArray(subs)) {
-                for (const sub of subs) {
-                    try {
-                        await webpush.sendNotification(sub, payload);
-                        pushResults.push({ status: "success" });
-                    } catch (e) {
-                        console.error('[PUSH] Apple/Google Fehler:', e.statusCode, e.body);
-                        pushResults.push({ status: "error", error: e.body || e.message });
-                        if (e.statusCode === 410 || e.statusCode === 404) {
-                            deadEndpoints.add(sub.endpoint);
-                        }
+            for (const sub of subs) {
+                if (!sub || !sub.endpoint) continue;
+                try {
+                    await sendPushWithTimeout(sub, payload, {}, 3500);
+                    pushResults.push({ status: "success" });
+                } catch (e) {
+                    console.error('[PUSH] Apple/Google Fehler:', e.statusCode || e.name, e.body || e.message);
+                    pushResults.push({ status: "error", error: e.body || e.message });
+                    if (isDeadSubscription(e)) {
+                        deadEndpoints.add(sub.endpoint);
                     }
                 }
             }
+
             if (deadEndpoints.size > 0) {
                 try {
                     const col = targetUser.collectionName || (targetUser.role ? 'users' : '_superusers');
@@ -3345,13 +3396,25 @@ app.post([
                     console.warn('[PUSH] Cleanup Error:', cleanUpErr.message);
                 }
             }
-            return res.json({ success: true, pushResults });
-        }
-        
-        res.json({ success: false, error: "Keine Abonnements gefunden." });
+            return { success: true, pushResults };
+        };
+
+        const timeoutRace = new Promise((resolve) => {
+            setTimeout(() => {
+                resolve({ 
+                    success: true, 
+                    queued: true, 
+                    message: "Push-Versand wird im Hintergrund weitergeführt (Timeout-Schutz aktiv)." 
+                });
+            }, 3500);
+        });
+
+        const result = await Promise.race([executePush(), timeoutRace]);
+        return res.json(result);
     } catch (error) {
-        console.error("[PUSH] Fehler:", error);
-        res.status(500).json({ error: "Fehler beim Senden der Push-Benachrichtigung." });
+        console.error("[PUSH] Fehler abgefangen:", error);
+        // Fehlertoleranz: Niemals 500 werfen, UI darf nicht blockieren
+        return res.json({ success: false, error: error.message || "Fehler beim Senden der Push-Benachrichtigung." });
     }
 });
 

@@ -7,13 +7,10 @@
 	import { pb } from "$lib/services/pocketbase";
 	import { rbacService } from "$lib/services/rbacService.svelte";
 	import { orgaStore } from "$lib/stores/orgaStore.svelte";
-	import { getMailboxService } from "$lib/services/mailboxServiceStore.svelte";
-	import { useRequestAdmin } from "$lib/services/requestAdminService.svelte";
-	import { toastStore } from "$lib/services/toastService.svelte";
-	import { getEmailService } from "$lib/services/emailServiceStore.svelte";
 	import NotificationSettingsModal from "$lib/components/NotificationSettingsModal.svelte";
 	import AppointmentRequestsModal from "$lib/components/AppointmentRequestsModal.svelte";
 	import ImprovementProposalModal from "$lib/components/admin/ImprovementProposalModal.svelte";
+	import { notificationStore } from "$lib/services/notificationStore.svelte";
 	import { Lightbulb } from "lucide-svelte";
 
 	let { items } = $props<{
@@ -80,28 +77,19 @@
 		window.dispatchEvent(new CustomEvent('global-company-changed', { detail: val }));
 	}
 
-	// Services
-	const mailboxService = getMailboxService();
-	const reqAdmin = useRequestAdmin();
-	const emailService = getEmailService();
+	// Notification state — vollständig durch den notificationStore verwaltet
+	// (SWR-Cache, AbortController Timeout, Exponential Backoff, Subscription GC)
+	let notificationModal: any = $state();
+	let requestsModal: any = $state();
+	let proposalModal: any = $state();
 
-	let syncInterval: any;
-
-	const requestsCallback = () => { reqAdmin.init(); };
-
-	function handleResume() {
-		if (document.visibilityState === 'visible' && navigator.onLine) {
-			reqAdmin.init();
-			if (!isGodMode) {
-				mailboxService.loadFolders(pb.authStore.model?.id);
-				emailService.syncEmails().catch(() => {});
-			}
-			const isSuperAdmin = pb.authStore.isSuperuser || pb.authStore.model?.role === 'superadmin' || pb.authStore.model?.role === 'admin';
-			if (isSuperAdmin) {
-				updateStore.check();
-			}
-		}
-	}
+	let isNotificationsOpen = $derived(notificationStore.isNotificationsOpen);
+	let hasNewNotifications = $derived(notificationStore.hasNewNotifications);
+	let totalNotifications = $derived(notificationStore.totalNotifications);
+	let unreadMails = $derived(notificationStore.unreadMails);
+	let pendingRequests = $derived(notificationStore.pendingRequests);
+	let pendingAdmissions = $derived(notificationStore.pendingAdmissions);
+	let hasUnreadUpdates = $derived(notificationStore.hasUnreadUpdates);
 
 	onMount(() => {
 		if (typeof localStorage !== 'undefined') {
@@ -110,156 +98,19 @@
 		const handleCompanySync = (e: any) => { globalCompanyId = e.detail; };
 		window.addEventListener('global-company-changed', handleCompanySync);
 
-		reqAdmin.init();
-		if (!isGodMode) {
-			mailboxService.loadFolders(pb.authStore.model?.id);
-		}
-
-		const isSuperAdmin = pb.authStore.isSuperuser || pb.authStore.model?.role === 'superadmin' || pb.authStore.model?.role === 'admin';
-		if (isSuperAdmin) {
-			updateStore.check();
-		}
-
-		// Auto-Sync neue E-Mails (alle 2 Minuten)
-		syncInterval = setInterval(async () => {
-			if (!isGodMode) {
-				try {
-					const res = await emailService.syncEmails();
-					if (res.synced_count > 0) {
-						mailboxService.loadFolders(pb.authStore.model?.id);
-					}
-				} catch (e) {}
-			}
-		}, 2 * 60 * 1000);
-
-		pb.collection('appointment_requests').subscribe('*', requestsCallback);
-		document.addEventListener('visibilitychange', handleResume);
-		window.addEventListener('focus', handleResume);
-		window.addEventListener('online', handleResume);
+		// Initialisierung & Lifecycle über den Store (kein manuelles setInterval mehr)
+		notificationStore.init();
 
 		return () => window.removeEventListener('global-company-changed', handleCompanySync);
 	});
 
 	onDestroy(() => {
-		reqAdmin.cleanup();
-		if (syncInterval) clearInterval(syncInterval);
-		document.removeEventListener('visibilitychange', handleResume);
-		window.removeEventListener('focus', handleResume);
-		window.removeEventListener('online', handleResume);
-		pb.collection('appointment_requests').unsubscribe('*');
+		notificationStore.cleanup();
 	});
-
-	// Notification state
-	let notificationModal: any = $state();
-	let requestsModal: any = $state();
-	let proposalModal: any = $state();
-	let isNotificationsOpen = $state(false);
-
-	let unreadMails = $derived(mailboxService.totalUnread || 0);
-	let pendingRequests = $derived(reqAdmin.requests.filter(r => r.status !== 'accepted' && r.status !== 'denied').length);
-	let hasUnreadUpdates = $derived(updateStore.updates?.some((u: any) => {
-		const readByArray = Array.isArray(u.read_by) ? u.read_by : (u.read_by ? [u.read_by] : []);
-		return !readByArray.includes(pb.authStore.model?.id);
-	}) || false);
-	let pendingAdmissions = $derived.by(() => {
-		let list = (orgaStore.clients?.data || []).filter((c: any) => c.status === 'Inaktiv' && c.notes && c.notes.includes('NEUAUFNAHME-ANFRAGE'));
-		if (!isGodMode) {
-			const userCompanyId = pb.authStore.model?.company;
-			if (isAdmin && userCompanyId) {
-				list = list.filter((c: any) => {
-					const comp = c.company;
-					if (Array.isArray(comp)) return comp.includes(userCompanyId);
-					if (typeof comp === 'string' && comp.startsWith('[')) {
-						try { return JSON.parse(comp).includes(userCompanyId); } catch { return false; }
-					}
-					return comp === userCompanyId || (comp && comp.includes(userCompanyId));
-				});
-			} else { return 0; }
-		}
-		return list.length;
-	});
-	let totalNotifications = $derived(unreadMails + pendingRequests + pendingAdmissions + (hasUnreadUpdates ? 1 : 0));
-
-	let prevUnread = $state(-1);
-	let prevPending = $state(-1);
-	let prevAdmissions = $state(-1);
-	let ackData = $state({ mails: 0, reqs: 0, admissions: 0, updates: false });
-	let hasNewNotifications = $state(false);
-
-	if (typeof localStorage !== 'undefined') {
-		try {
-			const stored = localStorage.getItem('orga_ack_data');
-			if (stored) ackData = JSON.parse(stored);
-		} catch(e) {}
-	}
-
-	function getNotifyPrefs() {
-		try { return JSON.parse(localStorage.getItem('orga_notify_prefs') || '{"requests":true,"emails":true,"chats":true,"updates":true}'); }
-		catch { return {requests:true,emails:true,chats:true,updates:true}; }
-	}
-
-	function safeSendNotification(title: string, body: string) {
-		try {
-			if (typeof window === 'undefined') return;
-			if (typeof document !== 'undefined' && document.visibilityState === 'visible') return;
-			if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
-			if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-				navigator.serviceWorker.ready.then(reg => {
-					reg.showNotification(title, { body, icon: '/favicon.png', badge: '/favicon.png', data: { url: '/dashboard' } });
-				}).catch(() => {});
-				return;
-			}
-			try { new Notification(title, { body, icon: '/favicon.png' }); } catch (e) {}
-		} catch (err) {
-			console.warn("[AppSidebar] Notification error:", err);
-		}
-	}
 
 	function toggleNotifications() {
-		isNotificationsOpen = !isNotificationsOpen;
-		if (isNotificationsOpen) {
-			ackData = { mails: unreadMails, reqs: pendingRequests, admissions: pendingAdmissions, updates: hasUnreadUpdates };
-			if (typeof localStorage !== 'undefined') localStorage.setItem('orga_ack_data', JSON.stringify(ackData));
-			hasNewNotifications = false;
-		}
+		notificationStore.toggleNotifications();
 	}
-
-	$effect(() => {
-		if (prevUnread !== -1 && unreadMails > prevUnread) {
-			const newCount = unreadMails - prevUnread;
-			toastStore.info(`Du hast ${newCount} neue E-Mail(s) erhalten!`);
-			const prefs = getNotifyPrefs();
-			if (prefs.emails !== false) safeSendNotification('Neue E-Mail ✉️', `Sie haben ${newCount} neue Nachricht(en) im Posteingang.`);
-		}
-		prevUnread = unreadMails;
-
-		if (prevPending !== -1 && pendingRequests > prevPending) {
-			toastStore.success(`Eine neue Terminanfrage ist eingetroffen!`);
-			const prefs = getNotifyPrefs();
-			if (prefs.requests !== false) safeSendNotification('Neue Terminanfrage 📬', `Sie haben ${pendingRequests - prevPending} neue Terminanfrage(n).`);
-		}
-		prevPending = pendingRequests;
-
-		if (prevAdmissions !== -1 && pendingAdmissions > prevAdmissions) {
-			toastStore.success(`Eine neue Klienten-Aufnahme ist eingetroffen!`);
-			const prefs = getNotifyPrefs();
-			if (prefs.requests !== false) safeSendNotification('Neue Klienten-Aufnahme 👤', `Sie haben ${pendingAdmissions - prevAdmissions} neue Aufnahme-Anfrage(n).`);
-		}
-		prevAdmissions = pendingAdmissions;
-
-		if (unreadMails < ackData.mails) ackData.mails = unreadMails;
-		if (pendingRequests < ackData.reqs) ackData.reqs = pendingRequests;
-		if (pendingAdmissions < (ackData.admissions || 0)) ackData.admissions = pendingAdmissions;
-		if (!hasUnreadUpdates) ackData.updates = false;
-
-		hasNewNotifications =
-			unreadMails > ackData.mails ||
-			pendingRequests > ackData.reqs ||
-			pendingAdmissions > (ackData.admissions || 0) ||
-			(hasUnreadUpdates && !ackData.updates);
-
-		if (typeof localStorage !== 'undefined') localStorage.setItem('orga_ack_data', JSON.stringify(ackData));
-	});
 
 	function handleLogout() {
 		pb.realtime.unsubscribe();

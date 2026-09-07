@@ -384,11 +384,12 @@ export function createEmailService() {
     },
 
     // Sync emails from IMAP
-    async syncEmails(): Promise<{ synced_count: number }> {
+    // Accepts an optional AbortSignal for external timeout control (e.g. from notificationStore's 5s AbortController)
+    async syncEmails(options?: { signal?: AbortSignal }): Promise<{ synced_count: number }> {
       isLoading = true;
       error = null;
       try {
-        const newMails = await fetchInbox();
+        const newMails = await fetchInbox(options?.signal);
         
         const currentUser = pb.authStore.model;
         

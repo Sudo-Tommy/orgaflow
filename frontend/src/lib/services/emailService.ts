@@ -28,43 +28,71 @@ export interface EmailMessage {
 
 /**
  * Ruft die neuesten E-Mails aus dem Posteingang über den Microservice ab.
+ * Ausgestattet mit hartem 5.000 ms Timeout via AbortController gegen UI-Freezes.
  */
-export async function fetchInbox(): Promise<EmailMessage[]> {
+export async function fetchInbox(externalSignal?: AbortSignal): Promise<EmailMessage[]> {
     if (!pb.authStore.isValid) {
         throw new Error('Nicht autorisiert: Bitte loggen Sie sich ein.');
     }
 
-    const response = await fetch(`${MICROSERVICE_URL}/inbox`, {
-        method: 'GET',
-        headers: {
-            'Authorization': pb.authStore.token ? `Bearer ${pb.authStore.token}` : '',
-            'Content-Type': 'application/json'
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+    if (externalSignal) {
+        if (externalSignal.aborted) {
+            clearTimeout(timeoutId);
+            return [];
         }
-    }).catch(err => { throw new Error('Microservice nicht erreichbar. Prüfe die Server-Verbindung.'); });
-
-    const contentType = response.headers.get("content-type");
-    if (!contentType || !contentType.includes("application/json")) {
-        const text = await response.text();
-        const snippet = text.substring(0, 150).replace(/\n/g, ' ');
-        console.warn(`[emailService] Microservice lieferte HTML statt JSON: ${snippet}`);
-        return [];
+        externalSignal.addEventListener('abort', () => controller.abort(), { once: true });
     }
 
-    const result = await response.json();
+    try {
+        const response = await fetch(`${MICROSERVICE_URL}/inbox`, {
+            method: 'GET',
+            headers: {
+                'Authorization': pb.authStore.token ? `Bearer ${pb.authStore.token}` : '',
+                'Content-Type': 'application/json'
+            },
+            signal: controller.signal
+        });
 
-    if (!response.ok || !result.success) {
-        console.warn(`[emailService] Inbox Abruf: ${result.error || response.statusText}`);
+        clearTimeout(timeoutId);
+
+        const contentType = response.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+            const text = await response.text();
+            const snippet = text.substring(0, 150).replace(/\n/g, ' ');
+            console.warn(`[emailService] Microservice lieferte HTML statt JSON: ${snippet}`);
+            return [];
+        }
+
+        const result = await response.json();
+
+        if (!response.ok || !result.success) {
+            console.warn(`[emailService] Inbox Abruf: ${result.error || response.statusText}`);
+            return [];
+        }
+
+        return result.data || [];
+    } catch (err: any) {
+        clearTimeout(timeoutId);
+        if (err.name === 'AbortError' || err.message?.includes('aborted')) {
+            console.warn('[emailService] Inbox Abruf nach 5.000 ms abgebrochen (UI-Freeze Schutz).');
+            return [];
+        }
+        console.warn('[emailService] Microservice nicht erreichbar oder Netzwerkfehler:', err.message);
         return [];
     }
-
-    return result.data || [];
 }
 
 /**
- * Markiert eine E-Mail als gelesen.
+ * Markiert eine E-Mail als gelesen mit 5.000 ms Timeout-Schutz.
  */
 export async function markEmailAsRead(uid: string): Promise<boolean> {
     if (!pb.authStore.isValid) return false;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
 
     try {
         const response = await fetch(`${MICROSERVICE_URL}/mark-read`, {
@@ -73,45 +101,63 @@ export async function markEmailAsRead(uid: string): Promise<boolean> {
                 'Authorization': `Bearer ${pb.authStore.token}`,
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ uid })
+            body: JSON.stringify({ uid }),
+            signal: controller.signal
         });
+
+        clearTimeout(timeoutId);
         const result = await response.json();
         return result?.success || false;
-    } catch (err) {
-        console.error("Fehler beim Markieren als gelesen:", err);
+    } catch (err: any) {
+        clearTimeout(timeoutId);
+        console.error("Fehler beim Markieren als gelesen:", err.message);
         return false;
     }
 }
 
 /**
- * Sendet eine E-Mail über den Microservice.
+ * Sendet eine E-Mail über den Microservice mit 10.000 ms Timeout.
  */
 export async function sendEmail(payload: SendEmailPayload): Promise<{ messageId: string }> {
     if (!pb.authStore.isValid) {
         throw new Error('Nicht autorisiert: Bitte loggen Sie sich ein.');
     }
 
-    const response = await fetch(`${MICROSERVICE_URL}/send`, {
-        method: 'POST',
-        headers: {
-            'Authorization': pb.authStore.token ? `Bearer ${pb.authStore.token}` : '',
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload)
-    }).catch(err => { throw new Error('Senden fehlgeschlagen: Microservice nicht erreichbar.'); });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-    const contentType = response.headers.get("content-type");
-    if (!contentType || !contentType.includes("application/json")) {
-        const text = await response.text();
-        const snippet = text.substring(0, 150).replace(/\n/g, ' ');
-        throw new Error(`Server-Fehler beim Senden (HTML statt JSON). Antwort des Servers: '${snippet}...'`);
+    try {
+        const response = await fetch(`${MICROSERVICE_URL}/send`, {
+            method: 'POST',
+            headers: {
+                'Authorization': pb.authStore.token ? `Bearer ${pb.authStore.token}` : '',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload),
+            signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+
+        const contentType = response.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+            const text = await response.text();
+            const snippet = text.substring(0, 150).replace(/\n/g, ' ');
+            throw new Error(`Server-Fehler beim Senden (HTML statt JSON). Antwort des Servers: '${snippet}...'`);
+        }
+
+        const result = await response.json();
+
+        if (!response.ok || !result.success) {
+            throw new Error(result.error || 'Fehler beim Senden der E-Mail.');
+        }
+
+        return { messageId: result.messageId };
+    } catch (err: any) {
+        clearTimeout(timeoutId);
+        if (err.name === 'AbortError' || err.message?.includes('aborted')) {
+            throw new Error('E-Mail-Versand dauerte länger als 10 Sekunden (Timeout abgebrochen).');
+        }
+        throw err;
     }
-
-    const result = await response.json();
-
-    if (!response.ok || !result.success) {
-        throw new Error(result.error || 'Fehler beim Senden der E-Mail.');
-    }
-
-    return { messageId: result.messageId };
 }
