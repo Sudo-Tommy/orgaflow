@@ -13,15 +13,19 @@ pb.autoCancellation(false);
 // Funktion, um die PocketBase-Session am Leben zu halten
 export function keepPocketBaseAlive() {
     const interval = setInterval(async () => {
-        if (pb.authStore.isValid && pb.authStore.model) {
+        if (pb.authStore.isValid && (pb.authStore.record || pb.authStore.model)) {
             try {
-                const collectionName = pb.authStore.model.collectionName;
+                const collectionName = pb.authStore.record?.collectionName || (pb.authStore.model as any)?.collectionName || 'users';
                 // Erweitere den Refresh um 'company', damit die Firmen-Daten im State erhalten bleiben
                 await pb.collection(collectionName).authRefresh({
                     expand: 'company'
                 });
-            } catch (error) {
+            } catch (error: any) {
                 console.warn('Failed to refresh auth:', error);
+                // Wenn die Session ungültig oder widerrufen wurde (401/403), Store bereinigen
+                if (error?.status === 401 || error?.status === 403) {
+                    pb.authStore.clear();
+                }
             }
         }
     }, 5 * 60 * 1000); // Alle 5 Minuten
@@ -39,8 +43,22 @@ pb.beforeSend = async function (url, options) {
     // Führe ggf. bestehende Hooks aus, falls du schon einen beforeSend hattest
     if (originalBeforeSend) {
         const res = await originalBeforeSend(url, options) as any;
-        url = res.url ?? url;
-        options = res.reqOpts ?? res.options ?? options;
+        url = res?.url ?? url;
+        options = res?.options ?? res?.reqOpts ?? options;
+    }
+
+    // Sicherstellen, dass das Authorization-Token mitgesendet wird, wenn eingeloggt
+    if (pb.authStore.token && !options.headers?.Authorization) {
+        options.headers = Object.assign({}, options.headers, {
+            'Authorization': pb.authStore.token
+        });
+    }
+
+    // 8-Sekunden-Timeout-Handling für schreibende Mutationen (Double-Submission- & Hang-Schutz)
+    if (options.method && options.method !== 'GET' && !options.signal) {
+        if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+            options.signal = AbortSignal.timeout(8000);
+        }
     }
 
     // Wir loggen nur Mutationen (POST, PUT, PATCH, DELETE), keine reinen Leseabfragen (GET) und keine internen Realtime-Pings
@@ -76,5 +94,25 @@ pb.beforeSend = async function (url, options) {
         } catch(e) {}
     }
     
-    return { url, reqOpts: options } as any;
+    return { url, options };
 };
+
+/**
+ * Absicherung von Mutations-Aufrufen mit 8s Timeout und präzisem Fehlerhandling.
+ */
+export async function withMutationTimeout<T>(
+    promise: Promise<T>, 
+    timeoutMs = 8000, 
+    errorMsg = "Die Anfrage hat das Zeitlimit von 8 Sekunden überschritten."
+): Promise<T> {
+    let timer: any;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(errorMsg)), timeoutMs);
+    });
+    try {
+        return await Promise.race([promise, timeoutPromise]);
+    } finally {
+        clearTimeout(timer);
+    }
+}
+

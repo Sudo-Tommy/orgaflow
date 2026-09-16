@@ -1,6 +1,7 @@
 import { pb } from '$lib/services/pocketbase';
 import { orgaStore } from '$lib/stores/orgaStore.svelte';
 import { toastStore } from '$lib/services/toastService.svelte';
+import { rbacService } from '$lib/services/rbacService.svelte';
 import type { UserRecord, EmploymentType, EmployeeStatus } from '$lib/types/orgaTypes';
 
 export interface CreateEmployeePayload {
@@ -43,7 +44,37 @@ class EmployeeService {
     async createEmployee(payload: CreateEmployeePayload): Promise<UserRecord | null> {
         this.isSubmitting = true;
         try {
-            // 1. Username säubern und Umlaute auflösen
+            // 0. Pflichtfelder-Prüfung
+            if (!payload.name_first?.trim() || !payload.name_last?.trim() || !payload.email?.trim()) {
+                toastStore.warning('Bitte füllen Sie Vorname, Nachname und eine gültige E-Mail-Adresse aus.');
+                return null;
+            }
+
+            // 1. Authentifizierungs- & Berechtigungsprüfung
+            if (!pb.authStore.isValid || !pb.authStore.token) {
+                toastStore.error('Ihre Sitzung ist abgelaufen oder Sie sind nicht eingeloggt. Bitte melden Sie sich an.');
+                return null;
+            }
+
+            if (!rbacService.canAccessAdmin) {
+                toastStore.error('Keine Berechtigung: Nur Administratoren oder Inhaber können Mitarbeiter anlegen.');
+                return null;
+            }
+
+            // 2. Sitzungs-Gültigkeit mit PocketBase synchronisieren & frisch halten
+            try {
+                const authCol = pb.authStore.record?.collectionName || (pb.authStore.model as any)?.collectionName || 'users';
+                await pb.collection(authCol).authRefresh({ expand: 'company' });
+            } catch (refreshErr: any) {
+                console.warn('Session Refresh vor Erstellung fehlgeschlagen:', refreshErr);
+                if (refreshErr?.status === 401 || refreshErr?.status === 403) {
+                    pb.authStore.clear();
+                    toastStore.error('Ihre Sitzung ist abgelaufen. Bitte melden Sie sich erneut als Administrator an.');
+                    return null;
+                }
+            }
+
+            // 3. Username säubern und Umlaute auflösen
             let username = sanitizeUsername(payload.username || '');
             if (!username || username.length < 3) {
                 const safeFirst = sanitizeUsername(payload.name_first) || 'user';
@@ -53,6 +84,12 @@ class EmployeeService {
             
             const password = payload.password?.trim() || `OF-${Math.random().toString(36).slice(-8)}!A1`;
 
+            let requestedRole = payload.role || 'employee';
+            // Nur Inhaber dürfen Inhaber- oder Superadmin-Accounts vergeben
+            if (!rbacService.isOwner && (requestedRole === 'superadmin' || requestedRole === 'owner')) {
+                requestedRole = 'employee';
+            }
+
             const data: Record<string, any> = {
                 username: username,
                 email: payload.email.trim(),
@@ -61,7 +98,7 @@ class EmployeeService {
                 passwordConfirm: payload.passwordConfirm?.trim() || password,
                 name_first: payload.name_first.trim(),
                 name_last: payload.name_last.trim(),
-                role: payload.role || 'employee',
+                role: requestedRole,
                 employment_type: payload.employment_type || 'Vollzeit',
                 status: payload.status || 'Aktiv',
                 qualifications: payload.qualifications || '',
@@ -74,15 +111,17 @@ class EmployeeService {
                 city: payload.city || ''
             };
 
-            const currentAuth = pb.authStore.record as any;
+            const currentAuth = (pb.authStore.record || pb.authStore.model) as any;
             if (currentAuth?.company) {
-                data.company = currentAuth.company;
+                const comp = currentAuth.company;
+                data.company = Array.isArray(comp) ? comp : [comp];
             }
             if (currentAuth?.facility) {
-                data.facility = currentAuth.facility;
+                const fac = currentAuth.facility;
+                data.facility = Array.isArray(fac) ? fac[0] : fac;
             }
 
-            // Direkt über PocketBase SDK erstellen (funktioniert in Dev & auf Live-Webservern)
+            // Direkt über PocketBase SDK erstellen
             const record = await pb.collection('users').create(data);
             await orgaStore.users.init();
             
@@ -92,14 +131,31 @@ class EmployeeService {
         } catch (err: any) {
             console.error('Fehler beim Anlegen des Mitarbeiters:', err);
             let msg = err?.data?.message || err?.message || 'Fehler beim Anlegen des Mitarbeiters.';
-            if (err?.data?.data && typeof err.data.data === 'object') {
-                const fieldErrors = Object.entries(err.data.data)
-                    .map(([field, details]: [string, any]) => `${field}: ${details?.message || details?.code || 'ungültig'}`)
-                    .join(', ');
-                if (fieldErrors) {
+
+            if (err?.status === 400) {
+                const dataErrors = err?.data?.data;
+                if (dataErrors && typeof dataErrors === 'object' && Object.keys(dataErrors).length > 0) {
+                    const fieldErrors = Object.entries(dataErrors)
+                        .map(([field, details]: [string, any]) => {
+                            const code = details?.code || '';
+                            const dMsg = details?.message || code;
+                            if (field === 'username' && (code === 'validation_not_unique' || dMsg.includes('unique'))) {
+                                return 'Benutzername ist bereits vergeben';
+                            }
+                            if (field === 'email' && (code === 'validation_not_unique' || dMsg.includes('unique'))) {
+                                return 'E-Mail-Adresse existiert bereits';
+                            }
+                            return `${field}: ${dMsg}`;
+                        })
+                        .join(', ');
                     msg = `Validierungsfehler: ${fieldErrors}`;
+                } else {
+                    msg = 'Erstellung verweigert: Möglicherweise fehlen die nötigen Berechtigungen (Admin/Inhaber) oder die PocketBase-Sitzung ist abgelaufen. Bitte aktualisieren Sie die Seite und melden Sie sich erneut an.';
                 }
+            } else if (err?.status === 403) {
+                msg = 'Zugriff verweigert: Sie verfügen nicht über ausreichende Berechtigungen zum Erstellen von Benutzern.';
             }
+
             toastStore.error(msg);
             return null;
         } finally {
