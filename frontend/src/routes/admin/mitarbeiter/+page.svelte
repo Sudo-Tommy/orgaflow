@@ -4,6 +4,8 @@
     import { rbacService } from '$lib/services/rbacService.svelte';
     import { orgaStore } from '$lib/stores/orgaStore.svelte';
     import { toastStore } from '$lib/services/toastService.svelte';
+    import { confirmStore } from '$lib/services/confirmService.svelte';
+    import { employeeService } from '$lib/services/employeeService.svelte';
     import EmployeeModal from '$lib/components/admin/mitarbeiter/EmployeeModal.svelte';
     import EmployeeAssignmentModal from '$lib/components/admin/mitarbeiter/EmployeeAssignmentModal.svelte';
     import EmployeeQrModal from '$lib/components/admin/mitarbeiter/EmployeeQrModal.svelte';
@@ -39,6 +41,20 @@
             orgaStore.appointments.init()
         ]);
     });
+
+    async function handleDeleteEmployee(emp: UserRecord) {
+        const confirmed = await confirmStore.ask(
+            `Möchten Sie den Mitarbeiter "${emp.name_first} ${emp.name_last}" (${emp.email}) wirklich unwiderruflich löschen? Alle Zugänge und QR-Token werden sofort deaktiviert.`,
+            'Mitarbeiter löschen',
+            'Unwiderruflich löschen',
+            'Abbrechen',
+            true
+        );
+
+        if (confirmed) {
+            await employeeService.deleteEmployee(emp.id);
+        }
+    }
 
     // Alle Mitarbeiter (Nutzer mit Rollen employee, caregiver, user oder admin)
     let allEmployees = $derived.by(() => {
@@ -348,9 +364,20 @@
                             type="button"
                             onclick={() => employeeModal?.open(emp)}
                             aria-label="Mitarbeiter bearbeiten"
+                            title="Mitarbeiter bearbeiten"
                             class="min-h-11 min-w-11 px-2.5 py-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors flex items-center justify-center"
                         >
                             <Edit3 class="w-4 h-4" />
+                        </button>
+
+                        <button
+                            type="button"
+                            onclick={() => handleDeleteEmployee(emp)}
+                            aria-label="Mitarbeiter unwiderruflich löschen"
+                            title="Mitarbeiter löschen"
+                            class="min-h-11 min-w-11 px-2.5 py-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition-colors flex items-center justify-center"
+                        >
+                            <Trash2 class="w-4 h-4" />
                         </button>
                     </div>
                 </div>

@@ -1,7 +1,8 @@
 <script lang="ts">
     import { employeeService, type CreateEmployeePayload } from '$lib/services/employeeService.svelte';
     import { toastStore } from '$lib/services/toastService.svelte';
-    import { User, X, Briefcase, Phone, MapPin, Shield, Check, Award, AlertCircle } from 'lucide-svelte';
+    import { confirmStore } from '$lib/services/confirmService.svelte';
+    import { User, X, Briefcase, Phone, MapPin, Shield, Check, Award, AlertCircle, Trash2 } from 'lucide-svelte';
     import type { UserRecord, EmploymentType, EmployeeStatus } from '$lib/types/orgaTypes';
 
     let isOpen = $state(false);
@@ -128,6 +129,22 @@
 
             const created = await employeeService.createEmployee(payload);
             if (created) close();
+        }
+    }
+
+    async function handleDelete() {
+        if (!editingId) return;
+        const confirmed = await confirmStore.ask(
+            `Möchten Sie den Mitarbeiter "${name_first} ${name_last}" wirklich unwiderruflich löschen? Alle Zugänge und QR-Token werden sofort deaktiviert.`,
+            'Mitarbeiter löschen',
+            'Unwiderruflich löschen',
+            'Abbrechen',
+            true
+        );
+
+        if (confirmed) {
+            const deleted = await employeeService.deleteEmployee(editingId);
+            if (deleted) close();
         }
     }
 </script>
@@ -388,26 +405,42 @@
                 </div>
 
                 <!-- Footer Actions -->
-                <div class="pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-3 shrink-0">
-                    <button 
-                        type="button" 
-                        onclick={close}
-                        class="min-h-11 px-4 py-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-xs font-bold transition-colors"
-                    >
-                        Abbrechen
-                    </button>
-                    <button 
-                        type="submit" 
-                        disabled={employeeService.isSubmitting}
-                        class="min-h-11 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-colors shadow-sm disabled:opacity-50 flex items-center gap-1.5"
-                    >
-                        {#if employeeService.isSubmitting}
-                            <span>Speichern...</span>
-                        {:else}
-                            <Check class="w-4 h-4" />
-                            <span>{isEditing ? 'Änderungen speichern' : 'Mitarbeiter anlegen'}</span>
-                        {/if}
-                    </button>
+                <div class="pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3 shrink-0">
+                    {#if isEditing}
+                        <button 
+                            type="button" 
+                            onclick={handleDelete}
+                            disabled={employeeService.isSubmitting}
+                            class="min-h-11 px-3.5 py-2 text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5"
+                        >
+                            <Trash2 class="w-4 h-4" />
+                            <span>Mitarbeiter löschen</span>
+                        </button>
+                    {:else}
+                        <div></div>
+                    {/if}
+
+                    <div class="flex items-center gap-3">
+                        <button 
+                            type="button" 
+                            onclick={close}
+                            class="min-h-11 px-4 py-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-xs font-bold transition-colors"
+                        >
+                            Abbrechen
+                        </button>
+                        <button 
+                            type="submit" 
+                            disabled={employeeService.isSubmitting}
+                            class="min-h-11 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-colors shadow-sm disabled:opacity-50 flex items-center gap-1.5"
+                        >
+                            {#if employeeService.isSubmitting}
+                                <span>Speichern...</span>
+                            {:else}
+                                <Check class="w-4 h-4" />
+                                <span>{isEditing ? 'Änderungen speichern' : 'Mitarbeiter anlegen'}</span>
+                            {/if}
+                        </button>
+                    </div>
                 </div>
             </form>
         </div>

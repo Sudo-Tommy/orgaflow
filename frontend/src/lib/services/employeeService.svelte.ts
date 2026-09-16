@@ -192,6 +192,60 @@ class EmployeeService {
     }
 
     /**
+     * Löscht einen Mitarbeiter-Account unwiderruflich aus PocketBase
+     */
+    async deleteEmployee(id: string): Promise<boolean> {
+        this.isSubmitting = true;
+        try {
+            // 1. Eigenen Account vor versehentlichem Löschen schützen
+            const currentId = pb.authStore.record?.id || (pb.authStore.model as any)?.id;
+            if (currentId === id) {
+                toastStore.error('Sie können Ihren eigenen angemeldeten Account nicht selbst löschen.');
+                return false;
+            }
+
+            // 2. Authentifizierungs- & Berechtigungsprüfung
+            if (!pb.authStore.isValid || !pb.authStore.token) {
+                toastStore.error('Ihre Sitzung ist abgelaufen oder Sie sind nicht eingeloggt. Bitte melden Sie sich an.');
+                return false;
+            }
+
+            if (!rbacService.canAccessAdmin) {
+                toastStore.error('Keine Berechtigung: Nur Administratoren oder Inhaber können Mitarbeiter löschen.');
+                return false;
+            }
+
+            // 3. Frisches Token sicherstellen
+            try {
+                const authCol = pb.authStore.record?.collectionName || (pb.authStore.model as any)?.collectionName || 'users';
+                await pb.collection(authCol).authRefresh();
+            } catch (refreshErr: any) {
+                if (refreshErr?.status === 401 || refreshErr?.status === 403) {
+                    pb.authStore.clear();
+                    toastStore.error('Ihre Sitzung ist abgelaufen. Bitte melden Sie sich erneut als Administrator an.');
+                    return false;
+                }
+            }
+
+            // 4. In PocketBase löschen
+            await pb.collection('users').delete(id);
+            await orgaStore.users.init();
+            toastStore.success('Mitarbeiter wurde erfolgreich gelöscht.');
+            return true;
+        } catch (err: any) {
+            console.error('Fehler beim Löschen des Mitarbeiters:', err);
+            let msg = err?.data?.message || err?.message || 'Mitarbeiter konnte nicht gelöscht werden.';
+            if (err?.status === 400 || err?.status === 403) {
+                msg = 'Löschen verweigert: Sie verfügen nicht über die erforderliche Berechtigung für diesen Mitarbeiter.';
+            }
+            toastStore.error(msg);
+            return false;
+        } finally {
+            this.isSubmitting = false;
+        }
+    }
+
+    /**
      * Weist einem Mitarbeiter Klienten zu
      */
     async assignClients(employeeId: string, clientIds: string[]): Promise<boolean> {
