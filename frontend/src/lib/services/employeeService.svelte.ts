@@ -43,39 +43,7 @@ class EmployeeService {
     async createEmployee(payload: CreateEmployeePayload): Promise<UserRecord | null> {
         this.isSubmitting = true;
         try {
-            // 1. Versuche zunächst den sicheren Server-Endpunkt mit Superuser-Berechtigung
-            try {
-                const response = await fetch('/api/employees/create', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${pb.authStore.token}`
-                    },
-                    body: JSON.stringify(payload)
-                });
-
-                if (response.ok) {
-                    const result = await response.json();
-                    if (result.success && result.record) {
-                        await orgaStore.users.init();
-                        const passMsg = result.generatedPassword 
-                            ? ` (Start-Passwort: ${result.generatedPassword})` 
-                            : '';
-                        toastStore.success(`Mitarbeiter "${payload.name_first} ${payload.name_last}" erfolgreich angelegt.${passMsg}`);
-                        return result.record as unknown as UserRecord;
-                    }
-                } else {
-                    const errorJson = await response.json().catch(() => null);
-                    if (errorJson?.message) {
-                        toastStore.error(errorJson.message);
-                        return null;
-                    }
-                }
-            } catch (apiErr) {
-                console.warn('Server-Endpunkt /api/employees/create nicht erreichbar, nutze direkten Client-Fallback:', apiErr);
-            }
-
-            // 2. Client-seitiger Fallback direkt über PocketBase SDK
+            // 1. Username säubern und Umlaute auflösen
             let username = sanitizeUsername(payload.username || '');
             if (!username || username.length < 3) {
                 const safeFirst = sanitizeUsername(payload.name_first) || 'user';
@@ -104,7 +72,6 @@ class EmployeeService {
                 housenr: payload.housenr || '',
                 zip: payload.zip || '',
                 city: payload.city || ''
-                // HINWEIS: 'verified' wird hier bewusst weggelassen, da nur Superuser 'verified: true' setzen dürfen.
             };
 
             const currentAuth = pb.authStore.record as any;
@@ -115,9 +82,12 @@ class EmployeeService {
                 data.facility = currentAuth.facility;
             }
 
+            // Direkt über PocketBase SDK erstellen (funktioniert in Dev & auf Live-Webservern)
             const record = await pb.collection('users').create(data);
             await orgaStore.users.init();
-            toastStore.success(`Mitarbeiter "${payload.name_first} ${payload.name_last}" erfolgreich angelegt.`);
+            
+            const passMsg = !payload.password ? ` (Start-Passwort: ${password})` : '';
+            toastStore.success(`Mitarbeiter "${payload.name_first} ${payload.name_last}" erfolgreich angelegt.${passMsg}`);
             return record as unknown as UserRecord;
         } catch (err: any) {
             console.error('Fehler beim Anlegen des Mitarbeiters:', err);
@@ -275,31 +245,35 @@ class EmployeeService {
     async generateQuickAccessToken(employeeId: string, validityHours: number = 168): Promise<{ token: string; expiresAt: string; directUrl: string } | null> {
         this.isSubmitting = true;
         try {
-            const res = await fetch('/api/auth/employee-token/generate', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': pb.authStore.token ? `Bearer ${pb.authStore.token}` : ''
-                },
-                body: JSON.stringify({
-                    userId: employeeId,
-                    validityHours: validityHours
-                })
-            });
+            // Kryptografisch sicheres Zufallstoken (48 Hex-Zeichen)
+            const randomBytes = new Uint8Array(24);
+            if (typeof window !== 'undefined' && window.crypto) {
+                window.crypto.getRandomValues(randomBytes);
+            } else {
+                for (let i = 0; i < 24; i++) randomBytes[i] = Math.floor(Math.random() * 256);
+            }
+            const token = Array.from(randomBytes).map(b => b.toString(16).padStart(2, '0')).join('');
 
-            const data = await res.json();
-            if (!res.ok || !data.success) {
-                throw new Error(data.message || 'Token konnte nicht erzeugt werden.');
+            let expiresAtIso: string | null = null;
+            if (validityHours > 0) {
+                const d = new Date(Date.now() + validityHours * 3600 * 1000);
+                expiresAtIso = d.toISOString();
             }
 
+            // Direkt über PocketBase SDK aktualisieren (keine SvelteKit-Serverroute nötig)
+            await pb.collection('users').update(employeeId, {
+                quick_access_token: token,
+                token_expires_at: expiresAtIso
+            });
+
             const origin = typeof window !== 'undefined' ? window.location.origin : '';
-            const directUrl = `${origin}/mitarbeiter?token=${encodeURIComponent(data.token)}`;
+            const directUrl = `${origin}/mitarbeiter?token=${encodeURIComponent(token)}`;
 
             await orgaStore.users.init();
             toastStore.success('QR-Code-Zugang erfolgreich generiert.');
             return {
-                token: data.token,
-                expiresAt: data.expiresAt,
+                token: token,
+                expiresAt: expiresAtIso || '',
                 directUrl: directUrl
             };
         } catch (err: any) {
@@ -317,19 +291,11 @@ class EmployeeService {
     async revokeQuickAccessToken(employeeId: string): Promise<boolean> {
         this.isSubmitting = true;
         try {
-            const res = await fetch('/api/auth/employee-token/revoke', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': pb.authStore.token ? `Bearer ${pb.authStore.token}` : ''
-                },
-                body: JSON.stringify({ userId: employeeId })
+            // Direkt über PocketBase SDK auf leeres Token zurücksetzen
+            await pb.collection('users').update(employeeId, {
+                quick_access_token: '',
+                token_expires_at: null
             });
-
-            const data = await res.json();
-            if (!res.ok || !data.success) {
-                throw new Error(data.message || 'Widerruf fehlgeschlagen.');
-            }
 
             await orgaStore.users.init();
             toastStore.info('QR-Zugang wurde erfolgreich widerrufen.');
@@ -349,20 +315,41 @@ class EmployeeService {
     async loginWithQrToken(token: string): Promise<{ success: boolean; message?: string }> {
         this.isSubmitting = true;
         try {
-            const res = await fetch('/api/auth/employee-token', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ token: token.trim() })
-            });
+            const cleanToken = token.trim();
+            const endpoints = [
+                `/api/orgaflow/auth/employee-token?token=${encodeURIComponent(cleanToken)}`,
+                '/api/emails/portal/employee-auth-token',
+                '/api/auth/employee-token'
+            ];
 
-            const data = await res.json();
-            if (!res.ok || !data.success) {
-                return { success: false, message: data.message || 'Ungültiger oder abgelaufener Token.' };
+            let lastError = 'Ungültiger oder abgelaufener Token.';
+
+            for (const ep of endpoints) {
+                try {
+                    const res = await fetch(ep, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ token: cleanToken })
+                    });
+
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data.token) {
+                            pb.authStore.save(data.token, data.record || null);
+                            return { success: true };
+                        }
+                    } else if (res.status !== 404) {
+                        const data = await res.json().catch(() => null);
+                        if (data?.message || data?.error) {
+                            lastError = data.message || data.error;
+                        }
+                    }
+                } catch {
+                    // Weiter zum nächsten Endpunkt
+                }
             }
 
-            // Session in PocketBase AuthStore hinterlegen
-            pb.authStore.save(data.token, data.record);
-            return { success: true };
+            return { success: false, message: lastError };
         } catch (err: any) {
             console.error('QR Login Error:', err);
             return { success: false, message: err?.message || 'Netzwerkfehler beim Anmelden.' };

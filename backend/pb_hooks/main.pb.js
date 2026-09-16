@@ -228,12 +228,29 @@ onRecordEnrich((e) => {
 
 // 1. QR-Code / Direktlink Schnell-Login
 routerAdd("POST", "/api/orgaflow/auth/employee-token", (c) => {
-    let body = {};
+    let token = "";
     try {
-        body = $apis.requestInfo(c).data || {};
+        const body = $apis.requestInfo(c).data || {};
+        token = body.token || "";
     } catch(e) {}
 
-    const token = (body.token || "").trim();
+    if (!token) {
+        try {
+            token = c.queryParam("token") || "";
+        } catch(e) {}
+    }
+
+    if (!token) {
+        try {
+            const raw = readerToString(c.request().body);
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                token = parsed?.token || "";
+            }
+        } catch(e) {}
+    }
+
+    token = (token || "").trim();
     if (!token) {
         throw new BadRequestError("Zugriffs-Token fehlt.");
     }
