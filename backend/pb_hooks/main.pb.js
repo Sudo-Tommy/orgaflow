@@ -167,3 +167,231 @@ routerAdd("POST", "/api/orgaflow/audit/log", (c) => {
     }
     return c.json(400, { error: "Collection audit_logs nicht gefunden" });
 });
+
+// Serverseitige Datenminimierung: Fremde Fahrzeugbuchungen maskieren
+onRecordEnrich((e) => {
+    e.next();
+
+    const rec = e.record;
+    if (!rec) return;
+
+    const title = (rec.getString("title") || "").toLowerCase();
+    const desc = (rec.getString("description") || "").toLowerCase();
+    const fullText = title + " " + desc;
+
+    const isCar = (
+        fullText.includes("booking tarif flex") ||
+        fullText.includes("teilauto-buchung") ||
+        fullText.includes("teilauto buchung") ||
+        fullText.includes("teilauto") ||
+        fullText.includes("tarif flex") ||
+        (fullText.includes("booking") && fullText.includes("flex")) ||
+        fullText.includes("carsharing")
+    );
+
+    if (!isCar) return;
+
+    const authRecord = e.requestInfo ? e.requestInfo.auth : null;
+    let isSuperuser = false;
+    let isOwner = false;
+
+    if (authRecord) {
+        const collName = typeof authRecord.collectionName === 'function' ? authRecord.collectionName() : (authRecord.collection ? authRecord.collection().name : "");
+        isSuperuser = collName === "_superusers" || authRecord.getString("role") === "superadmin";
+        const appUserId = rec.getString("user");
+        isOwner = Boolean(appUserId && appUserId === authRecord.id);
+    }
+
+    // Wenn weder Eigentümer noch Superadmin: Fremde Fahrzeugbuchung anonymisieren
+    if (!isSuperuser && !isOwner) {
+        rec.set("title", "Fahrzeug reserviert");
+        rec.set("description", "Fahrzeug belegt");
+        try {
+            rec.hide("client", "tasks", "expenditures", "drive_record", "notes", "report", "requestet_changes");
+        } catch (hErr) {}
+
+        try {
+            const exp = rec.expand();
+            if (exp) {
+                delete exp["client"];
+                delete exp["tasks"];
+                delete exp["expenditures"];
+                delete exp["drive_record"];
+            }
+        } catch (expErr) {}
+    }
+}, "appointments");
+
+// ==========================================
+// MITARBEITERPORTAL: QR-CODE SCHNELLZUGANG & TOKEN MANAGEMENT
+// ==========================================
+
+// 1. QR-Code / Direktlink Schnell-Login
+routerAdd("POST", "/api/orgaflow/auth/employee-token", (c) => {
+    let body = {};
+    try {
+        body = $apis.requestInfo(c).data || {};
+    } catch(e) {}
+
+    const token = (body.token || "").trim();
+    if (!token) {
+        throw new BadRequestError("Zugriffs-Token fehlt.");
+    }
+
+    // Suche Benutzer mit diesem Token
+    const userModel = new DynamicModel({
+        "id": "", "email": "", "username": "", "role": "", "status": "", "quick_access_token": "", "token_expires_at": ""
+    });
+
+    try {
+        $app.dao().db()
+            .newQuery("SELECT id, email, username, role, status, quick_access_token, token_expires_at FROM users WHERE quick_access_token = {:token} LIMIT 1")
+            .bind({ token: token })
+            .one(userModel);
+    } catch(e) {
+        throw new BadRequestError("Ungültiger oder nicht gefundener Schnellzugriffs-Token.");
+    }
+
+    if (!userModel.id) {
+        throw new BadRequestError("Ungültiger Schnellzugriffs-Token.");
+    }
+
+    // Status-Check (Inaktiv / Gesperrt?)
+    if (userModel.status === "Inaktiv") {
+        throw new ForbiddenError("Dieser Mitarbeiter-Account ist derzeit inaktiv geschaltet.");
+    }
+
+    // Gültigkeits-Check (Ablaufdatum)
+    if (userModel.token_expires_at) {
+        const expiryTime = new Date(userModel.token_expires_at).getTime();
+        if (!isNaN(expiryTime) && expiryTime < Date.now()) {
+            throw new BadRequestError("Dieser QR-Code-Zugang ist abgelaufen. Bitte fordern Sie einen neuen Link bei der Administration an.");
+        }
+    }
+
+    const fullUser = $app.dao().findRecordById("users", userModel.id);
+    if (!fullUser) {
+        throw new NotFoundError("Mitarbeiterprofil nicht gefunden.");
+    }
+
+    // Audit-Log für GoBD & DSGVO Nachvollziehbarkeit
+    try {
+        const auditColl = $app.dao().findCollectionByNameOrId("audit_logs");
+        if (auditColl) {
+            const logRec = new Record(auditColl);
+            const fullName = (fullUser.getString("name_first") + " " + fullUser.getString("name_last")).trim() || fullUser.getString("email");
+            logRec.set("user_name", fullName);
+            logRec.set("user_role", fullUser.getString("role") || "employee");
+            logRec.set("action", "EMPLOYEE_QR_LOGIN");
+            logRec.set("route", "/api/orgaflow/auth/employee-token");
+            logRec.set("details", "Erfolgreicher mobiler Schnellzugriff via QR-Code Token für " + fullName + " (" + fullUser.id + ")");
+            $app.dao().saveRecord(logRec);
+        }
+    } catch (logErr) {
+        console.warn("Audit-Log Fehler bei Employee-QR-Login:", logErr);
+    }
+
+    // Standardisierte PocketBase Auth-Response zurückgeben
+    return $apis.recordAuthResponse(c, fullUser, "qr_quick_access");
+});
+
+// 2. Admin: QR-Zugangs-Token generieren mit konfigurierbarer Gültigkeit
+routerAdd("POST", "/api/orgaflow/employees/generate-token", (c) => {
+    const authRecord = c.auth || (typeof c.get === 'function' ? c.get("authRecord") : null);
+    if (!authRecord) {
+        throw new ForbiddenError("Zugriff verweigert: Bitte als Administrator anmelden.");
+    }
+
+    const collName = typeof authRecord.collectionName === 'function' ? authRecord.collectionName() : authRecord.collection().name;
+    const isSuperuser = collName === "_superusers";
+    const role = authRecord.getString("role");
+    const isAdmin = isSuperuser || role === "superadmin" || role === "owner" || role === "admin";
+
+    if (!isAdmin) {
+        throw new ForbiddenError("Zugriff verweigert: Nur Administratoren dürfen QR-Zugangs-Tokens generieren.");
+    }
+
+    let data = {};
+    try {
+        data = $apis.requestInfo(c).data || {};
+    } catch(e) {}
+
+    const targetUserId = data.userId;
+    if (!targetUserId) {
+        throw new BadRequestError("Benutzer-ID fehlt.");
+    }
+
+    const targetUser = $app.dao().findRecordById("users", targetUserId);
+    if (!targetUser) {
+        throw new NotFoundError("Zielbenutzer nicht gefunden.");
+    }
+
+    // Gültigkeit in Stunden (Standard: 7 Tage = 168h, oder konfigurierbar)
+    const validityHours = parseInt(data.validityHours) || (7 * 24);
+    let expiresAtIso = "";
+    if (validityHours > 0) {
+        const d = new Date(Date.now() + validityHours * 3600 * 1000);
+        expiresAtIso = d.toISOString().replace("T", " ").substring(0, 19) + "Z";
+    }
+
+    // Kryptografisch sicheres Token (48 Zeichen)
+    const token = $security.randomString(48);
+
+    targetUser.set("quick_access_token", token);
+    targetUser.set("token_expires_at", expiresAtIso);
+    $app.dao().saveRecord(targetUser);
+
+    // Audit-Log
+    try {
+        const auditColl = $app.dao().findCollectionByNameOrId("audit_logs");
+        if (auditColl) {
+            const logRec = new Record(auditColl);
+            const callerName = (authRecord.getString("name_first") + " " + authRecord.getString("name_last")).trim() || authRecord.getString("email") || "Admin";
+            logRec.set("user_name", callerName);
+            logRec.set("user_role", authRecord.getString("role") || "admin");
+            logRec.set("action", "EMPLOYEE_TOKEN_GENERATED");
+            logRec.set("route", "/api/orgaflow/employees/generate-token");
+            logRec.set("details", "Neuer QR-Zugangslink erstellt für " + (targetUser.getString("email") || targetUser.id) + " mit Gültigkeit bis " + (expiresAtIso || "unbegrenzt"));
+            $app.dao().saveRecord(logRec);
+        }
+    } catch (e) {}
+
+    return c.json(200, {
+        success: true,
+        token: token,
+        expiresAt: expiresAtIso,
+        userId: targetUserId
+    });
+});
+
+// 3. Admin: QR-Zugangs-Token sofort widerrufen (Revoke)
+routerAdd("POST", "/api/orgaflow/employees/revoke-token", (c) => {
+    const authRecord = c.auth || (typeof c.get === 'function' ? c.get("authRecord") : null);
+    if (!authRecord) {
+        throw new ForbiddenError("Zugriff verweigert.");
+    }
+
+    let data = {};
+    try {
+        data = $apis.requestInfo(c).data || {};
+    } catch(e) {}
+
+    const targetUserId = data.userId;
+    if (!targetUserId) {
+        throw new BadRequestError("Benutzer-ID fehlt.");
+    }
+
+    const targetUser = $app.dao().findRecordById("users", targetUserId);
+    if (!targetUser) {
+        throw new NotFoundError("Zielbenutzer nicht gefunden.");
+    }
+
+    targetUser.set("quick_access_token", "");
+    targetUser.set("token_expires_at", "");
+    $app.dao().saveRecord(targetUser);
+
+    return c.json(200, {
+        success: true,
+        message: "QR-Zugang erfolgreich widerrufen."
+    });
+});

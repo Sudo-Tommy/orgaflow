@@ -3,7 +3,7 @@
 	import { onMount } from "svelte";
 	import { authManager } from "$lib/services/auth.svelte";
 	import { goto } from "$app/navigation";
-	import { page } from "$app/stores";
+	import { page, updated } from "$app/stores";
 	import { pb } from "$lib/services/pocketbase";
 	import { orgaStore } from "$lib/stores/orgaStore.svelte";
 	import AppSidebar from "$lib/components/AppSidebar.svelte";
@@ -14,15 +14,33 @@
 	import UpdateLogModal from "$lib/components/UpdateLogModal.svelte";
 	import { rbacService } from "$lib/services/rbacService.svelte";
 	import { toastStore } from "$lib/services/toastService.svelte";
+	import { themeService } from "$lib/services/themeService.svelte";
+	import ActiveTrackingBar from "$lib/components/ActiveTrackingBar.svelte";
+	import { timeTrackingStore } from "$lib/stores/timeTracking.svelte";
+	import AppointmentDetailModal from "$lib/components/AppointmentDetailModal.svelte";
+	import { appointmentModalService } from "$lib/services/appointmentModalService.svelte";
 
 	let { children } = $props();
 
 	let isMobileMenuOpen = $state(false);
-	let isDarkMode = $state(false);
+	let isDarkMode = $derived(themeService.isDark);
+	let globalAppointmentModal: any = $state();
 	const auth = authManager();
+
+	$effect(() => {
+		if (globalAppointmentModal) {
+			appointmentModalService.register(globalAppointmentModal);
+		}
+	});
 
 	onMount(() => {
 		return auth.setup();
+	});
+
+	$effect(() => {
+		if ($updated && typeof window !== 'undefined') {
+			window.location.reload();
+		}
 	});
 
 	// Reaktive Bestimmung der Sichtbarkeit (verfügbar im gesamten Layout)
@@ -30,6 +48,7 @@
 		$page.url.pathname === '/' || 
 		$page.url.pathname.startsWith('/login') || 
 		$page.url.pathname.startsWith('/portal') ||
+		$page.url.pathname.startsWith('/mitarbeiter') ||
 		$page.url.pathname.startsWith('/datenschutz') ||
 		$page.url.pathname.startsWith('/privacy') ||
 		$page.url.pathname.startsWith('/impressum') ||
@@ -52,6 +71,8 @@
 			// Eingeloggte Nutzer von der Start- oder Login-Seite weg zum Dashboard oder Portal leiten
 			if (rbacService.isClient) {
 				goto('/portal');
+			} else if (rbacService.rawRole === 'employee') {
+				goto('/mitarbeiter');
 			} else {
 				goto('/dashboard');
 			}
@@ -100,45 +121,9 @@
 		}
 	});
 
-	// --- Automatischer, zeitgesteuerter Tag-/Nachtmodus ---
-	$effect(() => {
-		function checkTimeAndApplyTheme() {
-			// Prüfen, ob der Nutzer manuell eingegriffen hat
-			const manualTheme = localStorage.getItem('theme_preference');
-			if (manualTheme === 'dark') {
-				document.documentElement.classList.add('dark', 'theme-negative');
-				isDarkMode = true;
-				return;
-			} else if (manualTheme === 'light') {
-				document.documentElement.classList.remove('dark', 'theme-negative');
-				isDarkMode = false;
-				return;
-			}
-
-			const hour = new Date().getHours();
-			
-			// Nachtmodus zwischen 19:00 Uhr abends und 06:59 Uhr morgens
-			const isNight = hour >= 19 || hour < 7;
-			
-			if (isNight) {
-				document.documentElement.classList.add('dark', 'theme-negative');
-				isDarkMode = true;
-			} else {
-				document.documentElement.classList.remove('dark', 'theme-negative');
-				isDarkMode = false;
-			}
-		}
-
-		checkTimeAndApplyTheme(); // Sofort beim Laden ausführen
-		const interval = setInterval(checkTimeAndApplyTheme, 60000); // Jede Minute prüfen
-		
-		// Listener für unseren manuellen Umschalt-Button und die Sidebar
-		window.addEventListener('theme-changed', checkTimeAndApplyTheme);
-
-		return () => {
-			clearInterval(interval);
-			window.removeEventListener('theme-changed', checkTimeAndApplyTheme);
-		};
+	// --- Automatischer, zeitgesteuerter Tag-/Nachtmodus via themeService ---
+	onMount(() => {
+		themeService.init();
 	});
 
 	// --- Navigation Setup (Rollen-basiert) ---
@@ -152,8 +137,10 @@
 			{ label: 'Vorlagen', href: '/documents', icon: iconDocuments },
 			{ label: 'Rechnungen', href: '/invoices', icon: iconDocuments },
 			{ label: 'BWA & Statistik', href: '/bwa', icon: iconChart },
+			{ label: 'E-Mails', href: '/mail', icon: iconMail },
 			{ label: 'Kontakte', href: '/contacts', icon: iconProfile },
 			{ label: 'Mein Profil', href: '/profile', icon: iconProfile },
+			{ label: 'Mitarbeiterportal', href: '/mitarbeiter', icon: iconProfile },
 			{ label: 'Haushaltsbuch', href: '/finances', icon: iconWallet },
 			{ label: 'System-Admin', href: '/admin', icon: iconAdmin }
 		];
@@ -214,9 +201,10 @@
 		<div class="flex-1 flex flex-col relative overflow-hidden">
 			<!-- Subtiler Hintergrund-Glow im Main-Bereich für mehr visuelle Tiefe -->
 			<div class="absolute top-0 right-0 w-125 h-125 bg-indigo-500/5 blur-[100px] pointer-events-none rounded-full"></div>
-			<main class="flex-1 overflow-y-auto px-3.5 py-4 sm:px-6 md:p-8 lg:p-10 pb-24 md:pb-10 custom-scrollbar scroll-smooth relative z-10 bg-slate-50/60 dark:bg-slate-950">
+			<main class="flex-1 overflow-y-auto px-3.5 py-4 sm:px-6 lg:p-8 {timeTrackingStore.isVisibleForCurrentUser ? 'pb-[calc(9rem+env(safe-area-inset-bottom,0px))] sm:pb-36 lg:pb-24' : 'pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] sm:pb-24 lg:pb-8'} custom-scrollbar scroll-smooth relative z-10 bg-slate-50/60 dark:bg-slate-950">
 				{@render children()}
 			</main>
+			<ActiveTrackingBar />
 			<AppBottomNav onOpenMenu={() => isMobileMenuOpen = true} />
 		</div>
 	</div>
@@ -232,6 +220,7 @@
 <ToastLayer />
 <ConfirmLayer />
 <UpdateLogModal />
+<AppointmentDetailModal bind:this={globalAppointmentModal} />
 
 <style>
 	/* Unterschriften auf weißem Grund werden im Dark Mode als nahtloser Schriftzug eingefügt */

@@ -154,6 +154,16 @@
                 </a>
             {/if}
 
+            <a href="/admin/mitarbeiter" class="flex-1 md:flex-none flex items-center justify-center md:justify-start gap-2 md:gap-3 px-3 md:px-4 py-2 md:py-3 rounded-xl transition-all text-xs md:text-sm font-semibold whitespace-nowrap text-indigo-700 bg-indigo-50/60 hover:bg-indigo-100/80 border border-indigo-100 shadow-2xs group">
+                <span class="text-base md:text-lg leading-none group-hover:scale-110 transition-transform">👥</span> 
+                <span class="font-bold">Mitarbeiter & QR-Zugang</span>
+            </a>
+
+            <a href="/admin/iam" class="flex-1 md:flex-none flex items-center justify-center md:justify-start gap-2 md:gap-3 px-3 md:px-4 py-2 md:py-3 rounded-xl transition-all text-xs md:text-sm font-semibold whitespace-nowrap text-neutral-600 hover:bg-neutral-100 hover:text-indigo-700 border border-transparent">
+                <span class="text-base md:text-lg leading-none">🛡️</span> 
+                <span>IAM & Access Portal</span>
+            </a>
+
             <a href="/admin/proposals" class="flex-1 md:flex-none flex items-center justify-center md:justify-start gap-2 md:gap-3 px-3 md:px-4 py-2 md:py-3 rounded-xl transition-all text-xs md:text-sm font-semibold whitespace-nowrap text-neutral-600 hover:bg-neutral-100 hover:text-indigo-700 border border-transparent">
                 <span class="text-base md:text-lg leading-none">💡</span> Vorschläge & Synthese
             </a>
@@ -228,15 +238,34 @@
                             <p class="text-xs text-neutral-500 font-medium relative z-10">Bereit für E-Mails & KI-Diktate</p>
                             <div class="mt-2 text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-1 rounded w-fit border border-blue-100 relative z-10">{import.meta.env.DEV ? 'Lokaler Dev-Modus' : 'Produktiv-Umgebung'}</div>
                         </div>
-                        <div class="bg-white border border-neutral-200 p-5 rounded-2xl shadow-sm flex flex-col gap-2 relative overflow-hidden group hover:border-indigo-200 transition-colors">
+                        <a href="/admin/mitarbeiter" class="bg-white border border-neutral-200 p-5 rounded-2xl shadow-sm flex flex-col gap-2 relative overflow-hidden group hover:border-indigo-300 hover:shadow-md transition-all">
                             <div class="absolute top-0 right-0 w-24 h-24 bg-indigo-50 rounded-full blur-2xl group-hover:scale-110 transition-transform"></div>
-                            <div class="flex items-center gap-3 relative z-10">
-                                <span class="text-xl leading-none">🛡️</span>
-                                <h4 class="font-bold text-neutral-900 text-sm">Authentifizierung</h4>
+                            <div class="flex items-center justify-between relative z-10">
+                                <div class="flex items-center gap-3">
+                                    <span class="text-xl leading-none">👥</span>
+                                    <h4 class="font-bold text-neutral-900 text-sm">Mitarbeiter & QR-Zugang</h4>
+                                </div>
+                                <span class="text-neutral-400 group-hover:text-indigo-600 transition-colors text-xs font-bold">→</span>
                             </div>
-                            <p class="text-xs text-neutral-500 font-medium relative z-10">Session gültig</p>
-                            <div class="mt-2 text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-1 rounded w-fit border border-indigo-100 truncate relative z-10" title={pb.authStore.model?.email}>{pb.authStore.model?.email}</div>
-                        </div>
+                            <p class="text-xs text-neutral-500 font-medium relative z-10">Außendienst, Klienten & Kontakte</p>
+                            <div class="mt-2 text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-1 rounded w-fit border border-indigo-100 truncate relative z-10">
+                                Zuweisungen & QR-Login
+                            </div>
+                        </a>
+                        <a href="/admin/iam" class="bg-white border border-neutral-200 p-5 rounded-2xl shadow-sm flex flex-col gap-2 relative overflow-hidden group hover:border-indigo-300 hover:shadow-md transition-all">
+                            <div class="absolute top-0 right-0 w-24 h-24 bg-indigo-50 rounded-full blur-2xl group-hover:scale-110 transition-transform"></div>
+                            <div class="flex items-center justify-between relative z-10">
+                                <div class="flex items-center gap-3">
+                                    <span class="text-xl leading-none">🛡️</span>
+                                    <h4 class="font-bold text-neutral-900 text-sm">IAM & Access</h4>
+                                </div>
+                                <span class="text-neutral-400 group-hover:text-indigo-600 transition-colors text-xs font-bold">→</span>
+                            </div>
+                            <p class="text-xs text-neutral-500 font-medium relative z-10">Identitäten & Policy Simulator</p>
+                            <div class="mt-2 text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-1 rounded w-fit border border-indigo-100 truncate relative z-10" title={pb.authStore.model?.email}>
+                                {totalUsers} Identitäten verwalten
+                            </div>
+                        </a>
                         {#if rbacService.canAccessSystemPrompts}
                             <a href="/admin/system-prompts" class="bg-white border border-neutral-200 p-5 rounded-2xl shadow-sm flex flex-col justify-between gap-2 relative overflow-hidden group hover:border-purple-300 hover:shadow-md transition-all">
                                 <div class="absolute top-0 right-0 w-24 h-24 bg-purple-50 rounded-full blur-2xl group-hover:scale-110 transition-transform"></div>

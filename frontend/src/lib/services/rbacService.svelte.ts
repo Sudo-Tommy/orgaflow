@@ -1,6 +1,6 @@
 import { pb } from '$lib/services/pocketbase';
 
-export type UserRole = 'superadmin' | 'owner' | 'admin' | 'user' | 'caregiver' | 'guest' | 'client';
+export type UserRole = 'superadmin' | 'owner' | 'admin' | 'user' | 'caregiver' | 'employee' | 'guest' | 'client';
 
 /**
  * rbacService.svelte.ts
@@ -9,14 +9,18 @@ export type UserRole = 'superadmin' | 'owner' | 'admin' | 'user' | 'caregiver' |
  * Gewährleistet strikte Trennung zwischen:
  * - Inhaber / Global Owner (Full Control über alle Betriebe)
  * - Betriebsleiter / Facility Admin (ausschließlich eigener Betrieb)
- * - Betreuer / Pflegekraft (ausschließlich eigene Termine & zugewiesene Klienten)
+ * - Betreuer / Pflegekraft / Mitarbeiter (ausschließlich eigene Termine & zugewiesene Klienten/Kontakte)
  * - Klient / Gast (ausschließlich Klienten-Portal)
  */
 class RbacService {
+    get currentUser(): any {
+        return pb.authStore.record || pb.authStore.model;
+    }
+
     // Gibt die rohe Rolle des eingeloggten Benutzers zurück
     get rawRole(): string {
-        if (pb.authStore.isSuperuser) return 'superadmin';
-        return pb.authStore.model?.role || 'user';
+        if (pb.authStore.isSuperuser || this.currentUser?.collectionName === '_superusers') return 'superadmin';
+        return this.currentUser?.role || 'user';
     }
 
     // Ist Inhaber mit absolutem Vollzugriff (Tommy Jenzsch / Superadmin)
@@ -33,7 +37,11 @@ class RbacService {
 
     // Ist Mitarbeiter / Pflegekraft / Betreuer
     get isCaregiver(): boolean {
-        return !this.isOwner && !this.isFacilityAdmin && (this.rawRole === 'user' || this.rawRole === 'caregiver' || !this.rawRole);
+        return !this.isOwner && !this.isFacilityAdmin && (this.rawRole === 'user' || this.rawRole === 'caregiver' || this.rawRole === 'employee' || !this.rawRole);
+    }
+
+    get isEmployee(): boolean {
+        return this.isCaregiver;
     }
 
     // Ist Klient (nur Portal)
@@ -43,7 +51,7 @@ class RbacService {
 
     // Liefert die ID des zugewiesenen Betriebs (falls vorhanden)
     get userCompanyId(): string | null {
-        const c = pb.authStore.model?.company;
+        const c = this.currentUser?.company;
         if (!c) return null;
         if (Array.isArray(c)) return c[0] || null;
         if (typeof c === 'string' && c.startsWith('[')) {
@@ -106,7 +114,7 @@ class RbacService {
         if (this.isOwner) return true;
 
         const myCompanyId = this.userCompanyId;
-        const myUserId = pb.authStore.model?.id;
+        const myUserId = this.currentUser?.id;
 
         // Kontakte sind zentrale Adressbuchdaten (Ärzte, Betreuer, Angehörige, Pflegedienste) und für alle Mitarbeiter/Admins sichtbar
         if (type === 'contact') return true;
@@ -150,7 +158,9 @@ class RbacService {
             if (!myUserId) return false;
 
             if (type === 'appointment') {
-                return record.user === myUserId || (Array.isArray(record.user) && record.user.includes(myUserId));
+                const userMatch = record.user === myUserId || (Array.isArray(record.user) && record.user.includes(myUserId));
+                const assignedMatch = record.assigned_to === myUserId || (Array.isArray(record.assigned_to) && record.assigned_to.includes(myUserId));
+                return userMatch || assignedMatch;
             }
             if (type === 'client') {
                 return record.caregiver === myUserId || 
@@ -164,6 +174,22 @@ class RbacService {
         }
 
         return false;
+    }
+
+    /**
+     * Prüft, ob ein Kontakt vom aktuellen Benutzer bearbeitet/gelöscht werden darf.
+     * Vollzugriff für Admin/Owner und Ersteller (created_by); zugewiesene Kontakte sind schreibgeschützt.
+     */
+    canEditContact(contact: any): boolean {
+        if (!contact) return false;
+        if (this.isAdmin) return true;
+        const myUserId = this.currentUser?.id;
+        if (!myUserId) return false;
+        if (!contact.created_by) {
+            // Kontakte ohne expliziten Ersteller sind historische/globale Kontakte: nur Admin darf ändern
+            return false;
+        }
+        return contact.created_by === myUserId || (Array.isArray(contact.created_by) && contact.created_by.includes(myUserId));
     }
 }
 

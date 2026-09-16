@@ -11,7 +11,9 @@ export interface BaseRecord extends RecordModel {
 // ==========================================
 // ENUMS (Auswählbare Werte aus deiner DB)
 // ==========================================
-export type Role = 'guest' | 'user' | 'admin' | 'superadmin';
+export type Role = 'guest' | 'user' | 'admin' | 'superadmin' | 'owner' | 'caregiver' | 'employee' | 'client';
+export type EmploymentType = 'Vollzeit' | 'Teilzeit' | 'Minijob' | 'Freiberuflich' | 'Praktikum' | 'Werkstudent';
+export type EmployeeStatus = 'Aktiv' | 'Inaktiv' | 'Urlaub' | 'Krank';
 export type Salutation = 'Herr' | 'Frau' | 'Divers' | 'Keine Angabe';
 export type MaritalStatus = 'Ledig' | 'Verheiratet' | 'Geschieden' | 'Verwitwet';
 export type ClientStatus = 'Aktiv' | 'Inaktiv' | 'Verstorben';
@@ -46,6 +48,15 @@ export interface UserRecord extends BaseRecord {
     handy?: string;
     smtp_mail?: string;
     smtp_password?: string;
+    qualifications?: string;
+    emergency_contacts?: string;
+    employment_type?: EmploymentType;
+    status?: EmployeeStatus;
+    assigned_clients?: string[];
+    assigned_contacts?: string[];
+    quick_access_token?: string;
+    token_expires_at?: string;
+    facility?: string;
 }
 
 export interface SuperuserRecord extends BaseRecord {
@@ -73,6 +84,7 @@ export interface AccountingRecord extends BaseRecord {
 
 export interface AppointmentRecord extends BaseRecord {
     user?: string; // Relation
+    assigned_to?: string; // Relation
     client?: string[]; // Relation
     is_private?: boolean;
     appointment?: string; // date
@@ -81,6 +93,11 @@ export interface AppointmentRecord extends BaseRecord {
     time_record?: string[]; // Relation
     tasks?: string[]; // Relation
     expenditures?: string[]; // Relation
+    location_address?: string;
+    report?: string;
+    notes?: string;
+    settled?: boolean;
+    checklist?: any;
 }
 
 export interface ClientRecord extends BaseRecord {
@@ -146,6 +163,21 @@ export interface ContactRecord extends BaseRecord {
     city?: string;
     notes?: any; // JSON
     sign?: string; // file
+    created_by?: string; // Relation
+    assigned_employees?: string[]; // Relation
+}
+
+export interface EmployeeClientRecord extends BaseRecord {
+    employee: string;
+    client: string;
+    facility?: string;
+    notes?: string;
+}
+
+export interface EmployeeContactRecord extends BaseRecord {
+    employee: string;
+    contact: string;
+    access_type?: 'read_only' | 'full';
 }
 
 export interface DocumentTemplateRecord extends BaseRecord {
@@ -236,6 +268,16 @@ export interface RetirementHomeRecord extends BaseRecord {
     address?: string; // geoPoint string
     contacts?: string[]; // Relation
 }
+
+export interface NursingHomeRecord extends BaseRecord {
+    name: string;
+    street?: string;
+    zip?: string;
+    city?: string;
+    phone?: string;
+    status?: 'preliminary' | 'verified';
+}
+
 
 export interface TaskRecord extends BaseRecord {
     title: string;

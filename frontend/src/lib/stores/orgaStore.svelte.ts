@@ -4,7 +4,7 @@ import type {
     ClientRecord, CompanyRecord, ContactRecord, DocumentTemplateRecord, 
     DriveRecordRecord, ExpenditureRecord, InsuranceRecord, InvoiceRecord, 
     LetterboxRecord, LiveChatRecord, MailboxMessageRecord, RetirementHomeRecord, 
-    TaskRecord, TimeRecordRecord, UpdateRecord, SystemPromptRecord 
+    NursingHomeRecord, TaskRecord, TimeRecordRecord, UpdateRecord, SystemPromptRecord 
 } from '$lib/types/orgaTypes';
 
 // Hier definieren wir unsere zentralen Daten-Töpfe.
@@ -24,12 +24,12 @@ export const orgaStore = {
     
     appointments: new OrgaLiveCollection<AppointmentRecord>('appointments', { 
         sort: '-appointment', // Neueste Termine zuerst
-        expand: 'user,client,drive_record,time_record,tasks,expenditures,appointment_at' // WIRKLICH ALLE Verknüpfungen
+        expand: 'user,assigned_to,client,appointment_at,drive_record,time_record,tasks,expenditures' // Strikter Expand für Klient, Mitarbeiter, Aufgaben etc.
     }),
     
     clients: new OrgaLiveCollection<ClientRecord>('clients', { 
         sort: 'name_last', 
-        expand: 'insurance,retirement_homes,contacts,templates,caregiver,inheritor'
+        expand: 'insurance,retirement_homes,nursing_homes,contacts,templates,caregiver,inheritor'
         // WICHTIG: Entferne hier den harten Filter, der 'Verstorben' oder 'Inaktiv' ausschließt!
     }),
 
@@ -38,7 +38,10 @@ export const orgaStore = {
         expand: 'users,clients'
     }),
     
-    contacts: new OrgaLiveCollection<ContactRecord>('contacts', { sort: 'name_last' }),
+    contacts: new OrgaLiveCollection<ContactRecord>('contacts', { 
+        sort: 'name_last',
+        expand: 'created_by,assigned_employees'
+    }),
     document_templates: new OrgaLiveCollection<DocumentTemplateRecord>('document_templates'),
     drive_records: new OrgaLiveCollection<DriveRecordRecord>('drive_records'),
     expenditure: new OrgaLiveCollection<ExpenditureRecord>('expenditure'),
@@ -65,9 +68,15 @@ export const orgaStore = {
         sort: 'name',
         expand: 'contacts'
     }),
+
+    nursing_homes: new OrgaLiveCollection<NursingHomeRecord>('nursing_homes', {
+        sort: 'name'
+    }),
     
     tasks: new OrgaLiveCollection<TaskRecord>('tasks', { sort: '-created' }),
     time_records: new OrgaLiveCollection<TimeRecordRecord>('time_records', { sort: '-start' }),
     updates: new OrgaLiveCollection<UpdateRecord>('updates', { sort: '-date' }),
-    system_prompts: new OrgaLiveCollection<SystemPromptRecord>('system_prompts', { sort: '-created' })
+    system_prompts: new OrgaLiveCollection<SystemPromptRecord>('system_prompts', { sort: '-created' }),
+    employee_clients: new OrgaLiveCollection<any>('employee_clients', { expand: 'employee,client' }),
+    employee_contacts: new OrgaLiveCollection<any>('employee_contacts', { expand: 'employee,contact' })
 };
