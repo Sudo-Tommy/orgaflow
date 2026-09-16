@@ -23,6 +23,17 @@ export interface CreateEmployeePayload {
     city?: string;
 }
 
+function sanitizeUsername(input: string): string {
+    return input
+        .toLowerCase()
+        .replace(/ä/g, 'ae')
+        .replace(/ö/g, 'oe')
+        .replace(/ü/g, 'ue')
+        .replace(/ß/g, 'ss')
+        .replace(/[^a-z0-9\.\-_]/g, '')
+        .replace(/^\.+|\.+$/g, '');
+}
+
 class EmployeeService {
     isSubmitting = $state(false);
 
@@ -32,17 +43,54 @@ class EmployeeService {
     async createEmployee(payload: CreateEmployeePayload): Promise<UserRecord | null> {
         this.isSubmitting = true;
         try {
-            const username = payload.username || 
-                `${payload.name_first.toLowerCase().replace(/\s+/g, '')}.${payload.name_last.toLowerCase().replace(/\s+/g, '')}.${Math.floor(100 + Math.random() * 900)}`;
-            
-            const password = payload.password || `OF-${Math.random().toString(36).slice(-8)}!A1`;
+            // 1. Versuche zunächst den sicheren Server-Endpunkt mit Superuser-Berechtigung
+            try {
+                const response = await fetch('/api/employees/create', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${pb.authStore.token}`
+                    },
+                    body: JSON.stringify(payload)
+                });
 
-            const data: any = {
+                if (response.ok) {
+                    const result = await response.json();
+                    if (result.success && result.record) {
+                        await orgaStore.users.init();
+                        const passMsg = result.generatedPassword 
+                            ? ` (Start-Passwort: ${result.generatedPassword})` 
+                            : '';
+                        toastStore.success(`Mitarbeiter "${payload.name_first} ${payload.name_last}" erfolgreich angelegt.${passMsg}`);
+                        return result.record as unknown as UserRecord;
+                    }
+                } else {
+                    const errorJson = await response.json().catch(() => null);
+                    if (errorJson?.message) {
+                        toastStore.error(errorJson.message);
+                        return null;
+                    }
+                }
+            } catch (apiErr) {
+                console.warn('Server-Endpunkt /api/employees/create nicht erreichbar, nutze direkten Client-Fallback:', apiErr);
+            }
+
+            // 2. Client-seitiger Fallback direkt über PocketBase SDK
+            let username = sanitizeUsername(payload.username || '');
+            if (!username || username.length < 3) {
+                const safeFirst = sanitizeUsername(payload.name_first) || 'user';
+                const safeLast = sanitizeUsername(payload.name_last) || 'employee';
+                username = `${safeFirst}.${safeLast}.${Math.floor(100 + Math.random() * 900)}`;
+            }
+            
+            const password = payload.password?.trim() || `OF-${Math.random().toString(36).slice(-8)}!A1`;
+
+            const data: Record<string, any> = {
                 username: username,
                 email: payload.email.trim(),
                 emailVisibility: true,
                 password: password,
-                passwordConfirm: payload.passwordConfirm || password,
+                passwordConfirm: payload.passwordConfirm?.trim() || password,
                 name_first: payload.name_first.trim(),
                 name_last: payload.name_last.trim(),
                 role: payload.role || 'employee',
@@ -55,9 +103,17 @@ class EmployeeService {
                 street: payload.street || '',
                 housenr: payload.housenr || '',
                 zip: payload.zip || '',
-                city: payload.city || '',
-                verified: true
+                city: payload.city || ''
+                // HINWEIS: 'verified' wird hier bewusst weggelassen, da nur Superuser 'verified: true' setzen dürfen.
             };
+
+            const currentAuth = pb.authStore.record as any;
+            if (currentAuth?.company) {
+                data.company = currentAuth.company;
+            }
+            if (currentAuth?.facility) {
+                data.facility = currentAuth.facility;
+            }
 
             const record = await pb.collection('users').create(data);
             await orgaStore.users.init();
@@ -65,7 +121,15 @@ class EmployeeService {
             return record as unknown as UserRecord;
         } catch (err: any) {
             console.error('Fehler beim Anlegen des Mitarbeiters:', err);
-            const msg = err?.data?.message || err?.message || 'Fehler beim Anlegen des Mitarbeiters.';
+            let msg = err?.data?.message || err?.message || 'Fehler beim Anlegen des Mitarbeiters.';
+            if (err?.data?.data && typeof err.data.data === 'object') {
+                const fieldErrors = Object.entries(err.data.data)
+                    .map(([field, details]: [string, any]) => `${field}: ${details?.message || details?.code || 'ungültig'}`)
+                    .join(', ');
+                if (fieldErrors) {
+                    msg = `Validierungsfehler: ${fieldErrors}`;
+                }
+            }
             toastStore.error(msg);
             return null;
         } finally {
@@ -85,7 +149,16 @@ class EmployeeService {
             return true;
         } catch (err: any) {
             console.error('Fehler beim Aktualisieren des Mitarbeiters:', err);
-            toastStore.error(err?.message || 'Aktualisierung fehlgeschlagen.');
+            let msg = err?.data?.message || err?.message || 'Aktualisierung fehlgeschlagen.';
+            if (err?.data?.data && typeof err.data.data === 'object') {
+                const fieldErrors = Object.entries(err.data.data)
+                    .map(([field, details]: [string, any]) => `${field}: ${details?.message || details?.code || 'ungültig'}`)
+                    .join(', ');
+                if (fieldErrors) {
+                    msg = `Validierungsfehler: ${fieldErrors}`;
+                }
+            }
+            toastStore.error(msg);
             return false;
         } finally {
             this.isSubmitting = false;
