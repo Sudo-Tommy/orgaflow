@@ -8,8 +8,13 @@
     } from 'lucide-svelte';
     import type { ClientRecord } from '$lib/types/orgaTypes';
 
+    let { 
+        onSelectClientAppointments 
+    }: { 
+        onSelectClientAppointments?: (clientId: string) => void;
+    } = $props();
+
     let searchQuery = $state('');
-    let selectedClient: ClientRecord | null = $state(null);
 
     const currentUser = $derived(pb.authStore.model);
     const currentUserId = $derived(currentUser?.id);
@@ -37,6 +42,16 @@
             (c.notes || '').toLowerCase().includes(q)
         );
     });
+
+    function getUpcomingAppointmentsCount(clientId: string): number {
+        const nowStr = new Date().toISOString().slice(0, 10);
+        const appts = orgaStore.appointments.data || [];
+        return appts.filter(a => {
+            const isClient = Array.isArray(a.client) ? a.client.includes(clientId) : a.client === clientId;
+            const isFutureOrOpen = (a.appointment || '').slice(0, 10) >= nowStr || a.status !== 'Erledigt';
+            return isClient && isFutureOrOpen;
+        }).length;
+    }
 
     function openMapsNavigation(client: ClientRecord) {
         const address = `${client.street || ''} ${client.housenr || ''}, ${client.zip || ''} ${client.city || ''}`.trim();
@@ -94,6 +109,7 @@
             {#each filteredClients as client (client.id)}
                 {@const fullAddress = `${client.street || ''} ${client.housenr || ''}, ${client.zip || ''} ${client.city || ''}`.trim()}
                 {@const phone = client.phone || client.handy}
+                {@const upcomingCount = getUpcomingAppointmentsCount(client.id)}
 
                 <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 shadow-xs transition-all hover:border-indigo-300 dark:hover:border-indigo-700 space-y-4">
                     
@@ -113,14 +129,16 @@
                             </div>
                         </div>
 
-                        {#if client.level_of_care}
-                            <span class="text-xs font-black px-2.5 py-1 rounded-xl bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800 shrink-0">
-                                Pflegegrad {client.level_of_care}
-                            </span>
-                        {/if}
+                        <div class="flex items-center gap-1.5 shrink-0">
+                            {#if client.level_of_care}
+                                <span class="text-xs font-black px-2.5 py-1 rounded-xl bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                                    PG {client.level_of_care}
+                                </span>
+                            {/if}
+                        </div>
                     </div>
 
-                    <!-- Anschrift & Krankenkasse -->
+                    <!-- Anschrift -->
                     {#if fullAddress}
                         <div class="flex items-start gap-2 text-xs text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/40 p-3 rounded-2xl border border-slate-100 dark:border-slate-800">
                             <MapPin class="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" />
@@ -128,6 +146,7 @@
                         </div>
                     {/if}
 
+                    <!-- Notizen / Besonderheiten -->
                     {#if client.notes}
                         <div class="text-xs text-slate-600 dark:text-slate-400 bg-amber-50/50 dark:bg-amber-950/20 p-3 rounded-2xl border border-amber-200/50 dark:border-amber-900/30">
                             <strong class="text-amber-800 dark:text-amber-300 block mb-0.5">Betreuungshinweise & Besonderheiten:</strong>
@@ -135,8 +154,33 @@
                         </div>
                     {/if}
 
+                    <!-- Termin-Status für diesen Klienten -->
+                    <div class="flex items-center justify-between p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+                        <div class="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
+                            <Calendar class="w-4 h-4 text-indigo-500" />
+                            <span>
+                                {#if upcomingCount > 0}
+                                    <strong class="text-indigo-600 dark:text-indigo-400">{upcomingCount}</strong> anstehende(r) Einsatz/Einsätze
+                                {:else}
+                                    Keine offenen Termine
+                                {/if}
+                            </span>
+                        </div>
+
+                        {#if onSelectClientAppointments}
+                            <button
+                                type="button"
+                                onclick={() => onSelectClientAppointments?.(client.id)}
+                                class="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 flex items-center gap-1 p-1 hover:underline cursor-pointer"
+                            >
+                                <span>Einsätze anzeigen</span>
+                                <ChevronRight class="w-3.5 h-3.5" />
+                            </button>
+                        {/if}
+                    </div>
+
                     <!-- Ergonomische Außendienst-Aktionen (Mindestens 44x44 px) -->
-                    <div class="grid grid-cols-2 gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+                    <div class="grid grid-cols-2 gap-3 pt-1 border-t border-slate-100 dark:border-slate-800">
                         <button
                             type="button"
                             onclick={() => openMapsNavigation(client)}

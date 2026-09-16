@@ -98,6 +98,7 @@ export interface AppointmentRecord extends BaseRecord {
     notes?: string;
     settled?: boolean;
     checklist?: any;
+    status?: string;
 }
 
 export interface ClientRecord extends BaseRecord {

@@ -15,6 +15,7 @@
     // Lokale Checkbox-Zustände für Zuweisungen
     let selectedClientIds = $state<string[]>([]);
     let selectedContactIds = $state<string[]>([]);
+    let syncAppointmentsWithClients = $state(true);
 
     export function open(employee: UserRecord) {
         currentEmployee = employee;
@@ -65,7 +66,7 @@
 
     async function handleSaveClients() {
         if (!currentEmployee) return;
-        const success = await employeeService.assignClients(currentEmployee.id, selectedClientIds);
+        const success = await employeeService.assignClients(currentEmployee.id, selectedClientIds, syncAppointmentsWithClients);
         if (success) {
             currentEmployee.assigned_clients = selectedClientIds;
         }
@@ -200,6 +201,17 @@
                                 <span>Klienten-Zuweisung speichern</span>
                             </button>
                         </div>
+
+                        <label class="flex items-center gap-2.5 p-3 bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/50 rounded-xl cursor-pointer">
+                            <input 
+                                type="checkbox"
+                                bind:checked={syncAppointmentsWithClients}
+                                class="w-4 h-4 text-indigo-600 rounded-md border-slate-300 focus:ring-indigo-500"
+                            />
+                            <span class="text-xs font-semibold text-indigo-900 dark:text-indigo-200">
+                                Offene und zukünftige Termine dieser Klienten automatisch dem Mitarbeiter zuweisen (Termin-Sync)
+                            </span>
+                        </label>
 
                         <div class="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden divide-y divide-slate-100 dark:divide-slate-800 max-h-96 overflow-y-auto custom-scrollbar">
                             {#if filteredClients.length === 0}

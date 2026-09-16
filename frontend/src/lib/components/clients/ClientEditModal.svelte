@@ -3,6 +3,8 @@
     import { orgaStore } from "$lib/stores/orgaStore.svelte";
     import { confirmStore } from "$lib/services/confirmService.svelte";
     import { toastStore } from "$lib/services/toastService.svelte";
+    import { employeeService } from "$lib/services/employeeService.svelte";
+    import { Check, X, RotateCcw, Maximize2 } from "lucide-svelte";
 
     let { client } = $props<{ client: any }>();
 
@@ -15,6 +17,7 @@
 
     // Modus für Erben: 'contact' (Verknüpfung) oder 'direct' (Direkteingabe)
     let inheritorMode = $state<'contact' | 'direct'>('direct');
+    let initialAssignedEmployee = $state<string>('');
 
     // Formular-Daten für alle Klienten-Felder
     let formData = $state({
@@ -40,6 +43,7 @@
         tax_rate: "0",
         default_template: "",
         caregiver: "",
+        assigned_employee: "",
         company: "",
         notes: "",
         inheritor: "", // Relation zu contacts
@@ -80,14 +84,16 @@
     // Signatur-Status
     let signatureMode = $state<"draw" | "upload">("draw");
     let canvas = $state<HTMLCanvasElement | null>(null);
+    let fsCanvas = $state<HTMLCanvasElement | null>(null);
     let isDrawing = false;
+    let isFsDrawing = false;
     let uploadedFile = $state<File | null>(null);
     let hasDrawnSignature = $state(false);
+    let hasDrawnFsSignature = $state(false);
     let existingSignatureUrl = $state("");
     let deleteExistingSignature = $state(false);
     let initialDataHash = $state("");
     let isSignatureFullscreen = $state(false);
-    let sigDialog = $state<HTMLDialogElement | null>(null);
 
     // Dynamic Viewport Tracking für Mobile Virtual Keyboard
     let viewportHeight = $state('92vh');
@@ -139,67 +145,70 @@
         return val.substring(0, 10);
     }
 
-    export function open() {
+    export function open(overrideClient?: any) {
         activeTab = 'master';
-        if (client) {
-            const info = client.inheritor_info || {};
-            const linkedContactId = Array.isArray(client.inheritor) ? (client.inheritor[0] || "") : (client.inheritor || "");
+        const target = overrideClient || client;
+        if (target) {
+            const info = target.inheritor_info || {};
+            const linkedContactId = Array.isArray(target.inheritor) ? (target.inheritor[0] || "") : (target.inheritor || "");
             inheritorMode = linkedContactId ? 'contact' : 'direct';
 
             formData = {
-                salutation: client.salutation || "Keine Angabe",
-                name_first: client.name_first || "",
-                name_last: client.name_last || "",
-                nationality: client.nationality || "Deutsch",
-                marital_status: client.marital_status || "Keine Angabe",
-                email: client.email || "",
-                phone: client.phone || "",
-                handy: client.handy || "",
-                status: client.status || "Aktiv",
-                level_of_care: client.level_of_care || "",
-                street: client.street || "",
-                housenr: client.housenr || "",
-                zip: client.zip || "",
-                city: client.city || "",
-                birthdate: toYMD(client.birthdate),
-                insurance: client.insurance || "",
-                insurance_nr: client.insurance_nr || "",
-                hourly_wage: client.hourly_wage ?? (client.hourly_rate ?? 40),
-                km_rate: client.km_rate ?? 0.3,
-                tax_rate: client.tax_rate != null ? client.tax_rate.toString() : "0",
-                default_template: client.default_template || "",
-                caregiver: client.caregiver || "",
-                company: Array.isArray(client.company) ? (client.company[0] || "") : (client.company || ""),
-                notes: client.notes || "",
+                salutation: target.salutation || "Keine Angabe",
+                name_first: target.name_first || "",
+                name_last: target.name_last || "",
+                nationality: target.nationality || "Deutsch",
+                marital_status: target.marital_status || "Keine Angabe",
+                email: target.email || "",
+                phone: target.phone || "",
+                handy: target.handy || "",
+                status: target.status || "Aktiv",
+                level_of_care: target.level_of_care || "",
+                street: target.street || "",
+                housenr: target.housenr || "",
+                zip: target.zip || "",
+                city: target.city || "",
+                birthdate: toYMD(target.birthdate),
+                insurance: target.insurance || "",
+                insurance_nr: target.insurance_nr || "",
+                hourly_wage: target.hourly_wage ?? (target.hourly_rate ?? 40),
+                km_rate: target.km_rate ?? 0.3,
+                tax_rate: target.tax_rate != null ? target.tax_rate.toString() : "0",
+                default_template: target.default_template || "",
+                caregiver: target.caregiver || "",
+                assigned_employee: (employeeService.getAssignedEmployeeForClient(target.id)?.id || ""),
+                company: Array.isArray(target.company) ? (target.company[0] || "") : (target.company || ""),
+                notes: target.notes || "",
                 inheritor: linkedContactId,
 
                 // Direkte Erben- / Bevollmächtigten-Felder
-                inheritor_name: client.inheritor_name || info.inheritor_name || info.name || "",
-                inheritor_relation: client.inheritor_relation || info.inheritor_relation || info.relation || "Ehepartner/in",
-                inheritor_phone: client.inheritor_phone || info.inheritor_phone || info.phone || "",
-                inheritor_email: client.inheritor_email || info.inheritor_email || info.email || "",
-                inheritor_has_power_of_attorney: client.inheritor_has_power_of_attorney ?? info.has_power_of_attorney ?? false,
-                inheritor_notes: client.inheritor_notes || info.inheritor_notes || info.notes || "",
+                inheritor_name: target.inheritor_name || info.inheritor_name || info.name || "",
+                inheritor_relation: target.inheritor_relation || info.inheritor_relation || info.relation || "Ehepartner/in",
+                inheritor_phone: target.inheritor_phone || info.inheritor_phone || info.phone || "",
+                inheritor_email: target.inheritor_email || info.inheritor_email || info.email || "",
+                inheritor_has_power_of_attorney: target.inheritor_has_power_of_attorney ?? info.has_power_of_attorney ?? false,
+                inheritor_notes: target.inheritor_notes || info.inheritor_notes || info.notes || "",
 
                 // Verhinderungspflege-Felder
-                careperson_name: info.name || info.careperson_name || (client.expand?.inheritor ? (Array.isArray(client.expand.inheritor) ? `${client.expand.inheritor[0]?.name_first || ''} ${client.expand.inheritor[0]?.name_last || ''}`.trim() : `${client.expand.inheritor.name_first || ''} ${client.expand.inheritor.name_last || ''}`.trim()) : ""),
+                careperson_name: info.name || info.careperson_name || (target.expand?.inheritor ? (Array.isArray(target.expand.inheritor) ? `${target.expand.inheritor[0]?.name_first || ''} ${target.expand.inheritor[0]?.name_last || ''}`.trim() : `${target.expand.inheritor.name_first || ''} ${target.expand.inheritor.name_last || ''}`.trim()) : ""),
                 careperson_relation: info.relation || "Ehepartner/in",
                 careperson_birthdate: toYMD(info.birthdate || ""),
                 careperson_street: info.street || "",
                 careperson_housenr: info.housenr || "",
                 careperson_zip: info.zip || "",
                 careperson_city: info.city || "",
-                careperson_phone: info.phone || (client.expand?.inheritor ? (Array.isArray(client.expand.inheritor) ? client.expand.inheritor[0]?.phone : client.expand.inheritor.phone) : ""),
-                careperson_email: info.email || (client.expand?.inheritor ? (Array.isArray(client.expand.inheritor) ? client.expand.inheritor[0]?.email : client.expand.inheritor.email) : ""),
+                careperson_phone: info.phone || (target.expand?.inheritor ? (Array.isArray(target.expand.inheritor) ? target.expand.inheritor[0]?.phone : target.expand.inheritor.phone) : ""),
+                careperson_email: info.email || (target.expand?.inheritor ? (Array.isArray(target.expand.inheritor) ? target.expand.inheritor[0]?.email : target.expand.inheritor.email) : ""),
                 careperson_reason: info.reason || "Erholungsurlaub",
                 careperson_care_type: info.care_type || "stundenweise",
                 careperson_pre_care: info.pre_care_fulfilled ?? true,
                 careperson_care_allowance: info.care_allowance ?? true,
                 careperson_notes: info.notes || ""
             };
+            initialAssignedEmployee = formData.assigned_employee;
             
-            if (client.sign) {
-                existingSignatureUrl = pb.files.getURL(client, client.sign);
+            if (target.sign) {
+                existingSignatureUrl = pb.files.getURL(target, target.sign);
             } else {
                 existingSignatureUrl = "";
             }
@@ -227,10 +236,11 @@
     }
 
     // --- Canvas (Zeichen) Logik ---
-    function getPointerPos(e: MouseEvent | TouchEvent) {
-        if (!canvas) return { x: 0, y: 0 };
-        const rect = canvas.getBoundingClientRect();
-        let clientX, clientY;
+    function getPointerPos(e: MouseEvent | TouchEvent, targetCanvas: HTMLCanvasElement | null) {
+        if (!targetCanvas) return { x: 0, y: 0 };
+        const rect = targetCanvas.getBoundingClientRect();
+        let clientX = 0;
+        let clientY = 0;
         if (window.TouchEvent && e instanceof TouchEvent) {
             clientX = e.touches[0].clientX;
             clientY = e.touches[0].clientY;
@@ -238,9 +248,8 @@
             clientX = (e as MouseEvent).clientX;
             clientY = (e as MouseEvent).clientY;
         }
-        // Skalierung berücksichtigen (interne Auflösung vs css Auflösung)
-        const scaleX = canvas.width / rect.width;
-        const scaleY = canvas.height / rect.height;
+        const scaleX = targetCanvas.width / rect.width;
+        const scaleY = targetCanvas.height / rect.height;
         return {
             x: (clientX - rect.left) * scaleX,
             y: (clientY - rect.top) * scaleY
@@ -252,7 +261,7 @@
         e.preventDefault();
         isDrawing = true;
         hasDrawnSignature = true;
-        const pos = getPointerPos(e);
+        const pos = getPointerPos(e, canvas);
         const ctx = canvas.getContext("2d");
         if (ctx) {
             ctx.lineWidth = 8;
@@ -267,7 +276,7 @@
     function draw(e: MouseEvent | TouchEvent) {
         if (!isDrawing || !canvas) return;
         e.preventDefault();
-        const pos = getPointerPos(e);
+        const pos = getPointerPos(e, canvas);
         const ctx = canvas.getContext("2d");
         if (ctx) {
             ctx.lineTo(pos.x, pos.y);
@@ -289,14 +298,93 @@
         uploadedFile = null;
     }
 
-    function openSignatureFullscreen() {
+    // Fullscreen Signature handlers
+    function startFsDrawing(e: MouseEvent | TouchEvent) {
+        if (!fsCanvas) return;
+        e.preventDefault();
+        isFsDrawing = true;
+        hasDrawnFsSignature = true;
+        const pos = getPointerPos(e, fsCanvas);
+        const ctx = fsCanvas.getContext("2d");
+        if (ctx) {
+            ctx.lineWidth = 5;
+            ctx.lineCap = "round";
+            ctx.lineJoin = "round";
+            ctx.strokeStyle = "#4f46e5";
+            ctx.beginPath();
+            ctx.moveTo(pos.x, pos.y);
+        }
+    }
+
+    function drawFs(e: MouseEvent | TouchEvent) {
+        if (!isFsDrawing || !fsCanvas) return;
+        e.preventDefault();
+        const pos = getPointerPos(e, fsCanvas);
+        const ctx = fsCanvas.getContext("2d");
+        if (ctx) {
+            ctx.lineTo(pos.x, pos.y);
+            ctx.stroke();
+        }
+    }
+
+    function stopFsDrawing() {
+        isFsDrawing = false;
+    }
+
+    function clearFsSignature() {
+        if (!fsCanvas) return;
+        const ctx = fsCanvas.getContext("2d");
+        if (ctx) {
+            ctx.clearRect(0, 0, fsCanvas.width, fsCanvas.height);
+        }
+        hasDrawnFsSignature = false;
+    }
+
+    async function openSignatureFullscreen() {
         isSignatureFullscreen = true;
-        sigDialog?.showModal();
+        setTimeout(() => {
+            if (fsCanvas && canvas && hasDrawnSignature) {
+                const ctx = fsCanvas.getContext("2d");
+                if (ctx) {
+                    ctx.clearRect(0, 0, fsCanvas.width, fsCanvas.height);
+                    ctx.drawImage(canvas, 0, 0, fsCanvas.width, fsCanvas.height);
+                    hasDrawnFsSignature = true;
+                }
+            }
+        }, 60);
+
+        try {
+            if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
+                await document.documentElement.requestFullscreen().catch(() => {});
+            }
+            if (screen.orientation && 'lock' in screen.orientation) {
+                await (screen.orientation as any).lock('landscape').catch(() => {});
+            }
+        } catch (e) {}
+    }
+
+    function applyFsSignature() {
+        if (fsCanvas && canvas && hasDrawnFsSignature) {
+            const ctx = canvas.getContext("2d");
+            if (ctx) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(fsCanvas, 0, 0, canvas.width, canvas.height);
+                hasDrawnSignature = true;
+            }
+        }
+        closeSignatureFullscreen();
     }
 
     function closeSignatureFullscreen() {
         isSignatureFullscreen = false;
-        sigDialog?.close();
+        try {
+            if (screen.orientation && 'unlock' in screen.orientation) {
+                (screen.orientation as any).unlock();
+            }
+            if (document.fullscreenElement) {
+                document.exitFullscreen().catch(() => {});
+            }
+        } catch (e) {}
     }
 
     function handleFileChange(e: Event) {
@@ -329,23 +417,57 @@
         try {
             const pbFormData = new FormData();
             
-            // Standard-Felder
+            // Standard-Felder sanitizen
             for (const [key, value] of Object.entries(formData)) {
-                if (key.startsWith('careperson_')) continue; // Werden gesondert in inheritor_info gepackt
+                if (
+                    key.startsWith('careperson_') ||
+                    key === 'default_template' ||
+                    key === 'hourly_wage'
+                ) continue; // Werden gesondert behandelt
                 
                 if (key === 'tax_rate') {
-                    pbFormData.append(key, value === "0" ? "" : value.toString());
+                    pbFormData.append(key, (value != null && value !== "") ? value.toString() : "0");
+                } else if (key === 'km_rate') {
+                    pbFormData.append(key, (value != null && value !== "") ? value.toString() : "0.3");
+                } else if (key === 'marital_status') {
+                    pbFormData.append(key, (value === 'Keine Angabe' || !value) ? '' : value.toString());
                 } else if (key === 'birthdate') {
-                    const cleanVal = (value as string).trim();
+                    const cleanVal = (value as string || '').trim();
                     pbFormData.append(key, cleanVal ? `${cleanVal} 12:00:00.000Z` : "");
+                } else if (key === 'email') {
+                    const em = (value as string || '').trim();
+                    pbFormData.append(key, (em.includes('@') && em.includes('.')) ? em : '');
                 } else if (key === 'inheritor_has_power_of_attorney') {
                     pbFormData.append(key, value ? 'true' : 'false');
                 } else if (key === 'inheritor') {
-                    // Falls Modus direct gewählt ist, Relation leeren
-                    pbFormData.append(key, inheritorMode === 'contact' ? (value as string) : "");
+                    // Falls Modus direct gewählt ist oder kein gültiger Kontakt ausgewählt wurde
+                    const inhVal = (inheritorMode === 'contact' && typeof value === 'string') ? value.trim() : "";
+                    if (inhVal && inhVal.length > 5) {
+                        const isContact = orgaStore.contacts?.data?.some((c: any) => c.id === inhVal);
+                        if (isContact) pbFormData.append(key, inhVal);
+                    }
+                } else if (['insurance', 'retirement_homes', 'caregiver', 'company', 'templates', 'facility'].includes(key)) {
+                    if (typeof value === 'string' && value.trim().length > 0 && value !== 'none' && value !== 'other') {
+                        const trimmedVal = value.trim();
+                        if (key === 'caregiver') {
+                            const isContact = orgaStore.contacts?.data?.some((c: any) => c.id === trimmedVal);
+                            if (isContact) pbFormData.append(key, trimmedVal);
+                        } else {
+                            pbFormData.append(key, trimmedVal);
+                        }
+                    }
                 } else {
                     pbFormData.append(key, (value ?? '').toString());
                 }
+            }
+
+            // DB-Feld hourly_rate setzen
+            const hourlyRate = Number(formData.hourly_wage ?? (formData as any).hourly_rate ?? 40);
+            pbFormData.append('hourly_rate', isNaN(hourlyRate) ? '40' : hourlyRate.toString());
+
+            // Falls default_template vergeben war, als templates relation anhängen
+            if (formData.default_template && typeof formData.default_template === 'string' && formData.default_template.length > 5) {
+                pbFormData.append('templates', formData.default_template);
             }
 
             // Strukturierte Daten für inheritor_info (JSON)
@@ -393,6 +515,11 @@
 
             await pb.collection('clients').update(client.id, pbFormData);
             
+            // Falls der zugewiesene Mitarbeiter geändert wurde, synchronisieren
+            if (formData.assigned_employee !== initialAssignedEmployee) {
+                await employeeService.assignEmployeeToClient(client.id, formData.assigned_employee || null, true);
+            }
+
             setTimeout(async () => {
                 const updatedClient = await pb.collection('clients').getOne(client.id, { expand: 'insurance,retirement_homes,contacts,caregiver,inheritor', requestKey: null }) as any;
                 const index = orgaStore.clients?.data.findIndex((c: any) => c.id === client.id) ?? -1;
@@ -415,11 +542,8 @@
     }
 </script>
 
-<dialog bind:this={dialog} class="p-0 bg-transparent backdrop:bg-black/60 backdrop:backdrop-blur-sm w-full max-w-4xl m-0 sm:m-auto fixed sm:relative inset-x-0 bottom-0 sm:bottom-auto max-h-[95vh] rounded-t-3xl sm:rounded-3xl border-none shadow-2xl z-9999 touch-pan-y" onclick={(e) => { if (e.target === dialog) attemptClose(); }}>
-    <!-- Drag Handle für Mobile Bottom-Sheet -->
-    <div class="w-12 h-1.5 bg-neutral-300 rounded-full mx-auto my-2 sm:hidden shrink-0"></div>
-
-    <div class="form-mobile-container sm:h-auto sm:min-h-0 bg-white sm:rounded-3xl w-full flex flex-col relative overflow-hidden shadow-2xl border border-neutral-100 transition-all duration-75" style="max-height: {viewportHeight}; height: {viewportHeight};">
+<dialog bind:this={dialog} class="p-0 bg-transparent backdrop:bg-black/60 backdrop:backdrop-blur-sm w-full max-w-4xl mx-auto my-auto max-h-[92dvh] rounded-3xl border-none shadow-2xl z-9999 touch-pan-y" onclick={(e) => { if (e.target === dialog) attemptClose(); }}>
+    <div class="form-mobile-container sm:h-auto sm:min-h-0 bg-white rounded-3xl w-full flex flex-col relative overflow-hidden shadow-2xl border border-neutral-100 transition-all duration-75" style="max-height: {viewportHeight}; height: {viewportHeight};">
         <!-- Header -->
         <div class="px-5 sm:px-8 py-4 sm:py-5 border-b border-neutral-200 shrink-0 sticky top-0 bg-white/95 backdrop-blur-md z-20 flex justify-between items-center">
             <div>
@@ -490,12 +614,12 @@
                                     </select>
                                 </div>
                                 <div>
-                                    <label for="edit-firstname" class="block text-sm font-semibold text-neutral-700 mb-1.5">Vorname *</label>
-                                    <input id="edit-firstname" type="text" bind:value={formData.name_first} class="orga-input-clear text-base" required disabled={isLoading} />
+                                    <label for="edit-firstname" class="block text-sm font-semibold text-neutral-700 mb-1.5">Vorname</label>
+                                    <input id="edit-firstname" type="text" bind:value={formData.name_first} class="orga-input-clear text-base" disabled={isLoading} />
                                 </div>
                                 <div>
-                                    <label for="edit-lastname" class="block text-sm font-semibold text-neutral-700 mb-1.5">Nachname *</label>
-                                    <input id="edit-lastname" type="text" bind:value={formData.name_last} class="orga-input-clear text-base" required disabled={isLoading} />
+                                    <label for="edit-lastname" class="block text-sm font-semibold text-neutral-700 mb-1.5">Nachname</label>
+                                    <input id="edit-lastname" type="text" bind:value={formData.name_last} class="orga-input-clear text-base" disabled={isLoading} />
                                 </div>
                                 <div>
                                     <div class="flex items-center justify-between mb-1.5">
@@ -670,13 +794,22 @@
                         <!-- Zuständige Personen & Firmen -->
                         <div class="pt-5 border-t border-neutral-200">
                             <h3 class="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-3">2. Zuordnung & Betreuung</h3>
-                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                                 <div>
-                                    <label for="edit-caregiver" class="block text-sm font-semibold text-neutral-700 mb-1.5">Zuständiger Betreuer / Gesetzliche Betreuung</label>
+                                    <label for="edit-caregiver" class="block text-sm font-semibold text-neutral-700 mb-1.5">Gesetzliche Betreuung (Kontakt)</label>
                                     <select id="edit-caregiver" bind:value={formData.caregiver} class="orga-input-clear text-base cursor-pointer" disabled={isLoading}>
                                         <option value="">Keine / Selbstbestimmt</option>
                                         {#each orgaStore.contacts?.data || [] as contact}
                                             <option value={contact.id}>{#if contact.company_name}{contact.company_name} - {/if}{contact.name_first} {contact.name_last}</option>
+                                        {/each}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="edit-assigned-employee" class="block text-sm font-semibold text-neutral-700 mb-1.5">Zuständige Pflegekraft (Intern)</label>
+                                    <select id="edit-assigned-employee" bind:value={formData.assigned_employee} class="orga-input-clear text-base cursor-pointer" disabled={isLoading}>
+                                        <option value="">Kein Mitarbeiter zugewiesen</option>
+                                        {#each (orgaStore.users?.data || []).filter(u => u.role !== 'client') as emp}
+                                            <option value={emp.id}>{emp.name_last}, {emp.name_first} ({emp.role === 'employee' ? 'Pflege' : emp.role})</option>
                                         {/each}
                                     </select>
                                 </div>
@@ -906,6 +1039,96 @@
         </div>
     </div>
 </dialog>
+
+<!-- FULLSCREEN SIGNATUR MODAL (Mobile Landscape Optimized) -->
+{#if isSignatureFullscreen}
+    <div 
+        class="fixed inset-0 z-[9999] bg-slate-950/95 backdrop-blur-md flex flex-col p-3 sm:p-5 select-none animate-enter"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Vollbild Unterschrift erfassen"
+    >
+        <!-- Modal Header -->
+        <div class="flex items-center justify-between gap-3 pb-2.5 sm:pb-3 border-b border-slate-800 shrink-0 text-white">
+            <div class="flex items-center gap-2.5">
+                <span class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 flex items-center justify-center text-sm sm:text-base">✍️</span>
+                <div>
+                    <h3 class="text-sm sm:text-base font-bold text-slate-100">Unterschrift erfassen</h3>
+                    <p class="text-[11px] text-slate-400 hidden sm:block">Bitte mit dem Finger oder Eingabestift unterschreiben</p>
+                </div>
+            </div>
+
+            <!-- Header Action Controls (Touch targets >= 44x44px) -->
+            <div class="flex items-center gap-2">
+                <button 
+                    type="button" 
+                    onclick={clearFsSignature}
+                    class="min-h-[44px] px-3 sm:px-4 py-2 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-200 text-xs sm:text-sm font-bold rounded-xl border border-slate-700 transition-colors flex items-center gap-1.5 cursor-pointer"
+                    title="Zeichenfläche leeren"
+                >
+                    <RotateCcw class="w-4 h-4" />
+                    <span>Leeren</span>
+                </button>
+                <button 
+                    type="button" 
+                    onclick={closeSignatureFullscreen}
+                    class="min-h-[44px] px-3 sm:px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs sm:text-sm font-bold rounded-xl border border-slate-700 transition-colors flex items-center gap-1.5 cursor-pointer"
+                    title="Vollbild abbrechen"
+                >
+                    <X class="w-4 h-4" />
+                    <span>Abbrechen</span>
+                </button>
+                <button 
+                    type="button" 
+                    onclick={applyFsSignature}
+                    class="min-h-[44px] px-4 sm:px-5 py-2 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white text-xs sm:text-sm font-bold rounded-xl shadow-lg shadow-indigo-600/30 transition-all flex items-center gap-1.5 cursor-pointer"
+                    title="Unterschrift übernehmen"
+                >
+                    <Check class="w-4 h-4" />
+                    <span>Übernehmen</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Canvas Container -->
+        <div class="flex-1 min-h-0 py-2 sm:py-3 flex flex-col items-center justify-center relative">
+            <div class="w-full h-full bg-white rounded-2xl border-2 border-slate-700 shadow-2xl relative overflow-hidden touch-none flex items-center justify-center">
+                <canvas 
+                    bind:this={fsCanvas}
+                    width="1600" 
+                    height="900"
+                    class="w-full h-full cursor-crosshair touch-none"
+                    onmousedown={startFsDrawing}
+                    onmousemove={drawFs}
+                    onmouseup={stopFsDrawing}
+                    onmouseleave={stopFsDrawing}
+                    ontouchstart={startFsDrawing}
+                    ontouchmove={drawFs}
+                    ontouchend={stopFsDrawing}
+                ></canvas>
+
+                <!-- Unterzeichnungs-Linie (Baseline) -->
+                <div class="absolute bottom-10 sm:bottom-14 left-8 sm:left-12 right-8 sm:right-12 border-b-2 border-dashed border-neutral-300 pointer-events-none flex justify-between text-[11px] text-neutral-400 font-medium px-2">
+                    <span>Unterschrift des Klienten / Bevollmächtigten</span>
+                    <span>X ________________________</span>
+                </div>
+
+                {#if !hasDrawnFsSignature}
+                    <div class="absolute inset-0 pointer-events-none flex flex-col items-center justify-center text-neutral-300 gap-2">
+                        <span class="text-3xl sm:text-5xl opacity-40">✍️</span>
+                        <span class="font-bold text-xs sm:text-base opacity-60">Hier mit Stift oder Finger unterschreiben</span>
+                    </div>
+                {/if}
+            </div>
+        </div>
+
+        <!-- Landscape hint (visible on small portrait screens) -->
+        <div class="sm:hidden text-center pb-0.5 text-[11px] text-slate-400 flex items-center justify-center gap-1.5">
+            <span>🔄</span>
+            <span>Tipp: Für maximale Zeichenfläche Smartphone ins Querformat drehen</span>
+        </div>
+    </div>
+{/if}
 
 <style>
     :global(.theme-negative) .safe-signature {

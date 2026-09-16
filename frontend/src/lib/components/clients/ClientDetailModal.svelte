@@ -58,6 +58,9 @@
     import DocumentGeneratorModal from "$lib/components/DocumentGeneratorModal.svelte";
     import InvoiceDetailModal from "$lib/components/invoices/InvoiceDetailModal.svelte";
     import InheritorWidget from "$lib/components/clients/InheritorWidget.svelte";
+    import ClientDocumentsTab from "$lib/components/clients/ClientDocumentsTab.svelte";
+    import { getClientCompletionStatus } from "$lib/services/clientCompletionService";
+    import { employeeService } from "$lib/services/employeeService.svelte";
 
     // Dialog reference
     // svelte-ignore non_reactive_update
@@ -106,6 +109,7 @@
 
     // Derived Client
     let client = $derived(clientId ? orgaStore.clients?.getById(clientId) : null);
+    let clientCompletion = $derived(client ? getClientCompletionStatus(client) : null);
 
     // Permission
     let canDelete = $derived(pb.authStore.isSuperuser || pb.authStore.model?.role === 'superadmin' || pb.authStore.model?.role === 'admin');
@@ -123,11 +127,7 @@
     let currentClientIdForMailingList = $state<string | null>(null);
     let showContactDropdown = $state(false);
 
-    // Upload & Document Management State
-    // svelte-ignore non_reactive_update
-    let fileInput: HTMLInputElement;
-    let isUploading = $state(false);
-    let isDraggingOver = $state(false);
+
 
     // Filters for Appointments Tab
     let appointmentFilter = $state<'all' | 'upcoming' | 'open' | 'settled'>('all');
@@ -500,144 +500,7 @@
         showContactDropdown = false;
     }
 
-    // Document Management
-    async function uploadFiles(fileList: FileList | File[]) {
-        if (!clientId || !fileList || fileList.length === 0) return;
-        isUploading = true;
-        try {
-            let currentExistingFiles = [...(client?.documents ?? [])];
-            let successCount = 0;
 
-            for (let i = 0; i < fileList.length; i++) {
-                const file = fileList[i];
-                const formData = new FormData();
-                for (const existing of currentExistingFiles) {
-                    formData.append('documents', existing);
-                }
-                formData.append('documents', file);
-
-                const updatedRecord = await pb.collection('clients').update(clientId, formData, { requestKey: null });
-                currentExistingFiles = updatedRecord.documents || [];
-                successCount++;
-            }
-
-            setTimeout(async () => {
-                const updatedClient = await pb.collection('clients').getOne(clientId!, {
-                    expand: 'insurance,retirement_homes,contacts,caregiver,inheritor',
-                    requestKey: null
-                }) as any;
-                const index = orgaStore.clients?.data.findIndex((c: any) => c.id === clientId) ?? -1;
-                if (index !== -1 && orgaStore.clients) orgaStore.clients.data[index] = updatedClient;
-            }, 300);
-
-            toastStore.success(`${successCount} Dokument(e) erfolgreich hochgeladen.`);
-        } catch (err: any) {
-            console.error(err);
-            if (err?.status === 413 || err?.message?.includes('413')) {
-                toastStore.error("Datei zu groß! Der Server blockiert Uploads über das Limit.");
-            } else {
-                toastStore.error("Fehler beim Hochladen der Dokumente.");
-            }
-        } finally {
-            isUploading = false;
-            if (fileInput) fileInput.value = '';
-        }
-    }
-
-    function handleFileDrop(e: DragEvent) {
-        e.preventDefault();
-        isDraggingOver = false;
-        if (e.dataTransfer?.files) {
-            uploadFiles(e.dataTransfer.files);
-        }
-    }
-
-    function previewDocument(e: Event, docFileName: string) {
-        e.preventDefault();
-        if (!client) return;
-        let url = pb.files.getURL(client as any, docFileName);
-        if (pb.authStore.token) url += (url.includes('?') ? '&' : '?') + 'token=' + pb.authStore.token;
-        const lowerName = docFileName.toLowerCase();
-        if (lowerName.endsWith('.pdf') || /\.(jpg|jpeg|png|gif|webp)$/i.test(lowerName)) {
-            pdfPreviewModal?.open(url, 'Klienten-Akte', docFileName);
-        } else {
-            window.open(url, '_blank');
-        }
-    }
-
-    async function deleteDocument(filename: string) {
-        if (!(await confirmStore.ask(`Möchten Sie das Dokument '${filename}' wirklich löschen?`, "Dokument löschen?", "Löschen", "Abbrechen", true))) return;
-        try {
-            const existingFiles = client?.documents ?? [];
-            const formData = new FormData();
-            for (const existing of existingFiles) { if (existing !== filename) formData.append('documents', existing); }
-            if (existingFiles.length === 1 && existingFiles[0] === filename) formData.append('documents', '');
-            await pb.collection('clients').update(clientId!, formData, { requestKey: null });
-
-            setTimeout(async () => {
-                const updatedClient = await pb.collection('clients').getOne(clientId!, {
-                    expand: 'insurance,retirement_homes,contacts,caregiver,inheritor',
-                    requestKey: null
-                }) as any;
-                const index = orgaStore.clients?.data.findIndex((c: any) => c.id === clientId) ?? -1;
-                if (index !== -1 && orgaStore.clients) orgaStore.clients.data[index] = updatedClient;
-            }, 300);
-            toastStore.info("Dokument wurde gelöscht.");
-        } catch (err) {
-            console.error(err);
-            toastStore.error("Fehler beim Löschen des Dokuments.");
-        }
-    }
-
-    async function renameDocument(oldFileName: string) {
-        const extMatch = oldFileName.match(/\.([^.]+)$/);
-        const ext = extMatch ? `.${extMatch[1]}` : '';
-        let baseName = oldFileName;
-        if (ext) baseName = oldFileName.substring(0, oldFileName.lastIndexOf('.'));
-        const pbHashRegex = /_[a-zA-Z0-9]{10}$/;
-        if (pbHashRegex.test(baseName)) baseName = baseName.replace(pbHashRegex, '');
-
-        let newName = prompt("Neuer Dateiname:", baseName);
-        if (newName === null) return;
-        newName = newName.trim();
-        if (!newName) { toastStore.warning("Dateiname darf nicht leer sein."); return; }
-        if (!newName.toLowerCase().endsWith(ext.toLowerCase())) newName += ext;
-
-        isUploading = true;
-        try {
-            let url = pb.files.getURL(client as any, oldFileName);
-            if (pb.authStore.token) url += (url.includes('?') ? '&' : '?') + 'token=' + pb.authStore.token;
-
-            const response = await fetch(url);
-            if (!response.ok) throw new Error("Datei konnte nicht geladen werden.");
-
-            const blob = await response.blob();
-            const newFile = new File([blob], newName, { type: blob.type });
-
-            const existingFiles = client?.documents ?? [];
-            const formData = new FormData();
-            for (const existing of existingFiles) { if (existing !== oldFileName) formData.append('documents', existing); }
-            formData.append('documents', newFile);
-
-            await pb.collection('clients').update(clientId!, formData, { requestKey: null });
-
-            setTimeout(async () => {
-                const updatedClient = await pb.collection('clients').getOne(clientId!, {
-                    expand: 'insurance,retirement_homes,contacts,caregiver,inheritor',
-                    requestKey: null
-                }) as any;
-                const index = orgaStore.clients?.data.findIndex((c: any) => c.id === clientId) ?? -1;
-                if (index !== -1 && orgaStore.clients) orgaStore.clients.data[index] = updatedClient;
-            }, 300);
-
-            toastStore.success(`Dokument in '${newName}' umbenannt.`);
-        } catch (err) {
-            console.error(err);
-            toastStore.error("Fehler beim Umbenennen des Dokuments.");
-        } finally {
-            isUploading = false;
-        }
-    }
 
     // Unlinking Relations
     async function unlinkInsurance() {
@@ -674,6 +537,33 @@
             console.error(err);
             toastStore.error("Fehler beim Trennen der Betreuung.");
         }
+    }
+
+    let assignedEmployee = $derived.by(() => {
+        if (!client?.id) return null;
+        return employeeService.getAssignedEmployeeForClient(client.id);
+    });
+
+    let availableEmployees = $derived.by(() => {
+        const users = orgaStore.users.data || [];
+        return users.filter(u => u.role !== 'client');
+    });
+
+    async function handleAssignEmployee(empId: string) {
+        if (!client?.id) return;
+        if (!empId) {
+            await handleUnlinkEmployee();
+            return;
+        }
+        await employeeService.assignEmployeeToClient(client.id, empId, true);
+    }
+
+    async function handleUnlinkEmployee() {
+        if (!client?.id) return;
+        const currentEmp = assignedEmployee;
+        const name = currentEmp ? `${currentEmp.name_first} ${currentEmp.name_last}` : 'Mitarbeiter';
+        if (!(await confirmStore.ask(`Möchten Sie die Zuweisung zu "${name}" wirklich aufheben?`, "Zuweisung aufheben?", "Zuweisung aufheben", "Abbrechen", true))) return;
+        await employeeService.assignEmployeeToClient(client.id, null, false);
     }
 
     async function unlinkContact(contactId: string, contactName: string) {
@@ -762,12 +652,12 @@
     class="p-0 bg-transparent backdrop:bg-slate-950/65 backdrop:backdrop-blur-md w-full max-w-7xl mx-auto my-auto rounded-3xl"
     onclick={(e) => { if (e.target === dialog) close(); }}
 >
-    <div class="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 rounded-3xl w-full max-h-[92vh] flex flex-col relative overflow-hidden shadow-2xl border border-slate-200/80 dark:border-slate-800">
+    <div class="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 rounded-3xl w-full max-h-[92vh] overflow-y-auto custom-scrollbar flex flex-col relative shadow-2xl border border-slate-200/80 dark:border-slate-800">
 
         <!-- ============================================================ -->
         <!-- HEADER: CLIENT HERO & QUICK ACTIONS                          -->
         <!-- ============================================================ -->
-        <div class="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-5 sm:px-8 py-4 sm:py-5 border-b border-slate-200/80 dark:border-slate-800 flex flex-col lg:flex-row lg:items-center justify-between shrink-0 sticky top-0 z-30 shadow-xs gap-4">
+        <div class="bg-white dark:bg-slate-900 px-5 sm:px-8 py-4 sm:py-5 border-b border-slate-200/80 dark:border-slate-800 flex flex-col lg:flex-row lg:items-center justify-between gap-4 rounded-t-3xl">
             
             <!-- Left: Avatar, Name, Status, Badges -->
             <div class="flex items-center gap-3.5 sm:gap-4 min-w-0">
@@ -789,11 +679,11 @@
 
                 <div class="min-w-0 flex-1">
                     <div class="flex items-center gap-2 sm:gap-3 flex-wrap">
-                        <h2 class="text-lg sm:text-2xl font-black text-neutral-900 leading-tight truncate">
+                        <h2 class="text-lg sm:text-2xl font-black text-neutral-900 dark:text-white leading-tight truncate">
                             {#if client}
                                 {client.name_first} {client.name_last}
                             {:else if orgaStore.clients?.isLoading}
-                                <span class="inline-block h-6 w-48 bg-neutral-200 rounded-lg animate-pulse"></span>
+                                <span class="inline-block h-6 w-48 bg-neutral-200 dark:bg-slate-700 rounded-lg animate-pulse"></span>
                             {:else}
                                 Klient nicht gefunden
                             {/if}
@@ -808,29 +698,29 @@
                             {/if}
 
                             <!-- Status Badge -->
-                            <span class="px-2.5 py-0.5 text-[11px] font-bold rounded-full border {(client.status || '').toLowerCase() === 'aktiv' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : ((client.status || '').toLowerCase() === 'verstorben' ? 'bg-neutral-900 text-neutral-100 border-neutral-800' : 'bg-neutral-100 text-neutral-600 border-neutral-200')}">
+                            <span class="px-2.5 py-0.5 text-[11px] font-bold rounded-full border {(client.status || '').toLowerCase() === 'aktiv' ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' : ((client.status || '').toLowerCase() === 'verstorben' ? 'bg-neutral-900 dark:bg-black text-neutral-100 border-neutral-800' : 'bg-neutral-100 dark:bg-slate-800 text-neutral-600 dark:text-slate-300 border-neutral-200 dark:border-slate-700')}">
                                 {(client.status || '').toLowerCase() === 'aktiv' ? 'Aktiv' : ((client.status || '').toLowerCase() === 'verstorben' ? 'Verstorben 🕊️' : 'Inaktiv')}
                             </span>
                         {/if}
                     </div>
 
-                    <div class="flex items-center gap-3 text-xs text-neutral-500 mt-1 font-medium flex-wrap">
+                    <div class="flex items-center gap-3 text-xs text-neutral-500 dark:text-slate-400 mt-1 font-medium flex-wrap">
                         <span class="flex items-center gap-1">
-                            <span class="text-neutral-400">ID:</span>
-                            <span class="font-mono text-neutral-600 font-bold">{clientId?.slice(0, 8) || '—'}</span>
+                            <span class="text-neutral-400 dark:text-slate-400">ID:</span>
+                            <span class="font-mono text-neutral-600 dark:text-slate-300 font-bold">{clientId?.slice(0, 8) || '—'}</span>
                         </span>
                         {#if client?.birthdate}
-                            <span class="text-neutral-300">•</span>
-                            <span class="flex items-center gap-1 text-neutral-700 font-semibold">
+                            <span class="text-neutral-300 dark:text-slate-600">•</span>
+                            <span class="flex items-center gap-1 text-neutral-700 dark:text-slate-200 font-semibold">
                                 🎂 {safeFormatDate(client.birthdate)}
                                 {#if clientAge !== null}
-                                    <span class="text-neutral-400 font-normal">({clientAge} Jahre)</span>
+                                    <span class="text-neutral-400 dark:text-slate-400 font-normal">({clientAge} Jahre)</span>
                                 {/if}
                             </span>
                         {/if}
                         {#if client?.phone}
-                            <span class="text-neutral-300">•</span>
-                            <a href={`tel:${client.phone}`} class="text-indigo-600 hover:text-indigo-800 font-semibold flex items-center gap-1 hover:underline">
+                            <span class="text-neutral-300 dark:text-slate-600">•</span>
+                            <a href={`tel:${client.phone}`} class="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 font-semibold flex items-center gap-1 hover:underline">
                                 <Phone class="w-3 h-3" /> {client.phone}
                             </a>
                         {/if}
@@ -942,7 +832,7 @@
         <!-- ============================================================ -->
         <!-- TAB STRIP NAVIGATION                                         -->
         <!-- ============================================================ -->
-        <div class="bg-white dark:bg-slate-900 px-5 sm:px-8 border-b border-slate-200/80 dark:border-slate-800 flex items-center gap-1 sm:gap-2 overflow-x-auto custom-scrollbar shrink-0">
+        <div class="bg-white dark:bg-slate-900 px-5 sm:px-8 border-b border-slate-200/80 dark:border-slate-800 flex items-center gap-1 sm:gap-2 overflow-x-auto custom-scrollbar">
             <button
                 type="button"
                 onclick={() => activeTab = 'overview'}
@@ -990,7 +880,7 @@
         <!-- ============================================================ -->
         <!-- TAB CONTENT AREA                                             -->
         <!-- ============================================================ -->
-        <div class="p-4 sm:p-6 md:p-8 overflow-y-auto custom-scrollbar flex-1 bg-slate-50/70 dark:bg-slate-950/70 text-slate-800 dark:text-slate-100">
+        <div class="p-4 sm:p-6 md:p-8 flex-1 bg-slate-50/70 dark:bg-slate-950/70 text-slate-800 dark:text-slate-100">
             {#if !client && orgaStore.clients?.isLoading}
                 <div class="flex flex-col items-center justify-center py-24 animate-pulse">
                     <div class="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-4"></div>
@@ -1009,6 +899,34 @@
                 <!-- ==================================================== -->
                 {#if activeTab === 'overview'}
                     <div class="space-y-6 animate-enter">
+
+                        <!-- UNVOLLSTÄNDIGE STAMMDATEN BANNER -->
+                        {#if clientCompletion && !clientCompletion.isComplete}
+                            <div class="p-4 sm:p-5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200/90 dark:border-amber-800/60 text-amber-950 dark:text-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm animate-enter">
+                                <div class="flex items-start gap-3.5">
+                                    <div class="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-700 dark:text-amber-300 flex items-center justify-center shrink-0 font-bold text-xl shadow-inner">
+                                        ⚠️
+                                    </div>
+                                    <div>
+                                        <div class="flex items-center gap-2 flex-wrap">
+                                            <p class="text-sm sm:text-base font-bold text-amber-950 dark:text-amber-100">Klientendaten noch unvollständig</p>
+                                            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200/70 text-amber-900 dark:bg-amber-900/60 dark:text-amber-200">Schnellerfassung ({clientCompletion.score}%)</span>
+                                        </div>
+                                        <p class="text-xs text-amber-900/85 dark:text-amber-300/85 mt-1 leading-relaxed">
+                                            Folgende Angaben fehlen noch: <strong class="text-amber-950 dark:text-amber-100">{clientCompletion.missingSections.join(" · ")}</strong> ({clientCompletion.missingDetails.join(", ")}).
+                                        </p>
+                                    </div>
+                                </div>
+                                <button
+                                    type="button"
+                                    onclick={() => editModal?.open(client)}
+                                    class="px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 active:scale-95 text-white text-xs font-bold transition-all shrink-0 shadow-sm flex items-center justify-center gap-2 cursor-pointer w-full sm:w-auto"
+                                >
+                                    <Edit3 class="w-4 h-4" />
+                                    <span>Jetzt vervollständigen</span>
+                                </button>
+                            </div>
+                        {/if}
 
                         <!-- TOP KPI GLANCE BAR -->
                         <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
@@ -1227,6 +1145,59 @@
                                             {:else}
                                                 <p class="text-sm text-neutral-400 italic">Keine Betreuung hinterlegt</p>
                                             {/if}
+                                        </div>
+                                    </div>
+
+                                    <!-- Zuständige Pflegekraft / Mitarbeiter (Außendienst-Zuweisung) -->
+                                    <div class="p-4 bg-indigo-50/50 rounded-2xl border border-indigo-100/80 mt-4">
+                                        <div class="flex items-center justify-between mb-2">
+                                            <span class="text-[10px] font-bold uppercase tracking-wider text-indigo-700 flex items-center gap-1.5">
+                                                🩺 Zuständige Pflegekraft / Mitarbeiter
+                                            </span>
+                                            {#if assignedEmployee}
+                                                <button 
+                                                    type="button" 
+                                                    onclick={handleUnlinkEmployee} 
+                                                    class="text-[11px] font-bold text-rose-500 hover:text-rose-700 cursor-pointer"
+                                                >
+                                                    Zuweisung aufheben
+                                                </button>
+                                            {/if}
+                                        </div>
+                                        
+                                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                            <div class="min-w-0">
+                                                {#if assignedEmployee}
+                                                    <p class="text-sm font-bold text-neutral-900 truncate">
+                                                        {assignedEmployee.name_first} {assignedEmployee.name_last}
+                                                    </p>
+                                                    <p class="text-xs text-neutral-500 mt-0.5">
+                                                        {assignedEmployee.role === 'employee' ? 'Pflegefachkraft / Außendienst' : assignedEmployee.role}
+                                                        {#if assignedEmployee.handy || assignedEmployee.tel}
+                                                            • Tel: {assignedEmployee.handy || assignedEmployee.tel}
+                                                        {/if}
+                                                    </p>
+                                                {:else}
+                                                    <p class="text-sm text-neutral-400 italic">Noch kein Mitarbeiter zugewiesen</p>
+                                                    <p class="text-xs text-neutral-400 mt-0.5">Weisen Sie eine Pflegekraft zu, damit Termine im Mitarbeiterportal erscheinen.</p>
+                                                {/if}
+                                            </div>
+
+                                            <div class="shrink-0 flex items-center gap-2">
+                                                <select
+                                                    aria-label="Mitarbeiter zuweisen"
+                                                    value={assignedEmployee?.id || ''}
+                                                    onchange={(e) => handleAssignEmployee(e.currentTarget.value)}
+                                                    class="text-xs font-bold px-3 py-2 rounded-xl border border-indigo-200 bg-white text-indigo-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 cursor-pointer shadow-2xs"
+                                                >
+                                                    <option value="">-- {assignedEmployee ? 'Mitarbeiter wechseln' : 'Mitarbeiter zuweisen'} --</option>
+                                                    {#each availableEmployees as emp}
+                                                        <option value={emp.id}>
+                                                            {emp.name_last}, {emp.name_first} ({emp.role === 'employee' ? 'Pflege' : emp.role})
+                                                        </option>
+                                                    {/each}
+                                                </select>
+                                            </div>
                                         </div>
                                     </div>
 
@@ -1862,179 +1833,13 @@
                 <!-- REITER 4: DOKUMENTE & AKTEN                          -->
                 <!-- ==================================================== -->
                 {#if activeTab === 'documents'}
-                    <div class="space-y-6 animate-enter">
-
-                        <!-- TOP BAR ACTIONS -->
-                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                            <div>
-                                <h3 class="text-base font-bold text-neutral-900">Dokumenten-Ablage & Vorlagen</h3>
-                                <p class="text-xs text-neutral-500 mt-0.5">Scans, Pflegeverträge, Anträge und generierte Vorlagen</p>
-                            </div>
-
-                            <div class="flex items-center gap-2 flex-wrap">
-                                <button
-                                    type="button"
-                                    onclick={() => emailModal?.open(client, 'documents')}
-                                    class="orga-button-ghost py-1.5 px-3 text-xs font-bold border border-neutral-200 cursor-pointer"
-                                    title="Dokumente per E-Mail versenden"
-                                >
-                                    <Share2 class="w-3.5 h-3.5" />
-                                    <span>Versenden</span>
-                                </button>
-
-                                <input
-                                    type="file"
-                                    multiple
-                                    bind:this={fileInput}
-                                    onchange={(e) => {
-                                        const target = e.target as HTMLInputElement;
-                                        if (target.files) uploadFiles(target.files);
-                                    }}
-                                    class="hidden"
-                                    disabled={isUploading}
-                                />
-
-                                <button
-                                    type="button"
-                                    onclick={() => fileInput.click()}
-                                    disabled={isUploading}
-                                    class="orga-button-ghost py-1.5 px-3 text-xs font-bold border border-neutral-200 flex items-center gap-1.5 cursor-pointer"
-                                >
-                                    <UploadCloud class="w-3.5 h-3.5" />
-                                    <span>{isUploading ? 'Lädt hoch...' : 'Datei hochladen'}</span>
-                                </button>
-
-                                <button
-                                    type="button"
-                                    onclick={() => {
-                                        const empId = Array.isArray(client?.assigned_employee) ? client.assigned_employee[0] : client?.assigned_employee;
-                                        docGenModal?.open('', 2, clientId || '', 'all', empId);
-                                    }}
-                                    class="orga-button-primary py-1.5 px-3.5 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
-                                >
-                                    <Sparkles class="w-3.5 h-3.5" />
-                                    <span>Aus Vorlage erstellen</span>
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- DRAG & DROP UPLOAD ZONE -->
-                        <!-- svelte-ignore a11y_no_static_element_interactions -->
-                        <div
-                            ondragover={(e) => { e.preventDefault(); isDraggingOver = true; }}
-                            ondragleave={() => isDraggingOver = false}
-                            ondrop={handleFileDrop}
-                            class="border-2 border-dashed rounded-3xl p-6 sm:p-8 text-center transition-all {isDraggingOver ? 'border-indigo-600 bg-indigo-50/50 scale-[1.01]' : 'border-neutral-300 bg-white hover:border-neutral-400'}"
-                        >
-                            <UploadCloud class="w-10 h-10 mx-auto text-indigo-500 mb-2" />
-                            <p class="text-sm font-bold text-neutral-900">Dateien per Drag & Drop hier ablegen</p>
-                            <p class="text-xs text-neutral-400 mt-1">PDF-Scans, Gutachten, Bilder (PNG/JPG) oder Office-Dokumente</p>
-                            <button
-                                type="button"
-                                onclick={() => fileInput.click()}
-                                disabled={isUploading}
-                                class="mt-3 text-xs font-bold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer"
-                            >
-                                oder Dateien vom Computer auswählen &rarr;
-                            </button>
-                        </div>
-
-                        <!-- UPLOADED DOCUMENTS -->
-                        <div class="orga-card-white p-6 space-y-4">
-                            <h4 class="text-xs font-bold uppercase tracking-wider text-neutral-400">
-                                Hinterlegte Dateien ({uploadedDocuments.length})
-                            </h4>
-
-                            {#if uploadedDocuments.length === 0}
-                                <div class="text-center py-6 text-neutral-400 italic text-xs">
-                                    Noch keine Dokumente hochgeladen.
-                                </div>
-                            {:else}
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                    {#each uploadedDocuments as docFileName}
-                                        <div class="flex items-center justify-between p-3.5 bg-neutral-50 rounded-2xl border border-neutral-200 hover:border-indigo-300 hover:bg-indigo-50/20 transition-all group">
-                                            <button
-                                                type="button"
-                                                onclick={(e) => previewDocument(e, docFileName)}
-                                                class="flex items-center gap-3 min-w-0 flex-1 text-left cursor-pointer"
-                                                title={`Vorschau: ${docFileName}`}
-                                            >
-                                                <div class="text-2xl shrink-0">
-                                                    {#if docFileName.toLowerCase().endsWith('.pdf')}
-                                                        📕
-                                                    {:else if /\.(jpg|jpeg|png|webp|gif)$/i.test(docFileName)}
-                                                        🖼️
-                                                    {:else if /\.(xls|xlsx|csv)$/i.test(docFileName)}
-                                                        📊
-                                                    {:else}
-                                                        📄
-                                                    {/if}
-                                                </div>
-                                                <div class="min-w-0 flex-1">
-                                                    <p class="text-xs font-bold text-neutral-900 truncate group-hover:text-indigo-600 transition-colors">
-                                                        {docFileName}
-                                                    </p>
-                                                    <span class="text-[10px] text-neutral-400">Klicken für Vorschau</span>
-                                                </div>
-                                            </button>
-
-                                            <div class="flex items-center gap-1 shrink-0">
-                                                <button
-                                                    type="button"
-                                                    onclick={() => renameDocument(docFileName)}
-                                                    disabled={isUploading}
-                                                    class="p-1.5 text-neutral-400 hover:text-indigo-600 rounded-lg hover:bg-white transition-colors cursor-pointer"
-                                                    title="Umbenennen"
-                                                >
-                                                    <Edit3 class="w-3.5 h-3.5" />
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onclick={() => deleteDocument(docFileName)}
-                                                    disabled={isUploading}
-                                                    class="p-1.5 text-neutral-400 hover:text-rose-600 rounded-lg hover:bg-white transition-colors cursor-pointer"
-                                                    title="Löschen"
-                                                >
-                                                    <Trash2 class="w-3.5 h-3.5" />
-                                                </button>
-                                            </div>
-                                        </div>
-                                    {/each}
-                                </div>
-                            {/if}
-                        </div>
-
-                        <!-- SYSTEM TEMPLATES -->
-                        {#if systemDocuments.length > 0}
-                            <div class="orga-card-white p-6 space-y-4">
-                                <h4 class="text-xs font-bold uppercase tracking-wider text-neutral-400">
-                                    Generierte System-Vorlagen ({systemDocuments.length})
-                                </h4>
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                    {#each systemDocuments as doc}
-                                        <a
-                                            href={`/documents/${doc.id}`}
-                                            class="flex items-center justify-between p-3.5 bg-neutral-50 rounded-2xl border border-neutral-200 hover:border-indigo-300 hover:bg-indigo-50/20 transition-all group"
-                                        >
-                                            <div class="flex items-center gap-3 min-w-0 flex-1">
-                                                <span class="text-2xl shrink-0">📑</span>
-                                                <div class="min-w-0">
-                                                    <p class="text-xs font-bold text-neutral-900 truncate group-hover:text-indigo-600 transition-colors">
-                                                        {doc.title || 'Dokument'}
-                                                    </p>
-                                                    <p class="text-[10px] text-neutral-400 mt-0.5">
-                                                        Erstellt: {safeFormatDate(doc.created)}
-                                                    </p>
-                                                </div>
-                                            </div>
-                                            <ExternalLink class="w-4 h-4 text-neutral-400 group-hover:text-indigo-600 transition-colors shrink-0" />
-                                        </a>
-                                    {/each}
-                                </div>
-                            </div>
-                        {/if}
-
-                    </div>
+                    <ClientDocumentsTab
+                        {client}
+                        clientId={clientId || ''}
+                        {systemDocuments}
+                        {pdfPreviewModal}
+                        {docGenModal}
+                    />
                 {/if}
 
                 <!-- ==================================================== -->

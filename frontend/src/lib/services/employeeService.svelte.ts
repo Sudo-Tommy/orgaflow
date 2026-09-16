@@ -246,9 +246,9 @@ class EmployeeService {
     }
 
     /**
-     * Weist einem Mitarbeiter Klienten zu
+     * Weist einem Mitarbeiter Klienten zu und synchronisiert auf Wunsch bestehende/zukünftige Termine
      */
-    async assignClients(employeeId: string, clientIds: string[]): Promise<boolean> {
+    async assignClients(employeeId: string, clientIds: string[], syncAppointments: boolean = true): Promise<boolean> {
         this.isSubmitting = true;
         try {
             // 1. Aktualisiere Feld assigned_clients auf dem User-Record
@@ -267,9 +267,41 @@ class EmployeeService {
                 }
             }
 
+            // 3. Offene / zukünftige Termine der zugewiesenen Klienten direkt dem Mitarbeiter zuweisen
+            if (syncAppointments && clientIds.length > 0) {
+                try {
+                    const todayStr = new Date().toISOString().slice(0, 10);
+                    const allAppts = orgaStore.appointments.data || [];
+                    const relevantAppts = allAppts.filter(a => {
+                        const apptDate = (a.appointment || '').slice(0, 10);
+                        const isUpcomingOrOpen = apptDate >= todayStr || a.status !== 'Erledigt';
+                        const belongsToClient = Array.isArray(a.client)
+                            ? a.client.some(cid => clientIds.includes(cid))
+                            : clientIds.includes(a.client as any);
+                        return isUpcomingOrOpen && belongsToClient;
+                    });
+
+                    for (const a of relevantAppts) {
+                        if (a.assigned_to !== employeeId) {
+                            try {
+                                await pb.collection('appointments').update(a.id, {
+                                    assigned_to: employeeId,
+                                    user: employeeId
+                                });
+                            } catch (aErr) {
+                                console.warn(`Konnte Termin ${a.id} nicht synchronisieren:`, aErr);
+                            }
+                        }
+                    }
+                } catch (syncErr) {
+                    console.warn('Fehler bei Termin-Synchronisation:', syncErr);
+                }
+            }
+
             await Promise.allSettled([
                 orgaStore.users.init(),
-                orgaStore.clients.init()
+                orgaStore.clients.init(),
+                orgaStore.appointments.init()
             ]);
 
             toastStore.success(`${clientIds.length} Klient(en) erfolgreich zugewiesen.`);
@@ -277,6 +309,140 @@ class EmployeeService {
         } catch (err: any) {
             console.error('Fehler bei Klientenzuweisung:', err);
             toastStore.error(err?.message || 'Klientenzuweisung fehlgeschlagen.');
+            return false;
+        } finally {
+            this.isSubmitting = false;
+        }
+    }
+
+    /**
+     * Weist einen Mitarbeiter direkt aus der Klientenansicht zu (oder hebt die Zuweisung auf)
+     */
+    async assignEmployeeToClient(clientId: string, employeeId: string | null, syncAppointments: boolean = true): Promise<boolean> {
+        this.isSubmitting = true;
+        try {
+            const allUsers = orgaStore.users.data || [];
+
+            // 1. Klienten von allen anderen Mitarbeitern entfernen (Zuständigkeit exklusiv oder bereinigen)
+            for (const u of allUsers) {
+                const currentAssigned = Array.isArray(u.assigned_clients) ? [...u.assigned_clients] : [];
+                if (u.id !== employeeId && currentAssigned.includes(clientId)) {
+                    const updated = currentAssigned.filter(id => id !== clientId);
+                    try {
+                        await pb.collection('users').update(u.id, { assigned_clients: updated });
+                    } catch (uErr) {
+                        console.warn(`Konnte Klient ${clientId} nicht von Mitarbeiter ${u.id} entfernen:`, uErr);
+                    }
+                }
+            }
+
+            // 2. Dem neuen Mitarbeiter hinzufügen
+            if (employeeId) {
+                const targetEmp = allUsers.find(u => u.id === employeeId) || await pb.collection('users').getOne(employeeId).catch(() => null);
+                if (targetEmp) {
+                    const currentAssigned = Array.isArray(targetEmp.assigned_clients) ? [...targetEmp.assigned_clients] : [];
+                    if (!currentAssigned.includes(clientId)) {
+                        currentAssigned.push(clientId);
+                        await pb.collection('users').update(employeeId, { assigned_clients: currentAssigned });
+                    }
+                }
+
+                // Caregiver-Feld am Klienten setzen
+                try {
+                    await pb.collection('clients').update(clientId, { caregiver: employeeId });
+                } catch (cErr) {
+                    console.warn(`Konnte caregiver für Klient ${clientId} nicht setzen:`, cErr);
+                }
+
+                // 3. Termine synchronisieren
+                if (syncAppointments) {
+                    const todayStr = new Date().toISOString().slice(0, 10);
+                    const appts = orgaStore.appointments.data || [];
+                    const relevantAppts = appts.filter(a => {
+                        const apptDate = (a.appointment || '').slice(0, 10);
+                        const isUpcomingOrOpen = apptDate >= todayStr || a.status !== 'Erledigt';
+                        const belongsToClient = Array.isArray(a.client)
+                            ? a.client.includes(clientId)
+                            : a.client === clientId;
+                        return isUpcomingOrOpen && belongsToClient;
+                    });
+
+                    for (const a of relevantAppts) {
+                        if (a.assigned_to !== employeeId) {
+                            try {
+                                await pb.collection('appointments').update(a.id, {
+                                    assigned_to: employeeId,
+                                    user: employeeId
+                                });
+                            } catch {}
+                        }
+                    }
+                }
+            } else {
+                // Zuweisung aufheben
+                try {
+                    await pb.collection('clients').update(clientId, { caregiver: null });
+                } catch {}
+            }
+
+            await Promise.allSettled([
+                orgaStore.users.init(),
+                orgaStore.clients.init(),
+                orgaStore.appointments.init()
+            ]);
+
+            const targetName = employeeId ? (allUsers.find(u => u.id === employeeId)?.name_first || 'Mitarbeiter') : null;
+            toastStore.success(targetName ? `Klient erfolgreich ${targetName} zugewiesen.` : 'Mitarbeiter-Zuweisung aufgehoben.');
+            return true;
+        } catch (err: any) {
+            console.error('Fehler bei Mitarbeiter-Zuweisung zum Klienten:', err);
+            toastStore.error(err?.message || 'Zuweisung fehlgeschlagen.');
+            return false;
+        } finally {
+            this.isSubmitting = false;
+        }
+    }
+
+    /**
+     * Ermittelt den aktuell zugewiesenen Mitarbeiter für einen Klienten
+     */
+    getAssignedEmployeeForClient(clientId: string): UserRecord | null {
+        const allUsers = orgaStore.users.data || [];
+        const found = allUsers.find(u => Array.isArray(u.assigned_clients) && u.assigned_clients.includes(clientId));
+        if (found) return found;
+
+        const client = orgaStore.clients.getById(clientId);
+        if (client?.caregiver) {
+            const byCg = allUsers.find(u => u.id === client.caregiver);
+            if (byCg) return byCg;
+        }
+        return null;
+    }
+
+    /**
+     * Schließt einen Einsatz ab oder aktualisiert Status, Bericht, Checkliste und Notizen
+     */
+    async completeAppointment(appointmentId: string, payload: {
+        status?: string;
+        report?: string;
+        notes?: string;
+        checklist?: any[];
+    }): Promise<boolean> {
+        this.isSubmitting = true;
+        try {
+            const data: Record<string, any> = {};
+            if (payload.status !== undefined) data.status = payload.status;
+            if (payload.report !== undefined) data.report = payload.report;
+            if (payload.notes !== undefined) data.notes = payload.notes;
+            if (payload.checklist !== undefined) data.checklist = payload.checklist;
+
+            await pb.collection('appointments').update(appointmentId, data);
+            await orgaStore.appointments.init();
+            toastStore.success('Einsatz erfolgreich dokumentiert.');
+            return true;
+        } catch (err: any) {
+            console.error('Fehler beim Dokumentieren des Termins:', err);
+            toastStore.error(err?.message || 'Einsatz konnte nicht gespeichert werden.');
             return false;
         } finally {
             this.isSubmitting = false;

@@ -18,6 +18,7 @@
 
     type TabType = 'appointments' | 'clients' | 'contacts' | 'profile';
     let activeTab = $state<TabType>('appointments');
+    let selectedClientIdForFilter = $state<string | null>(null);
 
     let isVerifyingToken = $state(false);
     let tokenError = $state('');
@@ -294,9 +295,17 @@
         <!-- Main View Area -->
         <main class="flex-1 max-w-2xl w-full mx-auto p-4 sm:p-5">
             {#if activeTab === 'appointments'}
-                <CaregiverAppointmentsTab />
+                <CaregiverAppointmentsTab 
+                    bind:selectedClientId={selectedClientIdForFilter}
+                    onClearClientFilter={() => selectedClientIdForFilter = null}
+                />
             {:else if activeTab === 'clients'}
-                <CaregiverClientsTab />
+                <CaregiverClientsTab 
+                    onSelectClientAppointments={(clientId) => {
+                        selectedClientIdForFilter = clientId;
+                        activeTab = 'appointments';
+                    }}
+                />
             {:else if activeTab === 'contacts'}
                 <CaregiverContactsTab />
             {:else if activeTab === 'profile'}
