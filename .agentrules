@@ -32,5 +32,7 @@
   - Weder der Dialog, noch der Inhaltsbereich, noch der Footer dürfen jemals horizontal scrollen oder seitlich wackeln (`overflow-x-hidden`, `w-full max-w-full`).
   - Alle innenliegenden Elemente, Filter-Chips, Buttons, Textfelder und Tabellen/Karten MÜSSEN responsiv gestaltet sein und sauber umbrechen (`flex-wrap`, `min-w-0`, `break-words`, keine starren `overflow-x-auto`-Leisten).
 
-
-
+## 5. Kommunikations- und Klärungs-Disziplin (Immer 3 Fragen zum Prompt)
+- **Verbindliche Klärungsregel**:
+  - Bei jeder neuen Aufgabenstellung bzw. jedem neuen Prompt des Nutzers: Stelle **immer genau 3 präzise, zielgerichtete Fragen** (zu Anforderungen, UX/Design, Verhalten in Randfällen oder Priorisierung).
+  - Nutze dafür bevorzugt das interaktive Modal-Tool `ask_question`, um konkrete Antwortoptionen bereitzustellen und die Intention des Nutzers vor der Implementierung wasserdicht abzustimmen.
