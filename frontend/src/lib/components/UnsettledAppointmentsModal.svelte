@@ -5,8 +5,10 @@
     import { toastStore } from "$lib/services/toastService.svelte";
     import { 
         User, Calendar, Clock, CheckCircle2, AlertTriangle, Search, 
-        ChevronDown, ChevronRight, Check, X, CheckCheck, Car, Sparkles
+        ChevronDown, ChevronRight, Check, X, CheckCheck, Car, Sparkles,
+        FileText, ExternalLink
     } from "lucide-svelte";
+    import { isAppointmentOwner, sortAppointmentsPrioritizingOwner } from "./calendar/calendarUtils";
 
     interface Props {
         unsettledAppointments: any[];
@@ -23,6 +25,7 @@
     let searchQuery = $state("");
     let filterStatus = $state<"all" | "ready" | "incomplete">("all");
     let collapsedGroups = $state<Record<string, boolean>>({});
+    let expandedAppIds = $state<Record<string, boolean>>({});
 
     // Hilfsfunktion: Berechne erfasste Stunden eines Termins
     function getAppHours(app: any): number {
@@ -34,7 +37,7 @@
 
     // Hilfsfunktion: Berechne erfasste Kilometer eines Termins
     function getAppKm(app: any): number {
-        return (app.expand?.drive_record || []).reduce((sum: number, dr: any) => sum + (dr.km || 0), 0);
+        return (app.expand?.drive_record || []).reduce((sum: number, dr: any) => sum + (dr.km || dr.kilometers || 0), 0);
     }
 
     // Hilfsfunktion: Prüfe ob Termin abrechnungsbereit ist (Zeiterfassung vorhanden)
@@ -95,7 +98,18 @@
             group.totalKm += getAppKm(app);
         }
 
-        return groups.sort((a, b) => a.clientName.localeCompare(b.clientName));
+        const myId = pb.authStore.model?.id;
+        for (const g of groups) {
+            g.apps = sortAppointmentsPrioritizingOwner(g.apps, myId);
+        }
+
+        return groups.sort((a, b) => {
+            const aHasMine = myId ? a.apps.some(app => isAppointmentOwner(app, myId)) : false;
+            const bHasMine = myId ? b.apps.some(app => isAppointmentOwner(app, myId)) : false;
+            if (aHasMine && !bHasMine) return -1;
+            if (!aHasMine && bHasMine) return 1;
+            return a.clientName.localeCompare(b.clientName);
+        });
     });
 
     // Gesamtmetriken
@@ -140,6 +154,7 @@
         selectedIds = [];
         searchQuery = "";
         filterStatus = "all";
+        expandedAppIds = {};
         dialog?.showModal();
     }
 
@@ -182,6 +197,10 @@
 
     function toggleGroupCollapse(clientName: string) {
         collapsedGroups[clientName] = !collapsedGroups[clientName];
+    }
+
+    function toggleAppExpand(id: string) {
+        expandedAppIds[id] = !expandedAppIds[id];
     }
 
     // Einzelnen Termin direkt abrechnen
@@ -240,170 +259,177 @@
 
 <dialog 
     bind:this={dialog} 
-    class="p-0 bg-transparent backdrop:bg-black/60 backdrop:backdrop-blur-sm w-full max-w-3xl m-0 sm:m-auto max-h-none sm:max-h-fit rounded-none sm:rounded-3xl outline-none" 
+    class="p-0 bg-transparent backdrop:bg-black/60 backdrop:backdrop-blur-sm w-full max-w-3xl m-0 sm:m-auto max-h-dvh sm:max-h-[90dvh] rounded-none sm:rounded-3xl outline-none border-none overflow-hidden" 
     onclick={(e) => { if (e.target === dialog) close(); }}
 >
-    <div class="bg-neutral-50 sm:rounded-3xl w-full h-dvh sm:h-auto sm:max-h-[90dvh] flex flex-col relative overflow-hidden shadow-2xl border border-neutral-200">
+    <!-- MODAL CONTAINER (Scrollt komplett als eine Einheit durch, kein Element bleibt statisch) -->
+    <div class="bg-neutral-50 sm:rounded-3xl w-full max-h-dvh sm:max-h-[90dvh] overflow-y-auto overflow-x-hidden custom-scrollbar flex flex-col shadow-2xl border border-neutral-200">
         
-        <!-- Mobile Drag Indicator -->
-        <div class="pt-3 pb-1 sm:hidden flex justify-center shrink-0 bg-white">
-            <div class="w-12 h-1.5 bg-neutral-300 rounded-full"></div>
-        </div>
-
-        <!-- HEADER -->
-        <div class="bg-white px-4 sm:px-6 md:px-8 py-4 sm:py-5 border-b border-neutral-200 flex items-center justify-between shrink-0 sticky top-0 z-20 shadow-xs">
-            <div class="flex items-center gap-3 sm:gap-4 min-w-0 pr-12 sm:pr-0">
-                <div class="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-cyan-50 text-cyan-600 flex items-center justify-center font-bold shadow-inner text-xl sm:text-2xl shrink-0 border border-cyan-100">
-                    📄
-                </div>
-                <div class="min-w-0">
-                    <h2 class="text-lg sm:text-xl font-black text-neutral-900 flex items-center gap-2 truncate tracking-tight">
-                        Offene Abrechnungen
-                    </h2>
-                    <p class="text-xs sm:text-sm text-neutral-500 font-medium truncate mt-0.5">
-                        Noch nicht in Rechnung gestellte Einsätze
-                    </p>
-                </div>
-            </div>
-            <button 
-                type="button"
-                aria-label="Schließen" 
-                onclick={close} 
-                class="absolute top-4 right-4 sm:relative sm:top-0 sm:right-0 w-10 h-10 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-colors shadow-sm sm:shadow-none shrink-0 z-10 active:scale-95 touch-manipulation cursor-pointer"
-            >
-                <X class="w-5 h-5" />
-            </button>
-        </div>
-
-        <!-- KPI SUMMARY BAR -->
-        <div class="bg-white border-b border-neutral-200 px-4 sm:px-6 py-3 shrink-0 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-            <div class="p-2.5 rounded-xl bg-neutral-50 border border-neutral-200/80 flex items-center gap-2.5">
-                <span class="text-lg leading-none">📄</span>
-                <div class="min-w-0">
-                    <p class="text-[10px] font-bold uppercase text-neutral-400 truncate">Offen</p>
-                    <p class="font-black text-neutral-900 text-sm">{metrics.totalCount} Termine</p>
-                </div>
-            </div>
-            <div class="p-2.5 rounded-xl bg-cyan-50/60 border border-cyan-100 flex items-center gap-2.5">
-                <span class="text-lg leading-none">⏱️</span>
-                <div class="min-w-0">
-                    <p class="text-[10px] font-bold uppercase text-cyan-700 truncate">Gesamtzeit</p>
-                    <p class="font-black text-cyan-950 text-sm">{metrics.totalHours.toFixed(1)} h</p>
-                </div>
-            </div>
-            <div class="p-2.5 rounded-xl bg-teal-50/60 border border-teal-100 flex items-center gap-2.5">
-                <span class="text-lg leading-none">🚗</span>
-                <div class="min-w-0">
-                    <p class="text-[10px] font-bold uppercase text-teal-700 truncate">Fahrstrecke</p>
-                    <p class="font-black text-teal-950 text-sm">{metrics.totalKm.toFixed(0)} km</p>
-                </div>
-            </div>
-            <div class="p-2.5 rounded-xl bg-indigo-50/60 border border-indigo-100 flex items-center gap-2.5">
-                <span class="text-lg leading-none">👥</span>
-                <div class="min-w-0">
-                    <p class="text-[10px] font-bold uppercase text-indigo-700 truncate">Klienten</p>
-                    <p class="font-black text-indigo-950 text-sm">{metrics.clientCount} Klienten</p>
-                </div>
-            </div>
-        </div>
-
-        <!-- SEARCH & FILTER CONTROLS -->
-        <div class="bg-white border-b border-neutral-200 px-4 sm:px-6 py-3 flex flex-col sm:flex-row gap-2.5 justify-between items-stretch sm:items-center shrink-0">
-            <!-- Search Field -->
-            <div class="relative flex-1">
-                <Search class="w-4 h-4 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input 
-                    type="text"
-                    bind:value={searchQuery}
-                    placeholder="Klient, Datum oder Beschreibung suchen..."
-                    class="w-full pl-9 pr-8 py-2 rounded-xl text-xs font-semibold bg-neutral-100/80 border border-neutral-200 focus:bg-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none transition-all"
-                />
-                {#if searchQuery}
-                    <button 
-                        type="button" 
-                        onclick={() => searchQuery = ""}
-                        class="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700 p-1"
-                    >
-                        <X class="w-3.5 h-3.5" />
-                    </button>
-                {/if}
+        <!-- KOPFBEREICH (Titel & große KPIs - scrollt natürlich mit) -->
+        <div class="bg-white border-b border-neutral-200 shadow-xs w-full">
+            <!-- Mobile Drag Indicator -->
+            <div class="pt-3 pb-1 sm:hidden flex justify-center shrink-0 bg-white">
+                <div class="w-12 h-1.5 bg-neutral-300 rounded-full"></div>
             </div>
 
-            <!-- Filter Status Chips -->
-            <div class="flex items-center gap-1 bg-neutral-100 p-1 rounded-xl shrink-0">
+            <!-- HEADER -->
+            <div class="px-4 sm:px-6 md:px-8 py-3.5 sm:py-5 border-b border-neutral-200 flex items-center justify-between min-w-0">
+                <div class="flex items-center gap-3 sm:gap-4 min-w-0 pr-10 sm:pr-0">
+                    <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-cyan-50 text-cyan-600 flex items-center justify-center font-bold shadow-inner text-xl sm:text-2xl shrink-0 border border-cyan-100">
+                        📄
+                    </div>
+                    <div class="min-w-0">
+                        <h2 class="text-base sm:text-xl font-black text-neutral-900 flex items-center gap-2 truncate tracking-tight">
+                            Offene Abrechnungen
+                        </h2>
+                        <p class="text-xs sm:text-sm text-neutral-500 font-medium truncate mt-0.5">
+                            Noch nicht in Rechnung gestellte Einsätze
+                        </p>
+                    </div>
+                </div>
                 <button 
                     type="button"
-                    onclick={() => filterStatus = 'all'}
-                    class="px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all {filterStatus === 'all' ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-500 hover:text-neutral-800'}"
+                    aria-label="Schließen" 
+                    onclick={close} 
+                    class="absolute top-3.5 right-4 sm:relative sm:top-0 sm:right-0 w-9 h-9 sm:w-10 sm:h-10 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-colors shadow-sm sm:shadow-none shrink-0 z-10 active:scale-95 touch-manipulation cursor-pointer"
                 >
-                    Alle ({metrics.totalCount})
+                    <X class="w-5 h-5" />
                 </button>
-                <button 
-                    type="button"
-                    onclick={() => filterStatus = 'ready'}
-                    class="px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all {filterStatus === 'ready' ? 'bg-emerald-500 text-white shadow-xs' : 'text-emerald-700 hover:bg-emerald-50'}"
-                    title="Zeiten & Leistungen vollständig erfasst"
-                >
-                    ✓ Bereit ({metrics.readyCount})
-                </button>
-                <button 
-                    type="button"
-                    onclick={() => filterStatus = 'incomplete'}
-                    class="px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all {filterStatus === 'incomplete' ? 'bg-amber-500 text-white shadow-xs' : 'text-amber-700 hover:bg-amber-50'}"
-                    title="Zeiten oder Leistungen fehlen noch"
-                >
-                    ⚠️ Prüfen ({metrics.incompleteCount})
-                </button>
+            </div>
+
+            <!-- KPI SUMMARY BAR (Scrollt mit) -->
+            <div class="px-3 sm:px-6 py-2.5 sm:py-3 grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-2 text-xs min-w-0">
+                <div class="p-2 sm:p-2.5 rounded-xl bg-neutral-50 border border-neutral-200/80 flex items-center gap-2 min-w-0">
+                    <span class="text-base sm:text-lg leading-none shrink-0">📄</span>
+                    <div class="min-w-0">
+                        <p class="text-[9px] sm:text-[10px] font-bold uppercase text-neutral-400 truncate">Offen</p>
+                        <p class="font-black text-neutral-900 text-xs sm:text-sm truncate">{metrics.totalCount} Termine</p>
+                    </div>
+                </div>
+                <div class="p-2 sm:p-2.5 rounded-xl bg-cyan-50/60 border border-cyan-100 flex items-center gap-2 min-w-0">
+                    <span class="text-base sm:text-lg leading-none shrink-0">⏱️</span>
+                    <div class="min-w-0">
+                        <p class="text-[9px] sm:text-[10px] font-bold uppercase text-cyan-700 truncate">Gesamtzeit</p>
+                        <p class="font-black text-cyan-950 text-xs sm:text-sm truncate">{metrics.totalHours.toFixed(1)} h</p>
+                    </div>
+                </div>
+                <div class="p-2 sm:p-2.5 rounded-xl bg-teal-50/60 border border-teal-100 flex items-center gap-2 min-w-0">
+                    <span class="text-base sm:text-lg leading-none shrink-0">🚗</span>
+                    <div class="min-w-0">
+                        <p class="text-[9px] sm:text-[10px] font-bold uppercase text-teal-700 truncate">Fahrstrecke</p>
+                        <p class="font-black text-teal-950 text-xs sm:text-sm truncate">{metrics.totalKm.toFixed(0)} km</p>
+                    </div>
+                </div>
+                <div class="p-2 sm:p-2.5 rounded-xl bg-indigo-50/60 border border-indigo-100 flex items-center gap-2 min-w-0">
+                    <span class="text-base sm:text-lg leading-none shrink-0">👥</span>
+                    <div class="min-w-0">
+                        <p class="text-[9px] sm:text-[10px] font-bold uppercase text-indigo-700 truncate">Klienten</p>
+                        <p class="font-black text-indigo-950 text-xs sm:text-sm truncate">{metrics.clientCount} Klienten</p>
+                    </div>
+                </div>
             </div>
         </div>
 
-        <!-- BATCH SELECTION BANNER -->
-        {#if filteredAppointments.length > 0}
-            <div class="bg-neutral-100/90 border-b border-neutral-200 px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-3 shrink-0">
-                <label class="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-neutral-700 select-none">
+        <!-- STICKY FILTER- & SUCHE-LEISTE (Bleibt beim Scrollen oben angeheftet) -->
+        <div class="sticky top-0 z-20 bg-white/95 backdrop-blur-md border-b border-neutral-200 shadow-xs">
+            <!-- SEARCH & FILTER CONTROLS -->
+            <div class="px-3 sm:px-6 py-2 sm:py-2.5 flex flex-col sm:flex-row gap-2 sm:gap-2.5 justify-between items-stretch sm:items-center min-w-0">
+                <!-- Search Field -->
+                <div class="relative flex-1 min-w-0">
+                    <Search class="w-4 h-4 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input 
-                        type="checkbox" 
-                        checked={filteredAppointments.length > 0 && filteredAppointments.every(a => selectedIds.includes(a.id))} 
-                        onchange={toggleAllFiltered} 
-                        class="w-4 h-4 text-cyan-600 rounded border-neutral-300 focus:ring-cyan-500 transition-colors cursor-pointer" 
-                        disabled={isProcessing} 
+                        type="text" 
+                        bind:value={searchQuery}
+                        placeholder="Klient, Datum oder Beschreibung suchen..."
+                        class="w-full pl-9 pr-8 py-1.5 sm:py-2 rounded-xl text-xs font-semibold bg-neutral-100/80 border border-neutral-200 focus:bg-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none transition-all"
                     />
-                    <span>
-                        {#if selectedIds.length > 0}
-                            {selectedIds.length} von {filteredAppointments.length} ausgewählt
-                        {:else}
-                            Alle {filteredAppointments.length} gefilterten auswählen
-                        {/if}
-                    </span>
-                </label>
-
-                {#if selectedIds.length > 0}
-                    <div class="flex items-center gap-2">
-                        <span class="text-[11px] font-bold text-neutral-500 hidden sm:inline">
-                            Summe: {metrics.selectedHours.toFixed(1)} h • {metrics.selectedKm.toFixed(0)} km
-                        </span>
+                    {#if searchQuery}
                         <button 
                             type="button" 
-                            onclick={markSelectedAsSettled} 
-                            disabled={isProcessing} 
-                            class="text-xs font-bold text-white bg-cyan-600 hover:bg-cyan-700 px-3.5 py-1.5 rounded-xl shadow-sm transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer min-h-[36px]"
+                            onclick={() => searchQuery = ""}
+                            class="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700 p-1"
                         >
-                            <CheckCheck class="w-4 h-4" />
-                            <span>{isProcessing ? 'Verarbeite...' : `${selectedIds.length} als abgerechnet markieren`}</span>
+                            <X class="w-3.5 h-3.5" />
                         </button>
-                    </div>
-                {/if}
-            </div>
-        {/if}
+                    {/if}
+                </div>
 
-        <!-- CONTENT -->
-        <div class="p-4 sm:p-6 overflow-y-auto custom-scrollbar flex-1 bg-neutral-50/60">
+                <!-- Filter Status Chips -->
+                <div class="flex flex-wrap items-center gap-1 bg-neutral-100 p-1 rounded-xl w-full sm:w-auto">
+                    <button 
+                        type="button"
+                        onclick={() => filterStatus = 'all'}
+                        class="flex-1 sm:flex-none px-2.5 py-1 sm:py-1.5 rounded-lg text-xs font-bold transition-all text-center {filterStatus === 'all' ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-500 hover:text-neutral-800'}"
+                    >
+                        Alle ({metrics.totalCount})
+                    </button>
+                    <button 
+                        type="button"
+                        onclick={() => filterStatus = 'ready'}
+                        class="flex-1 sm:flex-none px-2.5 py-1 sm:py-1.5 rounded-lg text-xs font-bold transition-all text-center {filterStatus === 'ready' ? 'bg-emerald-500 text-white shadow-xs' : 'text-emerald-700 hover:bg-emerald-50'}"
+                        title="Zeiten & Leistungen vollständig erfasst"
+                    >
+                        ✓ Bereit ({metrics.readyCount})
+                    </button>
+                    <button 
+                        type="button"
+                        onclick={() => filterStatus = 'incomplete'}
+                        class="flex-1 sm:flex-none px-2.5 py-1 sm:py-1.5 rounded-lg text-xs font-bold transition-all text-center {filterStatus === 'incomplete' ? 'bg-amber-500 text-white shadow-xs' : 'text-amber-700 hover:bg-amber-50'}"
+                        title="Zeiten oder Leistungen fehlen noch"
+                    >
+                        ⚠️ Prüfen ({metrics.incompleteCount})
+                    </button>
+                </div>
+            </div>
+
+            <!-- BATCH SELECTION BANNER -->
+            {#if filteredAppointments.length > 0}
+                <div class="bg-neutral-100/95 border-t border-neutral-200/80 px-3 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-2 min-w-0">
+                    <label class="flex items-center gap-2 cursor-pointer text-xs font-bold text-neutral-700 select-none min-w-0">
+                        <input 
+                            type="checkbox" 
+                            checked={filteredAppointments.length > 0 && filteredAppointments.every(a => selectedIds.includes(a.id))} 
+                            onchange={toggleAllFiltered} 
+                            class="w-4 h-4 text-cyan-600 rounded border-neutral-300 focus:ring-cyan-500 transition-colors cursor-pointer shrink-0" 
+                            disabled={isProcessing} 
+                        />
+                        <span class="truncate">
+                            {#if selectedIds.length > 0}
+                                {selectedIds.length} von {filteredAppointments.length} ausgewählt
+                            {:else}
+                                Alle {filteredAppointments.length} auswählen
+                            {/if}
+                        </span>
+                    </label>
+
+                    {#if selectedIds.length > 0}
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <span class="text-[11px] font-bold text-neutral-500 hidden sm:inline">
+                                Summe: {metrics.selectedHours.toFixed(1)} h • {metrics.selectedKm.toFixed(0)} km
+                            </span>
+                            <button 
+                                type="button" 
+                                onclick={markSelectedAsSettled} 
+                                disabled={isProcessing} 
+                                class="text-xs font-bold text-white bg-cyan-600 hover:bg-cyan-700 px-3 py-1.5 rounded-xl shadow-sm transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer min-h-[34px]"
+                            >
+                                <CheckCheck class="w-4 h-4" />
+                                <span>{isProcessing ? 'Verarbeite...' : `${selectedIds.length} abrechnen`}</span>
+                            </button>
+                        </div>
+                    {/if}
+                </div>
+            {/if}
+        </div>
+
+        <!-- CONTENT (Fließt im gesamten Modal mit) -->
+        <div class="p-3 sm:p-6 bg-neutral-50/60 w-full flex-1">
             {#if filteredAppointments.length === 0}
-                <div class="flex flex-col items-center justify-center py-16 sm:py-20 text-center animate-enter">
-                    <div class="w-16 h-16 rounded-full bg-cyan-50 text-cyan-600 flex items-center justify-center text-3xl mb-4 shadow-inner">
+                <div class="flex flex-col items-center justify-center py-12 sm:py-20 text-center animate-enter px-2">
+                    <div class="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-cyan-50 text-cyan-600 flex items-center justify-center text-2xl sm:text-3xl mb-3 shadow-inner">
                         {unsettledAppointments.length === 0 ? '🙌' : '🔍'}
                     </div>
-                    <p class="font-bold text-lg sm:text-xl text-neutral-900 mb-1">
+                    <p class="font-bold text-base sm:text-xl text-neutral-900 mb-1">
                         {unsettledAppointments.length === 0 ? 'Alles abgerechnet!' : 'Keine Treffer für Ihre Filter'}
                     </p>
                     <p class="text-xs sm:text-sm text-neutral-500 max-w-sm">
@@ -415,36 +441,36 @@
                         <button 
                             type="button" 
                             onclick={() => { searchQuery = ""; filterStatus = "all"; }}
-                            class="mt-4 px-4 py-2 bg-neutral-200 hover:bg-neutral-300 text-neutral-800 text-xs font-bold rounded-xl transition-colors"
+                            class="mt-4 px-4 py-2 bg-neutral-200 hover:bg-neutral-300 text-neutral-800 text-xs font-bold rounded-xl transition-colors cursor-pointer"
                         >
                             Filter zurücksetzen
                         </button>
                     {/if}
                 </div>
             {:else}
-                <div class="flex flex-col gap-6">
+                <div class="flex flex-col gap-4 sm:gap-6 min-w-0">
                     {#each groupedAppointments as group}
                         {@const isCollapsed = collapsedGroups[group.clientName]}
                         {@const allGroupSelected = group.apps.every(a => selectedIds.includes(a.id))}
                         {@const someGroupSelected = group.apps.some(a => selectedIds.includes(a.id))}
 
-                        <div class="bg-white rounded-2xl border border-neutral-200 shadow-xs overflow-hidden transition-all">
+                        <div class="bg-white rounded-2xl border border-neutral-200 shadow-xs overflow-hidden transition-all min-w-0">
                             
                             <!-- Group Header -->
-                            <div class="px-4 py-3 bg-neutral-50/80 border-b border-neutral-200/80 flex items-center justify-between gap-3">
-                                <div class="flex items-center gap-3 min-w-0">
+                            <div class="px-3 sm:px-4 py-2.5 sm:py-3 bg-neutral-50/80 border-b border-neutral-200/80 flex items-center justify-between gap-2 min-w-0">
+                                <div class="flex items-center gap-2.5 min-w-0 flex-1">
                                     <input 
-                                        type="checkbox"
-                                        checked={allGroupSelected}
-                                        indeterminate={someGroupSelected && !allGroupSelected}
-                                        onchange={() => toggleGroupSelection(group.apps)}
-                                        class="w-4 h-4 text-cyan-600 rounded border-neutral-300 focus:ring-cyan-500 cursor-pointer transition-colors shrink-0"
-                                        title="Alle für diesen Klienten auswählen"
+                                        type="checkbox" 
+                                        checked={allGroupSelected} 
+                                        indeterminate={someGroupSelected && !allGroupSelected} 
+                                        onchange={() => toggleGroupSelection(group.apps)} 
+                                        class="w-4 h-4 text-cyan-600 rounded border-neutral-300 focus:ring-cyan-500 cursor-pointer transition-colors shrink-0" 
+                                        title="Alle für diesen Klienten auswählen" 
                                     />
                                     <button 
-                                        type="button"
-                                        onclick={() => toggleGroupCollapse(group.clientName)}
-                                        class="flex items-center gap-2 text-left min-w-0 hover:text-cyan-700 transition-colors group cursor-pointer"
+                                        type="button" 
+                                        onclick={() => toggleGroupCollapse(group.clientName)} 
+                                        class="flex items-center gap-2 text-left min-w-0 hover:text-cyan-700 transition-colors group cursor-pointer flex-1"
                                     >
                                         {#if isCollapsed}
                                             <ChevronRight class="w-4 h-4 text-neutral-400 group-hover:text-cyan-600 shrink-0" />
@@ -454,22 +480,22 @@
                                         <div class="w-6 h-6 rounded-md bg-cyan-100 text-cyan-800 flex items-center justify-center text-xs font-bold shrink-0">
                                             👤
                                         </div>
-                                        <span class="text-sm font-bold text-neutral-900 truncate">
+                                        <span class="text-xs sm:text-sm font-bold text-neutral-900 truncate">
                                             {group.clientName}
                                         </span>
-                                        <span class="text-xs font-semibold text-neutral-400 shrink-0">
+                                        <span class="text-[11px] font-semibold text-neutral-400 shrink-0">
                                             ({group.apps.length})
                                         </span>
                                     </button>
                                 </div>
 
                                 <!-- Group Totals -->
-                                <div class="flex items-center gap-2 shrink-0">
-                                    <span class="text-[11px] font-bold text-cyan-800 bg-cyan-50 border border-cyan-200 px-2 py-0.5 rounded-md">
+                                <div class="flex items-center gap-1.5 shrink-0">
+                                    <span class="text-[10px] sm:text-[11px] font-bold text-cyan-800 bg-cyan-50 border border-cyan-200 px-2 py-0.5 rounded-md">
                                         ⏱️ {group.totalHours.toFixed(1)} h
                                     </span>
                                     {#if group.totalKm > 0}
-                                        <span class="text-[11px] font-bold text-teal-800 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded-md hidden sm:inline">
+                                        <span class="text-[10px] sm:text-[11px] font-bold text-teal-800 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded-md hidden sm:inline">
                                             🚗 {group.totalKm.toFixed(0)} km
                                         </span>
                                     {/if}
@@ -478,109 +504,248 @@
 
                             <!-- Group Appointments -->
                             {#if !isCollapsed}
-                                <div class="divide-y divide-neutral-100 p-2 sm:p-3 space-y-2">
+                                <div class="divide-y divide-neutral-100 p-2 sm:p-3 space-y-2 min-w-0">
                                     {#each group.apps as app}
                                         {@const appHours = getAppHours(app)}
                                         {@const appKm = getAppKm(app)}
                                         {@const taskCount = app.expand?.tasks?.length || 0}
                                         {@const ready = isAppReady(app)}
                                         {@const isSelected = selectedIds.includes(app.id)}
+                                        {@const isOwner = isAppointmentOwner(app, pb.authStore.model?.id)}
+                                        {@const isAppExpanded = Boolean(expandedAppIds[app.id])}
 
-                                        <div class="rounded-xl border {isSelected ? 'border-cyan-400 bg-cyan-50/20' : 'border-neutral-200 hover:border-cyan-300 bg-white'} transition-all p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                        <div class="rounded-2xl border {isSelected ? 'border-cyan-400 bg-cyan-50/25 shadow-xs' : (isOwner ? 'border-l-4 border-l-indigo-600 border-neutral-200/90 bg-white hover:border-cyan-300' : 'border-neutral-200/90 bg-white hover:border-cyan-300')} transition-all p-3 sm:p-3.5 flex flex-col shadow-2xs hover:shadow-xs min-w-0">
                                             
-                                            <!-- Checkbox + Main Content -->
-                                            <div class="flex items-start gap-3 min-w-0 flex-1">
-                                                <div class="pt-0.5 shrink-0 flex items-center justify-center">
-                                                    <input 
-                                                        type="checkbox" 
-                                                        checked={isSelected} 
-                                                        onchange={() => toggleSelection(app.id)} 
-                                                        class="w-5 h-5 text-cyan-600 rounded border-neutral-300 focus:ring-cyan-500 cursor-pointer transition-colors" 
-                                                        disabled={isProcessing} 
-                                                    />
+                                            <!-- Main Card Header Row -->
+                                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 min-w-0">
+                                                <!-- Checkbox + Info Body -->
+                                                <div class="flex items-start gap-2.5 sm:gap-3 min-w-0 flex-1">
+                                                    <div class="pt-0.5 shrink-0 flex items-center justify-center">
+                                                        <input 
+                                                            type="checkbox" 
+                                                            checked={isSelected} 
+                                                            onchange={() => toggleSelection(app.id)} 
+                                                            class="w-4 h-4 sm:w-4.5 sm:h-4.5 text-cyan-600 rounded border-neutral-300 focus:ring-cyan-500 cursor-pointer transition-colors" 
+                                                            disabled={isProcessing} 
+                                                        />
+                                                    </div>
+
+                                                    <div 
+                                                        class="min-w-0 flex-1 cursor-pointer select-none"
+                                                        onclick={() => toggleAppExpand(app.id)}
+                                                        role="button"
+                                                        tabindex="0"
+                                                        onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleAppExpand(app.id); } }}
+                                                    >
+                                                        <div class="flex flex-wrap items-center gap-1.5 mb-1 min-w-0">
+                                                            {#if isOwner}
+                                                                <span class="text-[9px] sm:text-[10px] font-extrabold bg-indigo-50 text-indigo-700 border border-indigo-200/80 px-1.5 py-0.5 rounded-md">
+                                                                    👤 Mein Termin
+                                                                </span>
+                                                            {/if}
+                                                            <span class="text-[11px] sm:text-xs font-bold text-neutral-800 bg-neutral-100/90 px-2 py-0.5 rounded-md border border-neutral-200/80">
+                                                                📅 {new Date(app.appointment).toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })}
+                                                            </span>
+                                                            <span class="text-[11px] sm:text-xs font-bold {app.is_private ? 'text-rose-600' : 'text-cyan-700'}">
+                                                                🕒 {new Date(app.appointment).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
+                                                            </span>
+                                                            {#if ready}
+                                                                <span class="text-[9px] sm:text-[10px] font-extrabold bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded-md border border-emerald-200">
+                                                                    ✓ Bereit
+                                                                </span>
+                                                            {:else}
+                                                                <span class="text-[9px] sm:text-[10px] font-extrabold bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded-md border border-amber-200">
+                                                                    ⚠️ Prüfen
+                                                                </span>
+                                                            {/if}
+                                                        </div>
+
+                                                        <div class="flex items-center gap-2 min-w-0">
+                                                            <p class="text-xs sm:text-sm font-bold text-neutral-900 truncate hover:text-cyan-700 transition-colors flex-1 min-w-0">
+                                                                {app.description || 'Regulärer Einsatz'}
+                                                            </p>
+                                                            <ChevronDown class="w-4 h-4 text-neutral-400 transition-transform duration-300 shrink-0 {isAppExpanded ? 'rotate-180 text-cyan-600' : ''}" />
+                                                        </div>
+
+                                                        <!-- Status Indicators (Pills) -->
+                                                        <div class="flex flex-wrap gap-1.5 text-[10px] font-semibold mt-1.5 min-w-0">
+                                                            {#if appHours > 0}
+                                                                <span class="bg-cyan-50/80 text-cyan-800 border border-cyan-200/80 px-2 py-0.5 rounded-md">
+                                                                    ⏱️ {appHours.toFixed(1)} h
+                                                                </span>
+                                                            {:else}
+                                                                <span class="bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 rounded-md">
+                                                                    ⚠️ Zeit fehlt
+                                                                </span>
+                                                            {/if}
+
+                                                            {#if taskCount > 0}
+                                                                <span class="bg-emerald-50/80 text-emerald-800 border border-emerald-200/80 px-2 py-0.5 rounded-md">
+                                                                    📋 {taskCount} {taskCount === 1 ? 'Leistung' : 'Leistungen'}
+                                                                </span>
+                                                            {:else}
+                                                                <span class="bg-orange-50 text-orange-800 border border-orange-200 px-2 py-0.5 rounded-md">
+                                                                    ⚠️ Leistung fehlt
+                                                                </span>
+                                                            {/if}
+
+                                                            {#if appKm > 0}
+                                                                <span class="bg-teal-50/80 text-teal-800 border border-teal-200/80 px-2 py-0.5 rounded-md">
+                                                                    🚗 {appKm} km
+                                                                </span>
+                                                            {/if}
+
+                                                            {#if app.report}
+                                                                <span class="bg-indigo-50/80 text-indigo-800 border border-indigo-200/80 px-2 py-0.5 rounded-md">
+                                                                    📝 Bericht
+                                                                </span>
+                                                            {/if}
+                                                        </div>
+                                                    </div>
                                                 </div>
 
-                                                <div class="min-w-0 flex-1">
-                                                    <div class="flex flex-wrap items-center gap-2 mb-1.5">
-                                                        <span class="text-xs font-bold text-neutral-700 bg-neutral-100 px-2 py-0.5 rounded-md border border-neutral-200 shadow-2xs">
-                                                            📅 {new Date(app.appointment).toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })}
-                                                        </span>
-                                                        <span class="text-xs font-bold {app.is_private ? 'text-rose-600' : 'text-cyan-700'}">
-                                                            🕒 {new Date(app.appointment).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr
-                                                        </span>
-                                                        {#if ready}
-                                                            <span class="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded border border-emerald-200">
-                                                                ✓ Bereit
-                                                            </span>
-                                                        {:else}
-                                                            <span class="text-[10px] font-bold bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded border border-amber-200">
-                                                                ⚠️ Unvollständig
-                                                            </span>
-                                                        {/if}
-                                                    </div>
+                                                <!-- Actions per item -->
+                                                <div class="flex items-center gap-1.5 shrink-0 pt-2 sm:pt-0 border-t sm:border-0 border-neutral-100 justify-end flex-wrap">
+                                                    <button 
+                                                        type="button" 
+                                                        onclick={() => markSingleAsSettled(app)} 
+                                                        class="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-600 hover:text-white text-emerald-700 text-xs font-bold rounded-xl border border-emerald-200/80 transition-all flex items-center gap-1 active:scale-95 cursor-pointer min-h-[36px] touch-manipulation shadow-2xs" 
+                                                        title="Diesen Termin direkt als abgerechnet markieren"
+                                                    >
+                                                        <Check class="w-3.5 h-3.5" />
+                                                        <span>Abrechnen</span>
+                                                    </button>
 
-                                                    <p class="text-xs sm:text-sm font-bold text-neutral-900 line-clamp-1 mb-2">
-                                                        {app.description || 'Regulärer Termin'}
-                                                    </p>
+                                                    <button 
+                                                        type="button" 
+                                                        onclick={() => { close(); onOpenDetail(app.id); }} 
+                                                        class="px-2.5 py-1.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-bold rounded-xl transition-all flex items-center gap-1 active:scale-95 cursor-pointer min-h-[36px] touch-manipulation" 
+                                                        title="Termindetails & Abrechnung prüfen"
+                                                    >
+                                                        <span>Details</span>
+                                                    </button>
 
-                                                    <!-- Indicators -->
-                                                    <div class="flex flex-wrap gap-1.5 text-[10px] font-semibold">
-                                                        {#if appHours > 0}
-                                                            <span class="bg-cyan-50 text-cyan-800 border border-cyan-200 px-2 py-0.5 rounded-md">
-                                                                ⏱️ {appHours.toFixed(1)} h
-                                                            </span>
-                                                        {:else}
-                                                            <span class="bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 rounded-md">
-                                                                ⚠️ Zeit fehlt
-                                                            </span>
-                                                        {/if}
-
-                                                        {#if taskCount > 0}
-                                                            <span class="bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-md">
-                                                                📋 {taskCount} Leistung{taskCount > 1 ? 'en' : ''}
-                                                            </span>
-                                                        {:else}
-                                                            <span class="bg-orange-50 text-orange-800 border border-orange-200 px-2 py-0.5 rounded-md">
-                                                                ⚠️ Leistung fehlt
-                                                            </span>
-                                                        {/if}
-
-                                                        {#if appKm > 0}
-                                                            <span class="bg-teal-50 text-teal-800 border border-teal-200 px-2 py-0.5 rounded-md">
-                                                                🚗 {appKm} km
-                                                            </span>
-                                                        {/if}
-
-                                                        {#if app.report}
-                                                            <span class="bg-indigo-50 text-indigo-800 border border-indigo-200 px-2 py-0.5 rounded-md">
-                                                                📝 Bericht vorh.
-                                                            </span>
-                                                        {/if}
-                                                    </div>
+                                                    <button 
+                                                        type="button" 
+                                                        onclick={() => toggleAppExpand(app.id)}
+                                                        class="p-2 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-600 transition-colors cursor-pointer min-h-[36px] flex items-center justify-center"
+                                                        title={isAppExpanded ? "Details zuklappen" : "Details aufklappen"}
+                                                    >
+                                                        <ChevronDown class="w-4 h-4 transition-transform duration-300 {isAppExpanded ? 'rotate-180 text-cyan-600' : ''}" />
+                                                    </button>
                                                 </div>
                                             </div>
 
-                                            <!-- Actions per item -->
-                                            <div class="flex items-center gap-2 shrink-0 pt-2 sm:pt-0 border-t sm:border-0 border-neutral-100 justify-end">
-                                                <button 
-                                                    type="button" 
-                                                    onclick={() => markSingleAsSettled(app)}
-                                                    class="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold rounded-xl border border-emerald-200 transition-colors flex items-center gap-1 active:scale-95 cursor-pointer min-h-[44px] touch-manipulation"
-                                                    title="Diesen Termin als abgerechnet markieren"
-                                                >
-                                                    <Check class="w-3.5 h-3.5" />
-                                                    <span>Abrechnen</span>
-                                                </button>
+                                            <!-- AUFKLAPPBARER DETAILBEREICH (Elegantes Accordion) -->
+                                            {#if isAppExpanded}
+                                                <div class="mt-3 pt-3 border-t border-neutral-100 text-xs flex flex-col gap-2.5 min-w-0">
+                                                    <!-- Vollständige Beschreibung falls vorhanden -->
+                                                    {#if app.description}
+                                                        <div class="bg-neutral-50/80 p-3 rounded-xl border border-neutral-200/80 min-w-0">
+                                                            <span class="text-[10px] font-bold text-neutral-500 uppercase tracking-wider block mb-1">Beschreibung:</span>
+                                                            <p class="text-xs text-neutral-900 font-medium whitespace-pre-wrap break-words">{app.description}</p>
+                                                        </div>
+                                                    {/if}
 
-                                                <button 
-                                                    type="button" 
-                                                    onclick={() => { close(); onOpenDetail(app.id); }}
-                                                    class="px-3 py-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-bold rounded-xl transition-colors flex items-center gap-1 active:scale-95 cursor-pointer min-h-[44px] touch-manipulation"
-                                                    title="Termindetails & Abrechnung prüfen"
-                                                >
-                                                    <span>Details</span>
-                                                </button>
-                                            </div>
+                                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5 min-w-0">
+                                                        <!-- Zeiterfassung Abrechnungsdaten -->
+                                                        <div class="p-3 rounded-xl border min-w-0 {appHours === 0 ? 'bg-amber-50/70 border-amber-200 text-amber-900' : 'bg-cyan-50/50 border-cyan-200 text-cyan-950'}">
+                                                            <div class="flex items-center justify-between font-bold mb-1.5 pb-1 border-b border-current/10">
+                                                                <span class="flex items-center gap-1.5">⏱️ Arbeitszeit:</span>
+                                                                <span class="text-[10px] uppercase font-black">{appHours > 0 ? `${appHours.toFixed(1)} Std.` : 'Fehlt'}</span>
+                                                            </div>
+                                                            {#if app.expand?.time_record && app.expand.time_record.length > 0}
+                                                                <ul class="space-y-1 text-[11px] min-w-0">
+                                                                    {#each app.expand.time_record as tr}
+                                                                        <li class="flex items-center justify-between gap-1 py-0.5">
+                                                                            <span class="font-medium">{new Date(tr.start).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} - {tr.end ? new Date(tr.end).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : 'Offen'} Uhr</span>
+                                                                            {#if tr.break_minutes}
+                                                                                <span class="text-neutral-500 text-[10px] shrink-0 font-normal">({tr.break_minutes} Min. Pause)</span>
+                                                                            {/if}
+                                                                        </li>
+                                                                    {/each}
+                                                                </ul>
+                                                            {:else}
+                                                                <p class="text-[11px] text-amber-800 font-medium">Für diesen Termin wurde noch keine Zeit erfasst.</p>
+                                                            {/if}
+                                                        </div>
+
+                                                        <!-- Leistungen Abrechnungsdaten -->
+                                                        <div class="p-3 rounded-xl border min-w-0 {taskCount === 0 ? 'bg-orange-50/70 border-orange-200 text-orange-900' : 'bg-emerald-50/50 border-emerald-200 text-emerald-900'}">
+                                                            <div class="flex items-center justify-between font-bold mb-1.5 pb-1 border-b border-current/10">
+                                                                <span class="flex items-center gap-1.5">📋 Leistungen:</span>
+                                                                <span class="text-[10px] uppercase font-black">{taskCount > 0 ? `${taskCount} erfasst` : 'Fehlt'}</span>
+                                                            </div>
+                                                            {#if app.expand?.tasks && app.expand.tasks.length > 0}
+                                                                <ul class="space-y-1 text-[11px] min-w-0">
+                                                                    {#each app.expand.tasks as t}
+                                                                        <li class="flex items-center gap-1.5 break-words py-0.5 font-medium">
+                                                                            <span class="text-emerald-600 font-bold">✓</span>
+                                                                            <span>{t.title || t.name || 'Leistung'}</span>
+                                                                        </li>
+                                                                    {/each}
+                                                                </ul>
+                                                            {:else}
+                                                                <p class="text-[11px] text-orange-800 font-medium">Es sind noch keine Einzelleistungen zugeordnet.</p>
+                                                            {/if}
+                                                        </div>
+                                                    </div>
+
+                                                    <!-- Fahrten falls vorhanden -->
+                                                    {#if app.expand?.drive_record && app.expand.drive_record.length > 0}
+                                                        <div class="p-3 rounded-xl bg-teal-50/60 border border-teal-200 text-teal-950 min-w-0">
+                                                            <div class="flex items-center justify-between font-bold mb-1 pb-1 border-b border-teal-200/60">
+                                                                <span class="text-[10px] font-bold text-teal-700 uppercase tracking-wider flex items-center gap-1">🚗 Fahrtkilometer:</span>
+                                                                <span class="text-[10px] font-extrabold text-teal-900">{appKm} km gesamt</span>
+                                                            </div>
+                                                            <ul class="space-y-1 text-[11px] min-w-0">
+                                                                {#each app.expand.drive_record as dr}
+                                                                    <li class="flex items-center justify-between gap-1 break-words py-0.5">
+                                                                        <span class="font-semibold text-teal-900">{dr.km || dr.kilometers || 0} km</span>
+                                                                        {#if dr.start_location}
+                                                                            <span class="text-neutral-500 text-[10px]">({dr.start_location} ➔ {dr.end_location || 'Ziel'})</span>
+                                                                        {/if}
+                                                                    </li>
+                                                                {/each}
+                                                            </ul>
+                                                        </div>
+                                                    {/if}
+
+                                                    <!-- Dokumentation / Bericht falls vorhanden -->
+                                                    {#if app.report || app.notes || app.internal_notes}
+                                                        <div class="p-3 rounded-xl bg-indigo-50/40 border border-indigo-200 text-indigo-950 min-w-0">
+                                                            <span class="text-[10px] font-bold text-indigo-700 uppercase tracking-wider block mb-1">📝 Notizen & Dokumentation:</span>
+                                                            <p class="text-[11px] text-neutral-800 whitespace-pre-wrap break-words italic leading-relaxed">{app.report || app.notes || app.internal_notes}</p>
+                                                        </div>
+                                                    {/if}
+
+                                                    <!-- Klienten-Informationen (responsiv umbrechend) -->
+                                                    {#if app.expand?.client?.[0]}
+                                                        {@const cl = app.expand.client[0]}
+                                                        <div class="p-2.5 rounded-xl bg-neutral-100/80 border border-neutral-200/80 text-neutral-700 flex flex-wrap items-center justify-between gap-1.5 text-[11px] min-w-0">
+                                                            <div class="min-w-0">
+                                                                <span class="font-bold text-neutral-900">👤 {cl.name_first || ''} {cl.name_last || ''}</span>
+                                                                {#if cl.care_level}
+                                                                    <span class="ml-2 font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 px-1.5 py-0.2 rounded">PG {cl.care_level}</span>
+                                                                {/if}
+                                                                {#if cl.insurance_carrier}
+                                                                    <span class="ml-1.5 text-neutral-500">({cl.insurance_carrier})</span>
+                                                                {/if}
+                                                            </div>
+                                                            {#if cl.street || cl.city}
+                                                                <div class="text-neutral-500 break-words min-w-0">
+                                                                    📍 {cl.street || ''} {cl.housenr || ''}, {cl.zip || ''} {cl.city || ''}
+                                                                </div>
+                                                            {/if}
+                                                            {#if cl.phone || cl.handy}
+                                                                <div class="font-semibold text-neutral-600 shrink-0">
+                                                                    📞 {cl.phone || cl.handy}
+                                                                </div>
+                                                            {/if}
+                                                        </div>
+                                                    {/if}
+                                                </div>
+                                            {/if}
 
                                         </div>
                                     {/each}
@@ -593,9 +758,9 @@
             {/if}
         </div>
         
-        <!-- FOOTER -->
-        <div class="p-4 sm:p-5 bg-white border-t border-neutral-200 shrink-0 flex flex-col sm:flex-row items-center justify-between gap-3 sticky bottom-0 z-20 pb-[max(env(safe-area-inset-bottom,0px),1rem)]">
-            <div class="text-xs font-semibold text-neutral-500 text-center sm:text-left">
+        <!-- FOOTER (Am Ende der Liste, scrollt mit) -->
+        <div class="p-3.5 sm:p-5 bg-white border-t border-neutral-200 flex flex-col sm:flex-row items-center justify-between gap-2.5 sm:gap-3 pb-[max(env(safe-area-inset-bottom,0px),0.75rem)] w-full mt-auto shrink-0">
+            <div class="text-xs font-semibold text-neutral-500 text-center sm:text-left truncate min-w-0">
                 {#if selectedIds.length > 0}
                     <span class="text-cyan-700 font-bold">{selectedIds.length}</span> Termine zur Abrechnung gewählt ({metrics.selectedHours.toFixed(1)} h)
                 {:else}
@@ -609,7 +774,7 @@
                         type="button"
                         onclick={markSelectedAsSettled}
                         disabled={isProcessing}
-                        class="orga-button-primary bg-cyan-600 hover:bg-cyan-700 shadow-cyan-600/20 w-full sm:w-auto py-2.5 px-5 active:scale-95 text-xs font-bold flex items-center justify-center gap-1.5"
+                        class="orga-button-primary bg-cyan-600 hover:bg-cyan-700 shadow-cyan-600/20 w-full sm:w-auto py-2.5 px-5 active:scale-95 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
                     >
                         <CheckCheck class="w-4 h-4" />
                         <span>{selectedIds.length} abrechnen</span>
@@ -618,7 +783,7 @@
                 <button 
                     type="button"
                     onclick={close} 
-                    class="orga-button-ghost bg-neutral-100 hover:bg-neutral-200 text-neutral-700 w-full sm:w-auto py-2.5 px-6 active:scale-95 text-xs font-bold"
+                    class="orga-button-ghost bg-neutral-100 hover:bg-neutral-200 text-neutral-700 w-full sm:w-auto py-2.5 px-6 active:scale-95 text-xs font-bold cursor-pointer"
                 >
                     Schließen
                 </button>

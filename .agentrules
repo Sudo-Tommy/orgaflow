@@ -15,3 +15,22 @@
 - Vor komplexen Umbauten oder Refactorings: Lege autonom einen temporären Sicherungszweig an (`git checkout -b task/...`).
 - Schlägt ein Ansatz fehl oder führt zu Syntax-/Laufzeitfehlern, setze den Stand sofort per `git restore .` bzw. `git checkout -` auf den letzten funktionierenden Stand zurück, statt wertvolle Prompts mit Reparatur-Zyklen im Chat zu verbrauchen.
 - Nach erfolgreicher Verifikation: Erstelle einen atomaren lokalen Git-Commit nach Conventional-Commits-Standard.
+
+## 4. UI-, Modal- & Popup-Architektur (Durchscrollend mit schlankem Sticky-Filter & Kein horizontales Scrollen)
+- **Modale & Popups scrollen als Ganzes durch**:
+  - **Kein künstlich abgetrennter Inhalts-Scrollbalken**: Das gesamte Modal scrollt als eine einzige Einheit von oben nach unten durch (`overflow-y-auto overflow-x-hidden`).
+  - **Header & große KPI-Kacheln**: Wandern beim Scrollen nach oben weg, um maximalen vertikalen Platz für den Inhalt / Terminkarten freizugeben.
+  - **Schlanke Sticky-Filterleiste**: Essenzielle Kontrollen (Suchfeld, Status-Filterchips und ggf. Sammelaktionen) docken sich per `sticky top-0 z-20 bg-white/95 backdrop-blur-md` oben an. Dadurch bleiben Suche, Filter und Zähler auch beim tiefen Scrollen durch viele ausgeklappte Karten stets sichtbar und bedienbar.
+  - **Pflicht-Layout**:
+    1. `<dialog>` dient als reiner Rahmen mit `overflow-hidden border-none max-h-dvh sm:max-h-[90dvh]`.
+    2. Der innere Modal-Container erhält den einzigen Scrollbalken: `w-full max-h-dvh sm:max-h-[90dvh] overflow-y-auto overflow-x-hidden custom-scrollbar flex flex-col`.
+    3. Der Kopfbereich (Titel, Icons, große KPIs) fließt ganz oben mit und scrollt nach oben weg.
+    4. Die Kontroll-Leiste (Suche & Filterchips) ist `sticky top-0 z-20 bg-white/95 backdrop-blur-md border-b`.
+    5. Der Inhaltsbereich (`p-3 sm:p-6 flex-1`) besitzt KEINEN eigenen Scrollbalken.
+    6. Der Footer steht am natürlichen Ende der Liste (`mt-auto`).
+- **Horizontales Scrollen ist in Modalen & Popups STRIKT VERBOTEN**:
+  - Weder der Dialog, noch der Inhaltsbereich, noch der Footer dürfen jemals horizontal scrollen oder seitlich wackeln (`overflow-x-hidden`, `w-full max-w-full`).
+  - Alle innenliegenden Elemente, Filter-Chips, Buttons, Textfelder und Tabellen/Karten MÜSSEN responsiv gestaltet sein und sauber umbrechen (`flex-wrap`, `min-w-0`, `break-words`, keine starren `overflow-x-auto`-Leisten).
+
+
+
