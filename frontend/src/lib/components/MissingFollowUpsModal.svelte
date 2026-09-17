@@ -27,8 +27,104 @@
     let isProcessing = $state(false);
     let searchQuery = $state("");
     let filterType = $state<"all" | "missing_time" | "missing_tasks" | "missing_report">("all");
-    let collapsedGroups = $state<Record<string, boolean>>({});
+    let expandedGroups = $state<Record<string, boolean>>({});
     let expandedAppIds = $state<Record<string, boolean>>({});
+
+    interface BillingFormInfo {
+        label: string;
+        short: string;
+        bgClass: string;
+        textClass: string;
+        borderClass: string;
+    }
+
+    // Hilfsfunktion: Ermittle Abrechnungsform aus Klienten-Notizen / Stammdaten
+    function getClientBillingForm(client: any): BillingFormInfo | null {
+        if (!client) return null;
+        
+        const textSources = [
+            client.billing_type,
+            client.notes,
+            client.internal_notes,
+            client.payment_type,
+            client.contract_type
+        ].filter(Boolean).join(" ");
+
+        if (!textSources.trim()) return null;
+
+        const lower = textSources.toLowerCase();
+
+        // Prüfung auf Kombi: Entlastungsleistungen (EL) + Verhinderungspflege (VP / VHP)
+        const hasEL = lower.includes("entlastungsleistung") || 
+                      lower.includes("entlastungsbetrag") || 
+                      lower.includes("45b") || 
+                      /\b(el)\b/i.test(textSources);
+
+        const hasVP = lower.includes("verhinderungspflege") || 
+                      lower.includes("vhp") || 
+                      lower.includes("39") || 
+                      /\b(vp)\b/i.test(textSources);
+
+        const hasCareAdvice = lower.includes("pflegeberatung") || 
+                              lower.includes("37.3") || 
+                              lower.includes("beratungseinsatz");
+
+        const hasPrivat = lower.includes("selbstzahler") || 
+                          lower.includes("privatzahler") || 
+                          /\b(privat)\b/i.test(textSources);
+
+        if (hasEL && hasVP) {
+            return {
+                label: "Kombi: EL (§45b) & VHP (§39)",
+                short: "EL / VHP",
+                bgClass: "bg-purple-50",
+                textClass: "text-purple-700",
+                borderClass: "border-purple-200"
+            };
+        }
+
+        if (hasEL) {
+            return {
+                label: "Entlastungsbetrag §45b SGB XI",
+                short: "EL (§45b)",
+                bgClass: "bg-emerald-50",
+                textClass: "text-emerald-700",
+                borderClass: "border-emerald-200"
+            };
+        }
+
+        if (hasVP) {
+            return {
+                label: "Verhinderungspflege §39 SGB XI",
+                short: "VHP (§39)",
+                bgClass: "bg-blue-50",
+                textClass: "text-blue-700",
+                borderClass: "border-blue-200"
+            };
+        }
+
+        if (hasCareAdvice) {
+            return {
+                label: "Pflegeberatung §37.3 SGB XI",
+                short: "PB (§37.3)",
+                bgClass: "bg-amber-50",
+                textClass: "text-amber-700",
+                borderClass: "border-amber-200"
+            };
+        }
+
+        if (hasPrivat) {
+            return {
+                label: "Privatzahler / Selbstzahler",
+                short: "Privat",
+                bgClass: "bg-neutral-100",
+                textClass: "text-neutral-700",
+                borderClass: "border-neutral-200"
+            };
+        }
+
+        return null;
+    }
 
     // Hilfsfunktionen zur Ermittlung des Nachbereitungsstatus
     function checkMissingTime(app: any): boolean {
@@ -91,20 +187,23 @@
             clientName: string; 
             clientId?: string;
             apps: any[];
+            client?: any;
         }[] = [];
 
         for (const app of filteredAppointments) {
             let clientName = "Ohne Klient";
             let clientId: string | undefined = undefined;
+            let clientObj: any = undefined;
             if (app.expand?.client?.[0]) {
                 const c = app.expand.client[0];
                 clientName = `${c.name_first || ''} ${c.name_last || ''}`.trim() || 'Klient ohne Namen';
                 clientId = c.id;
+                clientObj = c;
             }
 
             let group = groups.find(g => g.clientName === clientName);
             if (!group) {
-                group = { clientName, clientId, apps: [] };
+                group = { clientName, clientId, apps: [], client: clientObj };
                 groups.push(group);
             }
             group.apps.push(app);
@@ -150,6 +249,7 @@
         searchQuery = "";
         filterType = "all";
         expandedAppIds = {};
+        expandedGroups = {};
         dialog?.showModal();
     }
 
@@ -191,7 +291,7 @@
     }
 
     function toggleGroupCollapse(clientName: string) {
-        collapsedGroups[clientName] = !collapsedGroups[clientName];
+        expandedGroups[clientName] = !expandedGroups[clientName];
     }
 
     function toggleAppExpand(id: string) {
@@ -519,9 +619,10 @@
             {:else}
                 <div class="flex flex-col gap-4 sm:gap-6 min-w-0">
                     {#each groupedAppointments as group}
-                        {@const isCollapsed = collapsedGroups[group.clientName]}
+                        {@const isCollapsed = !expandedGroups[group.clientName]}
                         {@const allGroupSelected = group.apps.every(a => selectedIds.includes(a.id))}
                         {@const someGroupSelected = group.apps.some(a => selectedIds.includes(a.id))}
+                        {@const billingForm = getClientBillingForm(group.client || group.apps[0]?.expand?.client?.[0])}
 
                         <div class="bg-white rounded-2xl border border-neutral-200 shadow-xs overflow-hidden transition-all min-w-0">
                             
@@ -552,6 +653,14 @@
                                         <span class="text-xs sm:text-sm font-bold text-neutral-900 truncate">
                                             {group.clientName}
                                         </span>
+                                        {#if billingForm}
+                                            <span 
+                                                class="text-[9px] sm:text-[10px] font-extrabold {billingForm.bgClass} {billingForm.textClass} border {billingForm.borderClass} px-1.5 py-0.5 rounded-md shrink-0 shadow-2xs" 
+                                                title={`Abrechnungsform: ${billingForm.label}`} 
+                                            >
+                                                {billingForm.short}
+                                            </span>
+                                        {/if}
                                         <span class="text-[11px] font-semibold text-neutral-400 shrink-0">
                                             ({group.apps.length})
                                         </span>
