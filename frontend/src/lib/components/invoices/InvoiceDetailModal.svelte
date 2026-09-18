@@ -8,6 +8,7 @@
     import AppointmentDetailModal from "$lib/components/AppointmentDetailModal.svelte";
     import { confirmStore } from "$lib/services/confirmService.svelte";
     import InvoiceBudgetBreakdown from "$lib/components/clients/InvoiceBudgetBreakdown.svelte";
+    import { stampInvoiceAsStorniert } from "$lib/services/invoiceStornoStampService";
 
     let dialog: HTMLDialogElement;
     let invoiceId = $state<string | null>(null);
@@ -77,6 +78,13 @@
             }
             await pb.collection('invoices').update(invoice.id, payload);
             
+            if (newStatus === 'Storniert') {
+                const stampRes = await stampInvoiceAsStorniert(invoice.id);
+                if (stampRes.success) {
+                    toastStore.success("Rechnungs-PDF wurde mit Storno-Stempel markiert.");
+                }
+            }
+
             setTimeout(async () => {
                 const updatedInvoice = await pb.collection('invoices').getOne(invoice!.id, { requestKey: null }) as any;
                 const index = orgaStore.invoices?.data.findIndex((i: any) => i.id === invoice!.id) ?? -1;
@@ -141,6 +149,9 @@
                 cancellation_nr: stornoNr,
                 cancellation_reason: fullReason
             });
+
+            // 2b. PDF der Originalrechnung mit STORNIERT-Stempel versehen
+            await stampInvoiceAsStorniert(invoice.id);
 
             // 3. Aktualisiere lokalen Store
             if (orgaStore.invoices) {
@@ -221,13 +232,13 @@
 </script>
 
 <dialog bind:this={dialog} class="p-0 bg-transparent backdrop:bg-slate-950/65 backdrop:backdrop-blur-md w-full max-w-4xl mx-auto my-auto rounded-3xl" onclick={(e) => { if (e.target === dialog) close(); }}>
-    <div class="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 rounded-3xl w-full relative shadow-2xl max-h-[90vh] flex flex-col overflow-hidden border border-slate-200/80 dark:border-slate-800">
+    <div class="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 rounded-3xl w-full relative shadow-2xl max-h-[90vh] flex flex-col overflow-y-auto custom-scrollbar border border-slate-200/80 dark:border-slate-800">
         <button aria-label="Schließen" title="Schließen" onclick={close} class="absolute top-5 right-5 w-10 h-10 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-full flex items-center justify-center transition-colors z-20 cursor-pointer">
             <X class="w-5 h-5" />
         </button>
         
         {#if invoice}
-            <div class="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md p-6 md:p-8 border-b border-slate-200/80 dark:border-slate-800 shadow-sm sticky top-0 z-10">
+            <div class="bg-white dark:bg-slate-900 p-6 md:p-8 border-b border-slate-200/80 dark:border-slate-800 shadow-sm shrink-0">
                 <div class="flex items-center gap-3 flex-wrap">
                     <FileText class="w-7 h-7 text-indigo-600 dark:text-indigo-400" />
                     <h2 class="text-2xl font-bold text-slate-900 dark:text-slate-100">
@@ -253,7 +264,7 @@
                 {/if}
             </div>
 
-            <div class="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-8 space-y-6">
+            <div class="flex-1 p-6 md:p-8 space-y-6">
                 
                 <!-- Aktionen -->
                 <div class="grid grid-cols-2 sm:grid-cols-4 {getPdfUrl(1) ? 'lg:grid-cols-5' : ''} gap-3">
