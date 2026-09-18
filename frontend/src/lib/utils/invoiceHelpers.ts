@@ -26,6 +26,7 @@ export function getStatusClass(status: string) {
         case 'Entwurf': return 'bg-neutral-100 text-neutral-600 border border-neutral-200';
         case 'Eingereicht': return 'bg-blue-100 text-blue-700 border border-blue-200';
         case 'In Bearbeitung': return 'bg-amber-100 text-amber-700 border border-amber-200';
+        case 'Teilweise bezahlt': return 'bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800';
         case 'Abgeschlossen': return 'bg-emerald-100 text-emerald-700 border border-emerald-200';
         case 'Abgelehnt':
         case 'Storniert': return 'bg-rose-100 text-rose-700 border border-rose-200';

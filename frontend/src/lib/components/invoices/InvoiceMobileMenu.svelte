@@ -4,7 +4,7 @@
     import { getClient, getPdfUrl } from "$lib/utils/invoiceHelpers";
     import { pb } from "$lib/services/pocketbase";
     // @ts-ignore
-    import { X, FileEdit, Send, Hourglass, Check, FileText, Clock, RefreshCw, Trash2, Mail, XCircle } from "lucide-svelte";
+    import { X, FileEdit, Send, Hourglass, Check, FileText, Clock, RefreshCw, Trash2, Mail, XCircle, AlertTriangle } from "lucide-svelte";
 
     let {
         activeMobileInvoice = $bindable(),
@@ -41,7 +41,12 @@
 
         <div class="flex justify-between items-start border-b border-neutral-100 pb-4">
             <div>
-                <h3 class="font-black text-neutral-900 text-xl">{activeMobileInvoice.invoice_nr ?? 'RE-Unbekannt'}</h3>
+                <div class="flex items-center gap-2 flex-wrap">
+                    <h3 class="font-black text-neutral-900 text-xl">{activeMobileInvoice.invoice_nr ?? 'RE-Unbekannt'}</h3>
+                    {#if activeMobileInvoice.dispute_hold}
+                        <span class="text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-300 px-1.5 py-0.5 rounded shadow-2xs">⚠️ Mahnstopp</span>
+                    {/if}
+                </div>
                 <p class="text-sm text-neutral-500 font-medium mt-0.5">{getClient(activeMobileInvoice) ? `${getClient(activeMobileInvoice).name_first ?? ''} ${getClient(activeMobileInvoice).name_last ?? ''}` : 'Ohne Klient'}</p>
                 <div class="flex flex-wrap items-center gap-x-2 gap-y-1 mt-2 text-[11px] font-semibold">
                     <span class="text-neutral-400">Vom: {activeMobileInvoice.issue_date ? new Date(activeMobileInvoice.issue_date).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-'}</span>
@@ -63,6 +68,9 @@
                     {#if activeMobileInvoice.status === 'Abgeschlossen' && activeMobileInvoice.paid_at}
                         <span class="text-emerald-600 border-l border-neutral-200 pl-2">Bezahlt: {new Date(activeMobileInvoice.paid_at as unknown as string).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
                     {/if}
+                    {#if activeMobileInvoice.status === 'Teilweise bezahlt'}
+                        <span class="text-amber-700 border-l border-neutral-200 pl-2">Teilbezahlt: {(activeMobileInvoice.paid_amount || 0).toFixed(2).replace('.', ',')} €</span>
+                    {/if}
                 </div>
             </div>
             <button aria-label="Menü schließen" onclick={closeMenu} class="w-10 h-10 min-w-10 bg-neutral-100 hover:bg-neutral-200 rounded-full flex items-center justify-center text-neutral-500 font-bold active:scale-95 transition-transform focus-visible:ring-2 focus-visible:ring-neutral-500 focus-visible:outline-none">
@@ -72,7 +80,7 @@
 
         <div>
             <p class="text-[11px] font-bold text-neutral-400 uppercase tracking-widest mb-3 pl-1">Status ändern</p>
-            <div class="grid grid-cols-2 gap-2 bg-neutral-50 p-3 rounded-2xl border border-neutral-100" role="group" aria-label="Status auswählen">
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 bg-neutral-50 p-3 rounded-2xl border border-neutral-100" role="group" aria-label="Status auswählen">
                 <button aria-label="Status auf Entwurf ändern" onclick={() => { onUpdateStatus(activeMobileInvoice!.id, 'Entwurf'); closeMenu(); }} class="flex flex-col items-center justify-center min-h-16 gap-1.5 p-3 rounded-xl text-xs font-bold transition-all border focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:outline-none {activeMobileInvoice.status === 'Entwurf' ? 'bg-white border-indigo-200 text-indigo-700 shadow-sm ring-1 ring-indigo-500/10' : 'bg-transparent border-transparent text-neutral-500 active:bg-neutral-200/50'}">
                     <FileEdit class="w-5 h-5 mb-0.5" /> Entwurf
                 </button>
@@ -84,6 +92,9 @@
                 </button>
                 <button aria-label="Status auf Bezahlt ändern" onclick={() => { onUpdateStatus(activeMobileInvoice!.id, 'Abgeschlossen'); closeMenu(); }} class="flex flex-col items-center justify-center min-h-16 gap-1.5 p-3 rounded-xl text-xs font-bold transition-all border focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:outline-none {activeMobileInvoice.status === 'Abgeschlossen' ? 'bg-white border-indigo-200 text-indigo-700 shadow-sm ring-1 ring-indigo-500/10' : 'bg-transparent border-transparent text-neutral-500 active:bg-neutral-200/50'}">
                     <Check class="w-5 h-5 mb-0.5" /> Bezahlt
+                </button>
+                <button aria-label="Status auf Teilweise bezahlt / Kürzung ändern" onclick={() => { onUpdateStatus(activeMobileInvoice!.id, 'Teilweise bezahlt'); closeMenu(); }} class="col-span-2 sm:col-span-1 flex flex-col items-center justify-center min-h-16 gap-1.5 p-3 rounded-xl text-xs font-bold transition-all border focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none {activeMobileInvoice.status === 'Teilweise bezahlt' ? 'bg-white border-amber-300 text-amber-800 shadow-sm ring-1 ring-amber-500/10' : 'bg-transparent border-transparent text-neutral-500 active:bg-neutral-200/50'}">
+                    <AlertTriangle class="w-5 h-5 mb-0.5 text-amber-500" /> Kürzung melden
                 </button>
             </div>
         </div>

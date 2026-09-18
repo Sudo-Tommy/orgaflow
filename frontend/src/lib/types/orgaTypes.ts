@@ -17,7 +17,7 @@ export type EmployeeStatus = 'Aktiv' | 'Inaktiv' | 'Urlaub' | 'Krank';
 export type Salutation = 'Herr' | 'Frau' | 'Divers' | 'Keine Angabe';
 export type MaritalStatus = 'Ledig' | 'Verheiratet' | 'Geschieden' | 'Verwitwet';
 export type ClientStatus = 'Aktiv' | 'Inaktiv' | 'Verstorben';
-export type InvoiceStatus = 'Entwurf' | 'Eingereicht' | 'In Bearbeitung' | 'Abgeschlossen' | 'Abgelehnt' | 'Storniert';
+export type InvoiceStatus = 'Entwurf' | 'Eingereicht' | 'In Bearbeitung' | 'Abgeschlossen' | 'Abgelehnt' | 'Storniert' | 'Teilweise bezahlt';
 export type AccountingTransactionType = 'Einnahme' | 'Ausgabe';
 export type AccountingPaymentMethod = 'Banküberweisung' | 'Bar';
 export type AccountingStatus = 'Offen' | 'Bezahlt' | 'Überfälltig' | 'Storniert';
@@ -26,6 +26,7 @@ export type DriveRecordType = 'Anfahrt' | 'Auftragsfahrt';
 export type InsuranceType = 'GKV (Gesetzlich)' | 'PKV (Privat)' | 'Beihilfe' | 'Berufsgenossenschaft';
 export type LevelOfCare = '0' | '1' | '2' | '3' | '4' | '5';
 export type TaxRate = '0' | '7' | '9' | '19';
+export type InvoiceAdjustmentActionType = 'full_payment' | 'dispute' | 'bill_client_privat' | 'write_off';
 
 // ==========================================
 // COLLECTION TYPEN
@@ -230,6 +231,22 @@ export interface InvoiceRecord extends BaseRecord {
     table_sum_positions?: any; // JSON
     appointments?: string[]; // Relation
     company?: string | string[]; // Relation
+    dispute_hold?: boolean;
+    paid_amount?: number;
+    remaining_amount?: number;
+    write_off_amount?: number;
+    write_off_reason?: string;
+    parent_invoice?: string;
+}
+
+export interface InvoiceAdjustmentRecord extends BaseRecord {
+    invoice: string;
+    action_type: InvoiceAdjustmentActionType;
+    difference_amount?: number;
+    received_amount?: number;
+    reference_nr?: string;
+    notes?: string;
+    createdby?: string;
 }
 
 export interface LetterboxRecord extends BaseRecord {
@@ -279,10 +296,13 @@ export interface NursingHomeRecord extends BaseRecord {
     status?: 'preliminary' | 'verified';
 }
 
-
 export interface TaskRecord extends BaseRecord {
     title: string;
     description?: string;
+    due_date?: string;
+    status?: 'Offen' | 'In Bearbeitung' | 'Erledigt' | string;
+    client?: string;
+    related_invoice?: string;
 }
 
 export interface TimeRecordRecord extends BaseRecord {

@@ -89,6 +89,110 @@ export async function syncInvoicePaymentToAccounting(invoice: any, paidAtDate: s
 }
 
 /**
+ * Synchronize partial or settled payment to accounting with a custom received amount.
+ */
+export async function syncSettlementPaymentToAccounting(invoice: any, receivedAmount: number, paidAtDate: string | null): Promise<void> {
+    try {
+        if (!invoice || !invoice.id || receivedAmount <= 0) return;
+
+        const effectiveDate = paidAtDate 
+            ? new Date(paidAtDate).toISOString() 
+            : (invoice.paid_at && typeof invoice.paid_at === 'string' ? new Date(invoice.paid_at).toISOString() : new Date().toISOString());
+
+        let clientName = '';
+        if (invoice.expand?.client) {
+            const client = Array.isArray(invoice.expand.client) ? invoice.expand.client[0] : invoice.expand.client;
+            if (client) {
+                clientName = `${client.name_first || ''} ${client.name_last || ''}`.trim();
+            }
+        }
+
+        const invoiceNr = invoice.invoice_nr || 'Unbekannt';
+        const title = clientName ? `Zahlungseingang ${invoiceNr} - ${clientName}` : `Zahlungseingang ${invoiceNr}`;
+
+        const totalGross = Number(invoice.brutto) || 0;
+        const totalNet = Number(invoice.netto) || totalGross;
+        const ratio = totalGross > 0 ? receivedAmount / totalGross : 1;
+        const netAmount = Math.round(totalNet * ratio * 100) / 100;
+        const taxRate = invoice.tax_rate ? String(invoice.tax_rate) : '0';
+        const activeUserId = (invoice as any).user || pb.authStore.model?.id;
+
+        const existingRecords = await pb.collection('accounting').getFullList({
+            filter: `notes ~ "${invoice.id}" && transaction_type = "Einnahme"`,
+            requestKey: null
+        }).catch(() => []);
+
+        if (existingRecords.length > 0) {
+            const existing = existingRecords[0];
+            await pb.collection('accounting').update(existing.id, {
+                status: 'Bezahlt',
+                transaction_date: effectiveDate,
+                amount_gross: receivedAmount,
+                amount_net: netAmount,
+                notes: `Teil-/Zahlungseingang zu Rechnung ${invoiceNr} (ID: ${invoice.id})`
+            });
+            toastStore.success(`Zahlungseingang (${receivedAmount.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}) im Haushaltsbuch aktualisiert.`);
+            return;
+        }
+
+        await pb.collection('accounting').create({
+            title,
+            transaction_type: 'Einnahme',
+            amount_gross: receivedAmount,
+            amount_net: netAmount,
+            tax_rate: taxRate,
+            transaction_date: effectiveDate,
+            category: 'Kundenrechnung',
+            payment_method: 'Banküberweisung',
+            status: 'Bezahlt',
+            account_number: '',
+            notes: `Zahlungseingang zu Rechnung ${invoiceNr} (ID: ${invoice.id})`,
+            createdby: activeUserId
+        });
+
+        toastStore.success(`Zahlungseingang (${receivedAmount.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}) im Haushaltsbuch erfasst!`);
+    } catch (err: any) {
+        console.error("Fehler beim Verbuchen des Zahlungseingangs in 'accounting':", err);
+    }
+}
+
+/**
+ * Synchronize a write-off / Kassenkürzung as a correction expense in accounting.
+ */
+export async function syncWriteOffToAccounting(invoice: any, writeOffAmount: number, reason: string, paidAtDate: string | null): Promise<void> {
+    try {
+        if (!invoice || !invoice.id || writeOffAmount <= 0) return;
+
+        const effectiveDate = paidAtDate 
+            ? new Date(paidAtDate).toISOString() 
+            : new Date().toISOString();
+
+        const invoiceNr = invoice.invoice_nr || 'Unbekannt';
+        const title = `Kassenkürzung / Ausbuchung - Rechnung ${invoiceNr}`;
+        const activeUserId = (invoice as any).user || pb.authStore.model?.id;
+
+        await pb.collection('accounting').create({
+            title,
+            transaction_type: 'Ausgabe',
+            amount_gross: writeOffAmount,
+            amount_net: writeOffAmount,
+            tax_rate: '0',
+            transaction_date: effectiveDate,
+            category: 'Kassenkürzung / Ausbuchung',
+            payment_method: 'Banküberweisung',
+            status: 'Bezahlt',
+            account_number: '',
+            notes: `Ausbuchung zu Rechnung ${invoiceNr} (ID: ${invoice.id}). Grund: ${reason || 'Kürzung durch Kostenträger akzeptiert'}`,
+            createdby: activeUserId
+        });
+
+        toastStore.info(`Kürzungsbetrag (${writeOffAmount.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}) als Verlustausbuchung erfasst.`);
+    } catch (err: any) {
+        console.error("Fehler beim Erfassen der Verlustausbuchung in 'accounting':", err);
+    }
+}
+
+/**
  * Synchronize cancellation of an invoice to the accounting record.
  */
 export async function syncInvoiceCancellationToAccounting(invoiceId: string, invoiceNr?: string): Promise<void> {
@@ -121,11 +225,7 @@ export async function syncInvoiceCancellationToAccounting(invoiceId: string, inv
 }
 
 /**
- * Reconcile and synchronize all invoices of a user with the accounting collection:
- * - Finds all invoices of the given user (or all if superadmin/none specified).
- * - For each paid invoice ('Abgeschlossen'): ensures an accounting entry exists with the proper amounts & dates.
- * - For each cancelled invoice ('Storniert'): ensures any linked accounting entry is marked as 'Storniert'.
- * Returns summary stats of processed, created, and updated entries.
+ * Reconcile and synchronize all invoices of a user with the accounting collection.
  */
 export async function reconcileUserInvoicesAndAccounting(userId?: string): Promise<{ created: number, updated: number, total: number }> {
     const stats = { created: 0, updated: 0, total: 0 };
@@ -156,7 +256,6 @@ export async function reconcileUserInvoicesAndAccounting(userId?: string): Promi
         for (const invoice of invoices) {
             const invoiceNr = invoice.invoice_nr || 'Unbekannt';
             
-            // Search if matching accounting record exists
             const matchedEntry = accountingEntries.find(a => 
                 (a.notes && a.notes.includes(invoice.id)) || 
                 (a.title && a.title.includes(invoiceNr))
@@ -175,7 +274,7 @@ export async function reconcileUserInvoicesAndAccounting(userId?: string): Promi
                     }
                 }
                 const title = clientName ? `Rechnung ${invoiceNr} - ${clientName}` : `Rechnung ${invoiceNr}`;
-                const grossAmount = Number(invoice.brutto) || 0;
+                const grossAmount = Number(invoice.paid_amount || invoice.brutto) || 0;
                 const netAmount = Number(invoice.netto) || (grossAmount - (Number(invoice.tax_sum) || 0));
                 const taxSum = Number(invoice.tax_sum) || (grossAmount - netAmount);
 
@@ -187,7 +286,6 @@ export async function reconcileUserInvoicesAndAccounting(userId?: string): Promi
                 }
 
                 if (matchedEntry) {
-                    // Update if status differs or amount changed
                     const needsUpdate = matchedEntry.status !== 'Bezahlt' || 
                         Math.abs((Number(matchedEntry.amount_gross) || 0) - grossAmount) > 0.01;
 
@@ -203,7 +301,6 @@ export async function reconcileUserInvoicesAndAccounting(userId?: string): Promi
                         stats.updated++;
                     }
                 } else {
-                    // Create new accounting record
                     await pb.collection('accounting').create({
                         title,
                         transaction_type: 'Einnahme',

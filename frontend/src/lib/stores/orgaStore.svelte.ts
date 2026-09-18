@@ -3,8 +3,9 @@ import type {
     UserRecord, SuperuserRecord, AccountingRecord, AppointmentRecord, 
     ClientRecord, CompanyRecord, ContactRecord, DocumentTemplateRecord, 
     DriveRecordRecord, ExpenditureRecord, InsuranceRecord, InvoiceRecord, 
-    LetterboxRecord, LiveChatRecord, MailboxMessageRecord, RetirementHomeRecord, 
-    NursingHomeRecord, TaskRecord, TimeRecordRecord, UpdateRecord, SystemPromptRecord 
+    InvoiceAdjustmentRecord, LetterboxRecord, LiveChatRecord, MailboxMessageRecord, 
+    RetirementHomeRecord, NursingHomeRecord, TaskRecord, TimeRecordRecord, 
+    UpdateRecord, SystemPromptRecord 
 } from '$lib/types/orgaTypes';
 
 // Hier definieren wir unsere zentralen Daten-Töpfe.
@@ -50,6 +51,11 @@ export const orgaStore = {
     invoices: new OrgaLiveCollection<InvoiceRecord>('invoices', {
         sort: '-issue_date', // Neueste Rechnungen zuerst
         expand: 'user,client,appointments,company' // WIRKLICH ALLE Verknüpfungen
+    }),
+
+    invoice_adjustments: new OrgaLiveCollection<InvoiceAdjustmentRecord>('invoice_adjustments', {
+        sort: '-created',
+        expand: 'invoice,createdby'
     }),
 
     letterboxes: new OrgaLiveCollection<LetterboxRecord>('letterboxes'),
