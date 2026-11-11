@@ -1,7 +1,28 @@
+// src/lib/services/toastService.svelte.ts
 export interface Toast {
     id: string;
     type: 'success' | 'error' | 'info' | 'warning';
     message: string;
+}
+
+function cleanToastMessage(msg: string): string {
+    if (!msg) return 'Ein unerwarteter Fehler ist aufgetreten.';
+    const lower = msg.toLowerCase();
+    if (
+        lower.includes('googlegenerativeai') ||
+        lower.includes('429') ||
+        lower.includes('quota exceeded') ||
+        lower.includes('rate-limit') ||
+        lower.includes('generativelanguage.googleapis.com') ||
+        lower.includes('omni-antwort') ||
+        lower.includes('generatecontent') ||
+        lower.includes('gemini') ||
+        lower.includes('500') ||
+        lower.includes('internal server error')
+    ) {
+        return 'Die Support-KI ist momentan im Offline-Modus aktiv. Du kannst deine Frage wie gewohnt stellen.';
+    }
+    return msg;
 }
 
 export function createToastService() {
@@ -9,16 +30,11 @@ export function createToastService() {
 
     function add(type: Toast['type'], message: string, duration = 3500) {
         const id = crypto.randomUUID();
-        toasts.push({ id, type, message });
+        const safeMessage = type === 'error' ? cleanToastMessage(message) : message;
+        toasts.push({ id, type, message: safeMessage });
 
-        // Haptisches Feedback auf Mobilgeräten (falls unterstützt)
-        if (typeof window !== 'undefined' && typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-            try {
-                navigator.vibrate(50);
-            } catch {
-                // Vibration kann in manchen Browser-Sicherheitskontexten blockiert sein
-            }
-        }
+        // Haptisches Feedback auf Mobilgeräten
+        import('$lib/services/hapticFeedback').then(m => m.triggerHaptic(type)).catch(() => {});
 
         if (duration > 0) {
             setTimeout(() => remove(id), duration);

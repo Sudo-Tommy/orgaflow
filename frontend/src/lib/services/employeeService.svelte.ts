@@ -2,6 +2,8 @@ import { pb } from '$lib/services/pocketbase';
 import { orgaStore } from '$lib/stores/orgaStore.svelte';
 import { toastStore } from '$lib/services/toastService.svelte';
 import { rbacService } from '$lib/services/rbacService.svelte';
+import { employeeAssignmentService } from '$lib/services/employeeAssignmentService';
+import { employeeTokenService } from '$lib/services/employeeTokenService';
 import type { UserRecord, EmploymentType, EmployeeStatus } from '$lib/types/orgaTypes';
 
 export interface CreateEmployeePayload {
@@ -44,13 +46,11 @@ class EmployeeService {
     async createEmployee(payload: CreateEmployeePayload): Promise<UserRecord | null> {
         this.isSubmitting = true;
         try {
-            // 0. Pflichtfelder-Prüfung
             if (!payload.name_first?.trim() || !payload.name_last?.trim() || !payload.email?.trim()) {
                 toastStore.warning('Bitte füllen Sie Vorname, Nachname und eine gültige E-Mail-Adresse aus.');
                 return null;
             }
 
-            // 1. Authentifizierungs- & Berechtigungsprüfung
             if (!pb.authStore.isValid || !pb.authStore.token) {
                 toastStore.error('Ihre Sitzung ist abgelaufen oder Sie sind nicht eingeloggt. Bitte melden Sie sich an.');
                 return null;
@@ -61,12 +61,10 @@ class EmployeeService {
                 return null;
             }
 
-            // 2. Sitzungs-Gültigkeit mit PocketBase synchronisieren & frisch halten
             try {
                 const authCol = pb.authStore.record?.collectionName || (pb.authStore.model as any)?.collectionName || 'users';
                 await pb.collection(authCol).authRefresh({ expand: 'company' });
             } catch (refreshErr: any) {
-                console.warn('Session Refresh vor Erstellung fehlgeschlagen:', refreshErr);
                 if (refreshErr?.status === 401 || refreshErr?.status === 403) {
                     pb.authStore.clear();
                     toastStore.error('Ihre Sitzung ist abgelaufen. Bitte melden Sie sich erneut als Administrator an.');
@@ -74,7 +72,6 @@ class EmployeeService {
                 }
             }
 
-            // 3. Username säubern und Umlaute auflösen
             let username = sanitizeUsername(payload.username || '');
             if (!username || username.length < 3) {
                 const safeFirst = sanitizeUsername(payload.name_first) || 'user';
@@ -83,18 +80,16 @@ class EmployeeService {
             }
             
             const password = payload.password?.trim() || `OF-${Math.random().toString(36).slice(-8)}!A1`;
-
             let requestedRole = payload.role || 'employee';
-            // Nur Inhaber dürfen Inhaber- oder Superadmin-Accounts vergeben
             if (!rbacService.isOwner && (requestedRole === 'superadmin' || requestedRole === 'owner')) {
                 requestedRole = 'employee';
             }
 
             const data: Record<string, any> = {
-                username: username,
+                username,
                 email: payload.email.trim(),
                 emailVisibility: true,
-                password: password,
+                password,
                 passwordConfirm: payload.passwordConfirm?.trim() || password,
                 name_first: payload.name_first.trim(),
                 name_last: payload.name_last.trim(),
@@ -113,15 +108,12 @@ class EmployeeService {
 
             const currentAuth = (pb.authStore.record || pb.authStore.model) as any;
             if (currentAuth?.company) {
-                const comp = currentAuth.company;
-                data.company = Array.isArray(comp) ? comp : [comp];
+                data.company = Array.isArray(currentAuth.company) ? currentAuth.company : [currentAuth.company];
             }
             if (currentAuth?.facility) {
-                const fac = currentAuth.facility;
-                data.facility = Array.isArray(fac) ? fac[0] : fac;
+                data.facility = Array.isArray(currentAuth.facility) ? currentAuth.facility[0] : currentAuth.facility;
             }
 
-            // Direkt über PocketBase SDK erstellen
             const record = await pb.collection('users').create(data);
             await orgaStore.users.init();
             
@@ -131,31 +123,21 @@ class EmployeeService {
         } catch (err: any) {
             console.error('Fehler beim Anlegen des Mitarbeiters:', err);
             let msg = err?.data?.message || err?.message || 'Fehler beim Anlegen des Mitarbeiters.';
-
-            if (err?.status === 400) {
-                const dataErrors = err?.data?.data;
-                if (dataErrors && typeof dataErrors === 'object' && Object.keys(dataErrors).length > 0) {
-                    const fieldErrors = Object.entries(dataErrors)
-                        .map(([field, details]: [string, any]) => {
-                            const code = details?.code || '';
-                            const dMsg = details?.message || code;
-                            if (field === 'username' && (code === 'validation_not_unique' || dMsg.includes('unique'))) {
-                                return 'Benutzername ist bereits vergeben';
-                            }
-                            if (field === 'email' && (code === 'validation_not_unique' || dMsg.includes('unique'))) {
-                                return 'E-Mail-Adresse existiert bereits';
-                            }
-                            return `${field}: ${dMsg}`;
-                        })
-                        .join(', ');
-                    msg = `Validierungsfehler: ${fieldErrors}`;
-                } else {
-                    msg = 'Erstellung verweigert: Möglicherweise fehlen die nötigen Berechtigungen (Admin/Inhaber) oder die PocketBase-Sitzung ist abgelaufen. Bitte aktualisieren Sie die Seite und melden Sie sich erneut an.';
-                }
-            } else if (err?.status === 403) {
-                msg = 'Zugriff verweigert: Sie verfügen nicht über ausreichende Berechtigungen zum Erstellen von Benutzern.';
+            if (err?.status === 400 && err?.data?.data) {
+                const fieldErrors = Object.entries(err.data.data)
+                    .map(([field, details]: [string, any]) => {
+                        const code = details?.code || '';
+                        if (field === 'username' && (code === 'validation_not_unique' || details?.message?.includes('unique'))) {
+                            return 'Benutzername ist bereits vergeben';
+                        }
+                        if (field === 'email' && (code === 'validation_not_unique' || details?.message?.includes('unique'))) {
+                            return 'E-Mail-Adresse existiert bereits';
+                        }
+                        return `${field}: ${details?.message || code}`;
+                    })
+                    .join(', ');
+                msg = `Validierungsfehler: ${fieldErrors}`;
             }
-
             toastStore.error(msg);
             return null;
         } finally {
@@ -175,16 +157,7 @@ class EmployeeService {
             return true;
         } catch (err: any) {
             console.error('Fehler beim Aktualisieren des Mitarbeiters:', err);
-            let msg = err?.data?.message || err?.message || 'Aktualisierung fehlgeschlagen.';
-            if (err?.data?.data && typeof err.data.data === 'object') {
-                const fieldErrors = Object.entries(err.data.data)
-                    .map(([field, details]: [string, any]) => `${field}: ${details?.message || details?.code || 'ungültig'}`)
-                    .join(', ');
-                if (fieldErrors) {
-                    msg = `Validierungsfehler: ${fieldErrors}`;
-                }
-            }
-            toastStore.error(msg);
+            toastStore.error(err?.data?.message || err?.message || 'Aktualisierung fehlgeschlagen.');
             return false;
         } finally {
             this.isSubmitting = false;
@@ -192,231 +165,33 @@ class EmployeeService {
     }
 
     /**
-     * Löscht einen Mitarbeiter-Account unwiderruflich aus PocketBase
+     * Löscht einen Mitarbeiter-Account
      */
     async deleteEmployee(id: string): Promise<boolean> {
         this.isSubmitting = true;
         try {
-            // 1. Eigenen Account vor versehentlichem Löschen schützen
             const currentId = pb.authStore.record?.id || (pb.authStore.model as any)?.id;
             if (currentId === id) {
                 toastStore.error('Sie können Ihren eigenen angemeldeten Account nicht selbst löschen.');
                 return false;
             }
 
-            // 2. Authentifizierungs- & Berechtigungsprüfung
-            if (!pb.authStore.isValid || !pb.authStore.token) {
-                toastStore.error('Ihre Sitzung ist abgelaufen oder Sie sind nicht eingeloggt. Bitte melden Sie sich an.');
+            if (!pb.authStore.isValid || !pb.authStore.token || !rbacService.canAccessAdmin) {
+                toastStore.error('Keine Berechtigung zum Löschen von Mitarbeitern.');
                 return false;
             }
 
-            if (!rbacService.canAccessAdmin) {
-                toastStore.error('Keine Berechtigung: Nur Administratoren oder Inhaber können Mitarbeiter löschen.');
-                return false;
-            }
-
-            // 3. Frisches Token sicherstellen
-            try {
-                const authCol = pb.authStore.record?.collectionName || (pb.authStore.model as any)?.collectionName || 'users';
-                await pb.collection(authCol).authRefresh();
-            } catch (refreshErr: any) {
-                if (refreshErr?.status === 401 || refreshErr?.status === 403) {
-                    pb.authStore.clear();
-                    toastStore.error('Ihre Sitzung ist abgelaufen. Bitte melden Sie sich erneut als Administrator an.');
-                    return false;
-                }
-            }
-
-            // 4. In PocketBase löschen
             await pb.collection('users').delete(id);
             await orgaStore.users.init();
             toastStore.success('Mitarbeiter wurde erfolgreich gelöscht.');
             return true;
         } catch (err: any) {
             console.error('Fehler beim Löschen des Mitarbeiters:', err);
-            let msg = err?.data?.message || err?.message || 'Mitarbeiter konnte nicht gelöscht werden.';
-            if (err?.status === 400 || err?.status === 403) {
-                msg = 'Löschen verweigert: Sie verfügen nicht über die erforderliche Berechtigung für diesen Mitarbeiter.';
-            }
-            toastStore.error(msg);
+            toastStore.error(err?.data?.message || err?.message || 'Mitarbeiter konnte nicht gelöscht werden.');
             return false;
         } finally {
             this.isSubmitting = false;
         }
-    }
-
-    /**
-     * Weist einem Mitarbeiter Klienten zu und synchronisiert auf Wunsch bestehende/zukünftige Termine
-     */
-    async assignClients(employeeId: string, clientIds: string[], syncAppointments: boolean = true): Promise<boolean> {
-        this.isSubmitting = true;
-        try {
-            // 1. Aktualisiere Feld assigned_clients auf dem User-Record
-            await pb.collection('users').update(employeeId, {
-                assigned_clients: clientIds
-            });
-
-            // 2. Aktualisiere ggf. caregiver auf den jeweiligen Klienten
-            for (const cId of clientIds) {
-                try {
-                    await pb.collection('clients').update(cId, {
-                        caregiver: employeeId
-                    });
-                } catch (cErr) {
-                    console.warn(`Konnte Klient ${cId} caregiver nicht setzen:`, cErr);
-                }
-            }
-
-            // 3. Offene / zukünftige Termine der zugewiesenen Klienten direkt dem Mitarbeiter zuweisen
-            if (syncAppointments && clientIds.length > 0) {
-                try {
-                    const todayStr = new Date().toISOString().slice(0, 10);
-                    const allAppts = orgaStore.appointments.data || [];
-                    const relevantAppts = allAppts.filter(a => {
-                        const apptDate = (a.appointment || '').slice(0, 10);
-                        const isUpcomingOrOpen = apptDate >= todayStr || a.status !== 'Erledigt';
-                        const belongsToClient = Array.isArray(a.client)
-                            ? a.client.some(cid => clientIds.includes(cid))
-                            : clientIds.includes(a.client as any);
-                        return isUpcomingOrOpen && belongsToClient;
-                    });
-
-                    for (const a of relevantAppts) {
-                        if (a.assigned_to !== employeeId) {
-                            try {
-                                await pb.collection('appointments').update(a.id, {
-                                    assigned_to: employeeId,
-                                    user: employeeId
-                                });
-                            } catch (aErr) {
-                                console.warn(`Konnte Termin ${a.id} nicht synchronisieren:`, aErr);
-                            }
-                        }
-                    }
-                } catch (syncErr) {
-                    console.warn('Fehler bei Termin-Synchronisation:', syncErr);
-                }
-            }
-
-            await Promise.allSettled([
-                orgaStore.users.init(),
-                orgaStore.clients.init(),
-                orgaStore.appointments.init()
-            ]);
-
-            toastStore.success(`${clientIds.length} Klient(en) erfolgreich zugewiesen.`);
-            return true;
-        } catch (err: any) {
-            console.error('Fehler bei Klientenzuweisung:', err);
-            toastStore.error(err?.message || 'Klientenzuweisung fehlgeschlagen.');
-            return false;
-        } finally {
-            this.isSubmitting = false;
-        }
-    }
-
-    /**
-     * Weist einen Mitarbeiter direkt aus der Klientenansicht zu (oder hebt die Zuweisung auf)
-     */
-    async assignEmployeeToClient(clientId: string, employeeId: string | null, syncAppointments: boolean = true): Promise<boolean> {
-        this.isSubmitting = true;
-        try {
-            const allUsers = orgaStore.users.data || [];
-
-            // 1. Klienten von allen anderen Mitarbeitern entfernen (Zuständigkeit exklusiv oder bereinigen)
-            for (const u of allUsers) {
-                const currentAssigned = Array.isArray(u.assigned_clients) ? [...u.assigned_clients] : [];
-                if (u.id !== employeeId && currentAssigned.includes(clientId)) {
-                    const updated = currentAssigned.filter(id => id !== clientId);
-                    try {
-                        await pb.collection('users').update(u.id, { assigned_clients: updated });
-                    } catch (uErr) {
-                        console.warn(`Konnte Klient ${clientId} nicht von Mitarbeiter ${u.id} entfernen:`, uErr);
-                    }
-                }
-            }
-
-            // 2. Dem neuen Mitarbeiter hinzufügen
-            if (employeeId) {
-                const targetEmp = allUsers.find(u => u.id === employeeId) || await pb.collection('users').getOne(employeeId).catch(() => null);
-                if (targetEmp) {
-                    const currentAssigned = Array.isArray(targetEmp.assigned_clients) ? [...targetEmp.assigned_clients] : [];
-                    if (!currentAssigned.includes(clientId)) {
-                        currentAssigned.push(clientId);
-                        await pb.collection('users').update(employeeId, { assigned_clients: currentAssigned });
-                    }
-                }
-
-                // Caregiver-Feld am Klienten setzen
-                try {
-                    await pb.collection('clients').update(clientId, { caregiver: employeeId });
-                } catch (cErr) {
-                    console.warn(`Konnte caregiver für Klient ${clientId} nicht setzen:`, cErr);
-                }
-
-                // 3. Termine synchronisieren
-                if (syncAppointments) {
-                    const todayStr = new Date().toISOString().slice(0, 10);
-                    const appts = orgaStore.appointments.data || [];
-                    const relevantAppts = appts.filter(a => {
-                        const apptDate = (a.appointment || '').slice(0, 10);
-                        const isUpcomingOrOpen = apptDate >= todayStr || a.status !== 'Erledigt';
-                        const belongsToClient = Array.isArray(a.client)
-                            ? a.client.includes(clientId)
-                            : a.client === clientId;
-                        return isUpcomingOrOpen && belongsToClient;
-                    });
-
-                    for (const a of relevantAppts) {
-                        if (a.assigned_to !== employeeId) {
-                            try {
-                                await pb.collection('appointments').update(a.id, {
-                                    assigned_to: employeeId,
-                                    user: employeeId
-                                });
-                            } catch {}
-                        }
-                    }
-                }
-            } else {
-                // Zuweisung aufheben
-                try {
-                    await pb.collection('clients').update(clientId, { caregiver: null });
-                } catch {}
-            }
-
-            await Promise.allSettled([
-                orgaStore.users.init(),
-                orgaStore.clients.init(),
-                orgaStore.appointments.init()
-            ]);
-
-            const targetName = employeeId ? (allUsers.find(u => u.id === employeeId)?.name_first || 'Mitarbeiter') : null;
-            toastStore.success(targetName ? `Klient erfolgreich ${targetName} zugewiesen.` : 'Mitarbeiter-Zuweisung aufgehoben.');
-            return true;
-        } catch (err: any) {
-            console.error('Fehler bei Mitarbeiter-Zuweisung zum Klienten:', err);
-            toastStore.error(err?.message || 'Zuweisung fehlgeschlagen.');
-            return false;
-        } finally {
-            this.isSubmitting = false;
-        }
-    }
-
-    /**
-     * Ermittelt den aktuell zugewiesenen Mitarbeiter für einen Klienten
-     */
-    getAssignedEmployeeForClient(clientId: string): UserRecord | null {
-        const allUsers = orgaStore.users.data || [];
-        const found = allUsers.find(u => Array.isArray(u.assigned_clients) && u.assigned_clients.includes(clientId));
-        if (found) return found;
-
-        const client = orgaStore.clients.getById(clientId);
-        if (client?.caregiver) {
-            const byCg = allUsers.find(u => u.id === client.caregiver);
-            if (byCg) return byCg;
-        }
-        return null;
     }
 
     /**
@@ -449,190 +224,16 @@ class EmployeeService {
         }
     }
 
-    /**
-     * Weist einem Mitarbeiter Kontakte zu (Read-Only für Mitarbeiter)
-     */
-    async assignContacts(employeeId: string, contactIds: string[]): Promise<boolean> {
-        this.isSubmitting = true;
-        try {
-            // 1. Aktualisiere assigned_contacts auf dem Mitarbeiter
-            await pb.collection('users').update(employeeId, {
-                assigned_contacts: contactIds
-            });
+    // Delegations for backward compatibility
+    assignClients = employeeAssignmentService.assignClients.bind(employeeAssignmentService);
+    assignEmployeeToClient = employeeAssignmentService.assignEmployeeToClient.bind(employeeAssignmentService);
+    getAssignedEmployeeForClient = employeeAssignmentService.getAssignedEmployeeForClient.bind(employeeAssignmentService);
+    assignContacts = employeeAssignmentService.assignContacts.bind(employeeAssignmentService);
+    assignAppointment = employeeAssignmentService.assignAppointment.bind(employeeAssignmentService);
 
-            // 2. Füge den Mitarbeiter zu assigned_employees auf den jeweiligen Kontakten hinzu
-            for (const cId of contactIds) {
-                try {
-                    const contact = orgaStore.contacts.data.find(c => c.id === cId) || await pb.collection('contacts').getOne(cId).catch(() => null);
-                    if (!contact) continue;
-                    const currentAssignees = Array.isArray(contact.assigned_employees) ? [...contact.assigned_employees] : [];
-                    if (!currentAssignees.includes(employeeId)) {
-                        currentAssignees.push(employeeId);
-                        await pb.collection('contacts').update(cId, {
-                            assigned_employees: currentAssignees
-                        });
-                    }
-                } catch (cErr) {
-                    console.warn(`Fehler beim Zuweisen von Kontakt ${cId}:`, cErr);
-                }
-            }
-
-            await Promise.allSettled([
-                orgaStore.users.init(),
-                orgaStore.contacts.init()
-            ]);
-
-            toastStore.success(`${contactIds.length} Kontakt(e) erfolgreich zugewiesen.`);
-            return true;
-        } catch (err: any) {
-            console.error('Fehler bei Kontaktzuweisung:', err);
-            toastStore.error(err?.message || 'Kontaktzuweisung fehlgeschlagen.');
-            return false;
-        } finally {
-            this.isSubmitting = false;
-        }
-    }
-
-    /**
-     * Weist einen bestehenden Termin einem Mitarbeiter zu
-     */
-    async assignAppointment(appointmentId: string, employeeId: string): Promise<boolean> {
-        this.isSubmitting = true;
-        try {
-            await pb.collection('appointments').update(appointmentId, {
-                assigned_to: employeeId,
-                user: employeeId // Rückwärtskompatibilität
-            });
-            await orgaStore.appointments.init();
-            toastStore.success('Termin erfolgreich zugewiesen.');
-            return true;
-        } catch (err: any) {
-            console.error('Fehler bei Terminzuweisung:', err);
-            toastStore.error(err?.message || 'Terminzuweisung fehlgeschlagen.');
-            return false;
-        } finally {
-            this.isSubmitting = false;
-        }
-    }
-
-    /**
-     * Generiert einen kryptografisch sicheren QR-Code-Zugangslink mit konfigurierbarer Gültigkeit
-     */
-    async generateQuickAccessToken(employeeId: string, validityHours: number = 168): Promise<{ token: string; expiresAt: string; directUrl: string } | null> {
-        this.isSubmitting = true;
-        try {
-            // Kryptografisch sicheres Zufallstoken (48 Hex-Zeichen)
-            const randomBytes = new Uint8Array(24);
-            if (typeof window !== 'undefined' && window.crypto) {
-                window.crypto.getRandomValues(randomBytes);
-            } else {
-                for (let i = 0; i < 24; i++) randomBytes[i] = Math.floor(Math.random() * 256);
-            }
-            const token = Array.from(randomBytes).map(b => b.toString(16).padStart(2, '0')).join('');
-
-            let expiresAtIso: string | null = null;
-            if (validityHours > 0) {
-                const d = new Date(Date.now() + validityHours * 3600 * 1000);
-                expiresAtIso = d.toISOString();
-            }
-
-            // Direkt über PocketBase SDK aktualisieren (keine SvelteKit-Serverroute nötig)
-            await pb.collection('users').update(employeeId, {
-                quick_access_token: token,
-                token_expires_at: expiresAtIso
-            });
-
-            const origin = typeof window !== 'undefined' ? window.location.origin : '';
-            const directUrl = `${origin}/mitarbeiter?token=${encodeURIComponent(token)}`;
-
-            await orgaStore.users.init();
-            toastStore.success('QR-Code-Zugang erfolgreich generiert.');
-            return {
-                token: token,
-                expiresAt: expiresAtIso || '',
-                directUrl: directUrl
-            };
-        } catch (err: any) {
-            console.error('Fehler beim Erzeugen des QR-Tokens:', err);
-            toastStore.error(err?.message || 'Token-Generierung fehlgeschlagen.');
-            return null;
-        } finally {
-            this.isSubmitting = false;
-        }
-    }
-
-    /**
-     * Widerruft den Schnellzugang eines Mitarbeiters sofort
-     */
-    async revokeQuickAccessToken(employeeId: string): Promise<boolean> {
-        this.isSubmitting = true;
-        try {
-            // Direkt über PocketBase SDK auf leeres Token zurücksetzen
-            await pb.collection('users').update(employeeId, {
-                quick_access_token: '',
-                token_expires_at: null
-            });
-
-            await orgaStore.users.init();
-            toastStore.info('QR-Zugang wurde erfolgreich widerrufen.');
-            return true;
-        } catch (err: any) {
-            console.error('Fehler beim Widerrufen des Tokens:', err);
-            toastStore.error(err?.message || 'Widerruf fehlgeschlagen.');
-            return false;
-        } finally {
-            this.isSubmitting = false;
-        }
-    }
-
-    /**
-     * Führt den schnellen QR-Token-Login durch und speichert die Session
-     */
-    async loginWithQrToken(token: string): Promise<{ success: boolean; message?: string }> {
-        this.isSubmitting = true;
-        try {
-            const cleanToken = token.trim();
-            const endpoints = [
-                `/api/orgaflow/auth/employee-token?token=${encodeURIComponent(cleanToken)}`,
-                '/api/emails/portal/employee-auth-token',
-                '/api/auth/employee-token'
-            ];
-
-            let lastError = 'Ungültiger oder abgelaufener Token.';
-
-            for (const ep of endpoints) {
-                try {
-                    const res = await fetch(ep, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ token: cleanToken })
-                    });
-
-                    if (res.ok) {
-                        const data = await res.json();
-                        if (data.token) {
-                            pb.authStore.save(data.token, data.record || null);
-                            return { success: true };
-                        }
-                    } else if (res.status !== 404) {
-                        const data = await res.json().catch(() => null);
-                        if (data?.message || data?.error) {
-                            lastError = data.message || data.error;
-                        }
-                    }
-                } catch {
-                    // Weiter zum nächsten Endpunkt
-                }
-            }
-
-            return { success: false, message: lastError };
-        } catch (err: any) {
-            console.error('QR Login Error:', err);
-            return { success: false, message: err?.message || 'Netzwerkfehler beim Anmelden.' };
-        } finally {
-            this.isSubmitting = false;
-        }
-    }
+    generateQuickAccessToken = employeeTokenService.generateQuickAccessToken.bind(employeeTokenService);
+    revokeQuickAccessToken = employeeTokenService.revokeQuickAccessToken.bind(employeeTokenService);
+    loginWithQrToken = employeeTokenService.loginWithQrToken.bind(employeeTokenService);
 }
 
 export const employeeService = new EmployeeService();

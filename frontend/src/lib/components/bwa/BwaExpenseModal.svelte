@@ -95,15 +95,15 @@
     }
 </script>
 
-<dialog bind:this={expenseDialog} class="p-2 sm:p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-[96vw] max-w-xl mx-auto my-auto rounded-3xl" onclick={(e) => { if (e.target === expenseDialog) expenseDialog?.close(); }}>
-    <div class="bg-white rounded-3xl p-5 sm:p-7 md:p-8 w-full max-h-[92vh] overflow-y-auto custom-scrollbar relative shadow-2xl">
-        <button aria-label="Schließen" onclick={() => { expenseDialog?.close(); expReceiptFile = null; }} class="absolute top-4 sm:top-6 right-4 sm:right-6 w-9 h-9 sm:w-10 sm:h-10 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-colors">✕</button>
-        <div class="flex items-center justify-between mb-5 pr-10">
-            <h2 class="text-xl sm:text-2xl font-black text-neutral-900 flex items-center gap-2"><span>🧾</span> Ausgabe erfassen</h2>
+<dialog bind:this={expenseDialog} class="zero-inner-scroll-modal p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-[96vw] max-w-xl mx-auto my-6 sm:my-10 rounded-3xl" onclick={(e) => { if (e.target === expenseDialog) expenseDialog?.close(); }}>
+    <div class="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-5 sm:p-7 md:p-8 w-full relative shadow-2xl">
+        <button aria-label="Schließen" onclick={() => { expenseDialog?.close(); expReceiptFile = null; }} class="absolute top-4 sm:top-6 right-4 sm:right-6 w-10 h-10 min-h-[44px] min-w-[44px] bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-full flex items-center justify-center transition-colors">✕</button>
+        <div class="flex items-center justify-between mb-5 pr-12">
+            <h2 class="text-xl sm:text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2"><span>🧾</span> Ausgabe erfassen</h2>
             <input type="file" accept="image/*,application/pdf" capture="environment" class="hidden" bind:this={receiptFileInput} onchange={handleReceiptScan} />
-            <button type="button" onclick={() => receiptFileInput?.click()} disabled={isScanningReceipt} class="text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-3 py-1.5 rounded-xl flex items-center justify-center gap-1.5 transition-colors shadow-sm disabled:opacity-50">
+            <button type="button" onclick={() => receiptFileInput?.click()} disabled={isScanningReceipt} class="min-h-[44px] text-xs font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800 px-3.5 py-2 rounded-xl flex items-center justify-center gap-1.5 transition-colors shadow-sm disabled:opacity-50">
                 {#if isScanningReceipt}
-                    <div class="w-3 h-3 border-2 border-indigo-200 border-t-indigo-700 rounded-full animate-spin"></div> Scannt...
+                    <div class="w-3.5 h-3.5 border-2 border-indigo-200 border-t-indigo-700 rounded-full animate-spin"></div> Scannt...
                 {:else}
                     <span>📸</span> KI-Scan
                 {/if}
@@ -112,22 +112,22 @@
         <form onsubmit={submitExpense} class="space-y-4">
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                    <label for="expSupplier" class="block text-sm font-semibold text-neutral-700 mb-1.5">Geschäft / Aussteller *</label>
-                    <input id="expSupplier" type="text" bind:value={expSupplier} placeholder="z.B. MediaMarkt" class="orga-input-clear" required disabled={isScanningReceipt} />
+                    <label for="expSupplier" class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 uppercase tracking-wide">Geschäft / Aussteller *</label>
+                    <input id="expSupplier" type="text" bind:value={expSupplier} placeholder="z.B. MediaMarkt" class="orga-input-clear min-h-[44px]" required disabled={isScanningReceipt} />
                 </div>
                 <div>
-                    <label for="expInvoiceNr" class="block text-sm font-semibold text-neutral-700 mb-1.5">Beleg-Nr.</label>
-                    <input id="expInvoiceNr" type="text" bind:value={expInvoiceNr} placeholder="Optional" class="orga-input-clear" disabled={isScanningReceipt} />
+                    <label for="expInvoiceNr" class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 uppercase tracking-wide">Beleg-Nr.</label>
+                    <input id="expInvoiceNr" type="text" bind:value={expInvoiceNr} placeholder="Optional" class="orga-input-clear min-h-[44px]" disabled={isScanningReceipt} />
                 </div>
             </div>
             <div>
-                <label for="expTitle" class="block text-sm font-semibold text-neutral-700 mb-1.5">Zweck der Ausgabe *</label>
-                <input id="expTitle" type="text" bind:value={expTitle} placeholder="z.B. Neuer Laptop" class="orga-input-clear" required disabled={isScanningReceipt} />
+                <label for="expTitle" class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 uppercase tracking-wide">Zweck der Ausgabe *</label>
+                <input id="expTitle" type="text" bind:value={expTitle} placeholder="z.B. Neuer Laptop" class="orga-input-clear min-h-[44px]" required disabled={isScanningReceipt} />
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                    <label for="expCategory" class="block text-sm font-semibold text-neutral-700 mb-1.5">Kategorie</label>
-                    <select id="expCategory" bind:value={expCategory} class="orga-input-clear cursor-pointer" disabled={isScanningReceipt}>
+                    <label for="expCategory" class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 uppercase tracking-wide">Kategorie</label>
+                    <select id="expCategory" bind:value={expCategory} class="orga-input-clear min-h-[44px] cursor-pointer" disabled={isScanningReceipt}>
                         <option value="Miete / Büro">Miete / Büro</option>
                         <option value="Software / IT">Software / IT</option>
                         <option value="Marketing">Marketing</option>
@@ -137,33 +137,33 @@
                     </select>
                 </div>
                 <div>
-                    <label for="expDate" class="block text-sm font-semibold text-neutral-700 mb-1.5">Belegdatum *</label>
-                    <input id="expDate" type="date" bind:value={expDate} class="orga-input-clear" required disabled={isScanningReceipt} />
+                    <label for="expDate" class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 uppercase tracking-wide">Belegdatum *</label>
+                    <input id="expDate" type="date" bind:value={expDate} class="orga-input-clear min-h-[44px]" required disabled={isScanningReceipt} />
                 </div>
             </div>
-            <div class="bg-neutral-50 p-4 rounded-xl border border-neutral-200 grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div class="bg-slate-50 dark:bg-slate-800/60 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div class="sm:col-span-2">
-                    <label for="expAmount" class="block text-xs font-semibold text-neutral-700 mb-1">Brutto (Gesamt) *</label>
-                    <input id="expAmount" type="number" step="0.01" bind:value={expAmount} class="orga-input-clear py-2 text-sm font-bold text-indigo-700" required disabled={isScanningReceipt} />
+                    <label for="expAmount" class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Brutto (Gesamt) *</label>
+                    <input id="expAmount" type="number" step="0.01" bind:value={expAmount} class="orga-input-clear min-h-[44px] py-2 text-sm font-bold text-indigo-700 dark:text-indigo-400" required disabled={isScanningReceipt} />
                 </div>
                 <div>
-                    <label for="expNetto" class="block text-xs font-semibold text-neutral-700 mb-1">Netto</label>
-                    <input id="expNetto" type="number" step="0.01" bind:value={expNetto} class="orga-input-clear py-2 text-sm" disabled={isScanningReceipt} />
+                    <label for="expNetto" class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Netto</label>
+                    <input id="expNetto" type="number" step="0.01" bind:value={expNetto} class="orga-input-clear min-h-[44px] py-2 text-sm" disabled={isScanningReceipt} />
                 </div>
                 <div>
-                    <label for="expTaxSum" class="block text-xs font-semibold text-neutral-700 mb-1">MwSt</label>
-                    <input id="expTaxSum" type="number" step="0.01" bind:value={expTaxSum} class="orga-input-clear py-2 text-sm" disabled={isScanningReceipt} />
+                    <label for="expTaxSum" class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">MwSt</label>
+                    <input id="expTaxSum" type="number" step="0.01" bind:value={expTaxSum} class="orga-input-clear min-h-[44px] py-2 text-sm" disabled={isScanningReceipt} />
                 </div>
             </div>
-            <div class="bg-neutral-50 p-4 rounded-xl border border-neutral-200 space-y-3">
-                <label for="expIsRecurring" class="flex items-center gap-3 cursor-pointer">
-                    <input id="expIsRecurring" type="checkbox" bind:checked={expIsRecurring} class="w-4 h-4 text-indigo-600 rounded border-neutral-300 focus:ring-indigo-500" />
-                    <span class="text-sm font-semibold text-neutral-800">Wiederkehrende Ausgabe</span>
+            <div class="bg-slate-50 dark:bg-slate-800/60 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
+                <label for="expIsRecurring" class="flex items-center gap-3 cursor-pointer select-none">
+                    <input id="expIsRecurring" type="checkbox" bind:checked={expIsRecurring} class="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500" />
+                    <span class="text-sm font-bold text-slate-800 dark:text-slate-200">Wiederkehrende Ausgabe</span>
                 </label>
                 {#if expIsRecurring}
-                    <div class="pt-2 border-t border-neutral-200 animate-enter">
-                        <label for="expInterval" class="block text-xs font-semibold text-neutral-700 mb-1">Intervall</label>
-                        <select id="expInterval" bind:value={expInterval} class="orga-input-clear py-2 text-sm cursor-pointer">
+                    <div class="pt-2 border-t border-slate-200 dark:border-slate-700 animate-enter">
+                        <label for="expInterval" class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Intervall</label>
+                        <select id="expInterval" bind:value={expInterval} class="orga-input-clear min-h-[44px] py-2 text-sm cursor-pointer">
                             <option value="monthly">Monatlich</option>
                             <option value="quarterly">Quartalsweise</option>
                             <option value="yearly">Jährlich</option>
@@ -171,32 +171,32 @@
                     </div>
                 {/if}
             </div>
-            <div class="bg-neutral-50 p-4 rounded-xl border border-neutral-200 space-y-3">
-                <label for="expIsInstallment" class="flex items-center gap-3 cursor-pointer">
-                    <input id="expIsInstallment" type="checkbox" bind:checked={expIsInstallment} class="w-4 h-4 text-indigo-600 rounded border-neutral-300 focus:ring-indigo-500" />
-                    <span class="text-sm font-semibold text-neutral-800">Ratenzahlung</span>
+            <div class="bg-slate-50 dark:bg-slate-800/60 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
+                <label for="expIsInstallment" class="flex items-center gap-3 cursor-pointer select-none">
+                    <input id="expIsInstallment" type="checkbox" bind:checked={expIsInstallment} class="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500" />
+                    <span class="text-sm font-bold text-slate-800 dark:text-slate-200">Ratenzahlung</span>
                 </label>
                 {#if expIsInstallment}
-                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-neutral-200 animate-enter">
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-200 dark:border-slate-700 animate-enter">
                         <div>
-                            <label for="expInstallmentCurrent" class="block text-xs font-semibold text-neutral-700 mb-1">Rate Nr.</label>
-                            <input id="expInstallmentCurrent" type="number" bind:value={expInstallmentCurrent} class="orga-input-clear py-2 text-sm" placeholder="z.B. 3" />
+                            <label for="expInstallmentCurrent" class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Rate Nr.</label>
+                            <input id="expInstallmentCurrent" type="number" bind:value={expInstallmentCurrent} class="orga-input-clear min-h-[44px] py-2 text-sm" placeholder="z.B. 3" />
                         </div>
                         <div>
-                            <label for="expInstallmentTotal" class="block text-xs font-semibold text-neutral-700 mb-1">von (Anzahl)</label>
-                            <input id="expInstallmentTotal" type="number" bind:value={expInstallmentTotal} class="orga-input-clear py-2 text-sm" placeholder="z.B. 12" />
+                            <label for="expInstallmentTotal" class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">von (Anzahl)</label>
+                            <input id="expInstallmentTotal" type="number" bind:value={expInstallmentTotal} class="orga-input-clear min-h-[44px] py-2 text-sm" placeholder="z.B. 12" />
                         </div>
                         <div>
-                            <label for="expInstallmentTotalAmount" class="block text-xs font-semibold text-neutral-700 mb-1">Gesamtsumme (€)</label>
-                            <input id="expInstallmentTotalAmount" type="number" step="0.01" bind:value={expInstallmentTotalAmount} class="orga-input-clear py-2 text-sm" placeholder="z.B. 1200.00" />
+                            <label for="expInstallmentTotalAmount" class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Gesamtsumme (€)</label>
+                            <input id="expInstallmentTotalAmount" type="number" step="0.01" bind:value={expInstallmentTotalAmount} class="orga-input-clear min-h-[44px] py-2 text-sm" placeholder="z.B. 1200.00" />
                         </div>
                     </div>
                 {/if}
             </div>
             {#if isGodMode && bwa.selectedCompanyId === "all"}
                 <div>
-                    <label for="expCompany" class="block text-sm font-semibold text-rose-700 mb-1.5">Für welche Firma? *</label>
-                    <select id="expCompany" bind:value={expCompany} class="orga-input-clear border-rose-300 bg-rose-50" required>
+                    <label for="expCompany" class="block text-xs font-bold text-rose-700 dark:text-rose-400 mb-1.5 uppercase tracking-wide">Für welche Firma? *</label>
+                    <select id="expCompany" bind:value={expCompany} class="orga-input-clear min-h-[44px] border-rose-300 bg-rose-50 dark:bg-rose-950/40 dark:border-rose-800 dark:text-rose-200" required>
                         <option value="">Bitte wählen...</option>
                         {#each orgaStore.company?.data || [] as comp}
                             <option value={comp.id}>{comp.city} {comp.name ? `(${comp.name})` : ''}</option>
@@ -204,9 +204,9 @@
                     </select>
                 </div>
             {/if}
-            <div class="pt-4 flex justify-end gap-3 border-t border-neutral-100 mt-6">
-                <button type="button" onclick={() => expenseDialog?.close()} class="orga-button-ghost py-3 px-6">Abbrechen</button>
-                <button type="submit" class="orga-button-primary py-3 px-6">Speichern</button>
+            <div class="pt-4 flex justify-end gap-3 border-t border-slate-100 dark:border-slate-800 mt-6">
+                <button type="button" onclick={() => expenseDialog?.close()} class="orga-button-ghost min-h-[44px] py-2.5 px-6">Abbrechen</button>
+                <button type="submit" class="orga-button-primary min-h-[44px] py-2.5 px-6">Speichern</button>
             </div>
         </form>
     </div>

@@ -1,9 +1,10 @@
 <script lang="ts">
-    import { pb } from "$lib/services/pocketbase";
-    import { toastStore } from "$lib/services/toastService.svelte";
+    import { printElement } from "$lib/utils/print";
     import PortalAccessCardPrint from "$lib/components/portal/PortalAccessCardPrint.svelte";
     import QuickAccessMailModal from "$lib/components/portal/QuickAccessMailModal.svelte";
-    import QRCode from 'qrcode';
+    import PortalAccessManageView from "$lib/components/portal/PortalAccessManageView.svelte";
+    import { createPortalAccessState, type PortalTarget } from "./portalAccessState.svelte";
+    import { ShieldCheck, Printer, Mail, X, Sliders, FileText, Send } from "lucide-svelte";
 
     // svelte-ignore non_reactive_update
     let dialog: HTMLDialogElement;
@@ -11,338 +12,179 @@
     let printRef: ReturnType<typeof PortalAccessCardPrint>;
     let quickMailModal = $state() as any;
 
-    let client = $state<any>(null);
-    let explicitType = $state<'client' | 'contact' | null>(null);
-    let isContact = $derived(explicitType === 'contact' || client?.company_name !== undefined || client?.collectionName === 'contacts');
-
-    let displayName = $derived.by(() => {
-        if (!client) return "";
-        const fullName = `${client.name_first || ''} ${client.name_last || ''}`.trim();
-        if (client.company_name) {
-            return fullName ? `${fullName} (${client.company_name})` : client.company_name;
-        }
-        return fullName || client.email || (isContact ? 'Kontakt' : 'Klient');
-    });
-
-    let roleTitle = $derived.by(() => {
-        if (!isContact) return "Klienten-Portal";
-        if (client?.company_name) return "Einrichtungs- & Betreuer-Portal";
-        return "Betreuer- & Angehörigen-Portal";
-    });
-
-    let nameLabel = $derived.by(() => {
-        if (!isContact) return "Ausgestellt für:";
-        if (client?.company_name) return "Einrichtung / Ansprechpartner:";
-        return "Betreuer / Angehörige(r):";
-    });
-
-    let isLoading = $state(false);
-    let isSaving = $state(false);
-    let errorMsg = $state("");
-
-    let portalPin = $state("");
-    let portalCode = $state("");
-    let customPinInput = $state("");
-    let qrDataUrl = $state("");
+    const accessState = createPortalAccessState();
 
     let activeView = $state<'manage' | 'print'>('manage');
-
-    const apiBaseUrl = (typeof window !== 'undefined' && !window.location.hostname.includes('ihre-seniorenassistenz.com')) ? `http://${window.location.hostname}:3000/portal` : '/api/emails/portal';
-
-    let fullPortalUrl = $derived.by(() => {
-        if (!portalCode) return "";
-        return `https://ihre-seniorenassistenz.com/portal?auth=${portalCode}`;
-    });
-
-    $effect(() => {
-        if (fullPortalUrl) {
-            QRCode.toDataURL(fullPortalUrl, {
-                width: 220,
-                margin: 2,
-                color: { dark: '#0f172a', light: '#ffffff' }
-            }).then(url => { qrDataUrl = url; }).catch(console.error);
-        }
-    });
+    let copiedPin = $state(false);
+    let copiedLink = $state(false);
 
     export async function open(clientData: any, type?: 'client' | 'contact') {
-        client = clientData;
-        explicitType = type || null;
+        if (!clientData) return;
         activeView = 'manage';
-        errorMsg = "";
-        portalPin = "";
-        portalCode = "";
-        customPinInput = "";
+        copiedPin = false;
+        copiedLink = false;
         dialog?.showModal();
-        await loadAccessData('get');
+        await accessState.init(clientData, type);
     }
 
     export function close() {
         dialog?.close();
-        client = null;
-        explicitType = null;
+        accessState.reset();
     }
 
-    async function loadAccessData(action: 'get' | 'generate' | 'set', customPin?: string) {
-        if (!client) return;
-        isLoading = true;
-        errorMsg = "";
-
-        try {
-            const token = pb.authStore.token;
-            const res = await fetch(`${apiBaseUrl}/admin/access-data`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({
-                    clientId: client.id,
-                    type: isContact ? 'contact' : 'client',
-                    action,
-                    customPin
-                })
-            });
-
-            let data: any = {};
-            const text = await res.text();
-            try {
-                data = JSON.parse(text);
-            } catch(e) {
-                throw new Error(res.status === 404 ? "Endpunkt nicht gefunden. Bitte stellen Sie sicher, dass der Microservice neu gestartet wurde." : `Serverfehler (${res.status})`);
-            }
-
-            if (!res.ok || !data.success) {
-                throw new Error(data.error || "Fehler beim Laden der Zugangsdaten.");
-            }
-
-            portalPin = data.portal_pin || "";
-            portalCode = data.portal_code || "";
-            customPinInput = portalPin;
-
-            if (action === 'generate') {
-                toastStore.success("Neue PIN & Zugangs-Code erfolgreich generiert!");
-            } else if (action === 'set') {
-                toastStore.success("Wunsch-PIN erfolgreich gespeichert!");
-            }
-        } catch (err: any) {
-            console.error(err);
-            errorMsg = err.message || "Fehler beim Abrufen der Zugangsdaten.";
-            toastStore.error(errorMsg);
-        } finally {
-            isLoading = false;
-            isSaving = false;
-        }
+    function handleCopyPin() {
+        if (!accessState.portalPin) return;
+        accessState.copyToClipboard(accessState.portalPin, 'PIN');
+        copiedPin = true;
+        setTimeout(() => { copiedPin = false; }, 2500);
     }
 
-    async function handleGenerateNew() {
-        if (!confirm("Möchten Sie wirklich eine neue PIN und einen neuen QR-Code generieren? Die bisherigen Zugangsdaten werden damit ungültig.")) return;
-        await loadAccessData('generate');
+    function handleCopyLink() {
+        if (!accessState.fullPortalUrl) return;
+        accessState.copyToClipboard(accessState.fullPortalUrl, 'Direkt-Zugangs-Link');
+        copiedLink = true;
+        setTimeout(() => { copiedLink = false; }, 2500);
     }
 
-    async function handleSaveCustomPin() {
-        const clean = customPinInput.trim();
-        if (clean.length < 4) {
-            toastStore.error("Die PIN muss mindestens 4 Ziffern lang sein.");
-            return;
-        }
-        isSaving = true;
-        await loadAccessData('set', clean);
-    }
-
-    function copyToClipboard(text: string, label: string) {
-        if (typeof navigator !== 'undefined' && navigator.clipboard) {
-            navigator.clipboard.writeText(text);
-            toastStore.success(`${label} in die Zwischenablage kopiert!`);
-        }
+    function handleOpenWhatsApp(mode?: 'mobile' | 'landline' | 'share') {
+        const url = accessState.getWhatsAppShareUrl(mode);
+        if (url) window.open(url, '_blank', 'noopener,noreferrer');
     }
 
     function triggerPrint() {
         activeView = 'print';
         setTimeout(() => {
-            window.print();
+            if (printRef?.printCard) {
+                printRef.printCard();
+            } else {
+                printElement('portal-access-card-print-area', {
+                    title: `Zugangskarte - ${accessState.displayName}`,
+                    pageOrientation: 'portrait',
+                    pageMargin: '10mm'
+                });
+            }
         }, 300);
     }
 </script>
 
-<dialog bind:this={dialog} class="p-0 bg-transparent backdrop:bg-black/60 backdrop:backdrop-blur-sm w-full max-w-4xl mx-auto my-auto rounded-3xl" onclick={(e) => { if (e.target === dialog) close(); }}>
-    <div class="bg-neutral-50 rounded-3xl w-full max-h-[92vh] flex flex-col relative overflow-hidden shadow-2xl border border-neutral-200">
-        
+<dialog 
+    bind:this={dialog} 
+    class="zero-inner-scroll-modal p-0 bg-transparent backdrop:bg-slate-950/70 backdrop:backdrop-blur-md w-full max-w-4xl mx-auto my-6 sm:my-10 rounded-3xl border-none shadow-2xl" 
+    onclick={(e) => { if (e.target === dialog) close(); }}
+>
+    <div class="bg-slate-50 dark:bg-slate-950 rounded-3xl w-full flex flex-col relative shadow-2xl border border-slate-200 dark:border-slate-800">
         <!-- MODAL HEADER -->
-        <div class="bg-white px-6 py-4 border-b border-neutral-200 flex items-center justify-between shrink-0 sticky top-0 z-20">
-            <div class="flex items-center gap-3">
-                <div class="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-700 flex items-center justify-center font-bold text-xl shadow-inner">
-                    🪪
+        <div class="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-5 sm:px-7 py-4 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 shrink-0 sticky top-0 z-20">
+            <div class="flex items-center gap-3 min-w-0">
+                <div class="w-11 h-11 rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-xl shadow-xs shrink-0 border border-indigo-100 dark:border-indigo-900/50">
+                    <ShieldCheck class="w-6 h-6" />
                 </div>
-                <div>
-                    <h2 class="text-xl font-black text-brand-950 leading-tight">
-                        {roleTitle}: {displayName}
+                <div class="truncate">
+                    <h2 class="text-lg sm:text-xl font-black text-slate-900 dark:text-slate-100 leading-tight truncate">
+                        {accessState.roleTitle}: {accessState.displayName || 'Lade...'}
                     </h2>
-                    <p class="text-xs text-neutral-500 font-medium">Zugangsdaten & QR-Code für den sicheren Login ({isContact ? 'Betreuer / Pflegeheim' : 'Klient'})</p>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                        Zugangsdaten & QR-Code für den sicheren Login ({accessState.isContact ? 'Betreuer / Pflegeheim' : 'Klient'})
+                    </p>
                 </div>
             </div>
 
-            <div class="flex items-center gap-2">
-                <!-- Ansicht wechseln -->
-                <div class="bg-neutral-100 p-1 rounded-xl flex items-center gap-1 text-xs font-bold mr-2">
+            <!-- Toolbar / Aktionen -->
+            <div class="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                <div class="bg-slate-100 dark:bg-slate-800 p-1 rounded-xl flex items-center gap-1 text-xs font-bold border border-slate-200/80 dark:border-slate-700">
                     <button 
                         type="button"
                         onclick={() => activeView = 'manage'}
-                        class="px-3 py-1.5 rounded-lg transition-all {activeView === 'manage' ? 'bg-white text-indigo-950 shadow-sm' : 'text-neutral-500 hover:text-neutral-800'}">
-                        ⚙️ Verwalten
+                        class="px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 min-h-[36px] cursor-pointer {activeView === 'manage' ? 'bg-white dark:bg-slate-900 text-indigo-950 dark:text-indigo-300 shadow-xs font-black' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'}">
+                        <Sliders class="w-3.5 h-3.5" />
+                        <span>Verwalten</span>
                     </button>
                     <button 
                         type="button"
                         onclick={() => activeView = 'print'}
-                        class="px-3 py-1.5 rounded-lg transition-all {activeView === 'print' ? 'bg-white text-indigo-950 shadow-sm' : 'text-neutral-500 hover:text-neutral-800'}">
-                        📄 Druckkarte
+                        class="px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 min-h-[36px] cursor-pointer {activeView === 'print' ? 'bg-white dark:bg-slate-900 text-indigo-950 dark:text-indigo-300 shadow-xs font-black' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'}">
+                        <FileText class="w-3.5 h-3.5" />
+                        <span>Druckkarte</span>
                     </button>
                 </div>
 
                 <button 
                     type="button"
-                    onclick={() => quickMailModal?.open(client)} 
-                    class="orga-button-ghost py-2 px-3 sm:px-4 text-xs font-bold inline-flex items-center gap-1.5 border border-neutral-200 hover:bg-neutral-100 text-neutral-800 shadow-sm">
-                    <span>✉️</span> <span class="hidden sm:inline">Quick-Mail Vorlage</span>
+                    onclick={() => quickMailModal?.open(accessState.client)} 
+                    class="orga-button-ghost py-2 px-3 sm:px-3.5 text-xs font-bold inline-flex items-center gap-1.5 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 shadow-xs min-h-[44px] cursor-pointer"
+                    title="E-Mail Vorlage mit Zugangslink öffnen">
+                    <Mail class="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                    <span class="hidden md:inline">Quick-Mail Vorlage</span>
+                </button>
+
+                <button 
+                    type="button"
+                    onclick={() => quickMailModal?.open(accessState.client, { autoOpenComposer: true })} 
+                    class="orga-button-primary py-2 px-3 sm:px-3.5 text-xs font-bold inline-flex items-center gap-1.5 shadow-brand-600/20 min-h-[44px] cursor-pointer"
+                    title="Zugangsdaten direkt per E-Mail versenden">
+                    <Send class="w-4 h-4" />
+                    <span class="hidden md:inline">Direkt per Mail</span>
                 </button>
 
                 <button 
                     type="button"
                     onclick={triggerPrint} 
-                    class="orga-button-primary py-2 px-3 sm:px-4 text-xs font-bold inline-flex items-center gap-1.5 shadow-brand-600/20">
-                    <span>🖨️</span> <span class="hidden sm:inline">Karte drucken</span>
+                    class="orga-button-ghost py-2 px-3 sm:px-4 text-xs font-bold inline-flex items-center gap-1.5 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 shadow-xs min-h-[44px] cursor-pointer">
+                    <Printer class="w-4 h-4" />
+                    <span class="hidden sm:inline">Karte drucken</span>
                 </button>
 
-                <button aria-label="Schließen" onclick={close} class="w-9 h-9 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-colors">
-                    ✕
+                <button 
+                    aria-label="Schließen" 
+                    onclick={close} 
+                    class="w-10 h-10 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-full flex items-center justify-center transition-colors cursor-pointer shrink-0">
+                    <X class="w-5 h-5" />
                 </button>
             </div>
         </div>
 
         <!-- MODAL BODY -->
-        <div class="p-6 overflow-y-auto custom-scrollbar flex-1">
-            {#if isLoading && !portalPin}
-                <div class="flex flex-col items-center justify-center py-20 text-neutral-500">
-                    <div class="w-10 h-10 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-3"></div>
+        <div class="p-4 sm:p-7 flex-1 space-y-6">
+            {#if accessState.isLoading && !accessState.portalPin}
+                <div class="flex flex-col items-center justify-center py-20 text-slate-500">
+                    <div class="w-12 h-12 border-4 border-indigo-200 dark:border-indigo-900 border-t-indigo-600 rounded-full animate-spin mb-3"></div>
                     <p class="text-sm font-bold">Lade Zugangsdaten...</p>
                 </div>
-            {:else if errorMsg && !portalPin}
-                <div class="bg-rose-50 border border-rose-200 text-rose-700 p-6 rounded-2xl text-center">
-                    <p class="font-bold mb-2">⚠️ {errorMsg}</p>
-                    <button onclick={() => loadAccessData('get')} class="orga-button-primary mt-2 text-xs">Erneut versuchen</button>
+            {:else if accessState.errorMsg && !accessState.portalPin}
+                <div class="bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50 text-rose-700 dark:text-rose-300 p-6 rounded-2xl text-center space-y-3">
+                    <p class="font-bold">⚠️ {accessState.errorMsg}</p>
+                    <button onclick={() => accessState.loadAccessData('get')} class="orga-button-primary text-xs px-5 py-2.5 min-h-[44px]">
+                        Erneut versuchen
+                    </button>
                 </div>
             {:else if activeView === 'print'}
-                <!-- DRUCKANSICHT -->
                 <div class="py-2">
                     <PortalAccessCardPrint 
                         bind:this={printRef}
-                        clientName={displayName}
-                        clientEmail={client?.email || ''}
-                        {portalPin}
-                        {portalCode}
-                        portalUrl={fullPortalUrl}
-                        {roleTitle}
+                        clientName={accessState.displayName}
+                        clientEmail={accessState.client?.email || ''}
+                        portalPin={accessState.portalPin}
+                        portalCode={accessState.portalCode}
+                        portalUrl={accessState.fullPortalUrl}
+                        roleTitle={accessState.roleTitle}
                         subtitle="Ihre persönliche Zugangskarte"
-                        {nameLabel}
+                        nameLabel={accessState.nameLabel}
                     />
                 </div>
             {:else}
-                <!-- VERWALTUNGSANSICHT -->
-                <div class="space-y-6">
-                    
-                    <!-- TOP CARD: SCHNELLÜBERSICHT -->
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
-                        
-                        <!-- PIN-BOX -->
-                        <div class="orga-card-white p-5 border border-neutral-200 flex flex-col justify-between">
-                            <div>
-                                <span class="text-xs font-bold text-neutral-500 uppercase tracking-wider block mb-1">Persönliche PIN</span>
-                                <div class="flex items-center gap-2 my-2">
-                                    <span class="text-3xl font-black font-mono tracking-wider text-indigo-950 select-all">{portalPin || '------'}</span>
-                                </div>
-                                <p class="text-xs text-neutral-500">Wird für den klassischen Login auf dem PC zusammen mit der E-Mail genutzt.</p>
-                            </div>
-                            <div class="mt-4 flex gap-2">
-                                <button type="button" onclick={() => copyToClipboard(portalPin, 'PIN')} class="orga-button-ghost py-1.5 px-3 text-xs flex-1 font-bold">
-                                    📋 PIN kopieren
-                                </button>
-                                <button type="button" onclick={handleGenerateNew} disabled={isLoading} class="orga-button-ghost py-1.5 px-2.5 text-xs text-amber-700 hover:bg-amber-50" title="Neue Zufalls-PIN generieren">
-                                    🔄 Neu
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- DIREKT-LINK -->
-                        <div class="orga-card-white p-5 border border-neutral-200 flex flex-col justify-between">
-                            <div>
-                                <span class="text-xs font-bold text-neutral-500 uppercase tracking-wider block mb-1">Direkt-Zugangs-Link</span>
-                                <p class="text-xs font-mono text-neutral-700 bg-neutral-50 p-2 rounded-lg border border-neutral-200 break-all my-2 line-clamp-3 select-all">
-                                    {fullPortalUrl}
-                                </p>
-                                <p class="text-xs text-neutral-500">Einfach per WhatsApp oder SMS versenden &ndash; loggt den Klienten direkt ein!</p>
-                            </div>
-                            <div class="mt-4">
-                                <button type="button" onclick={() => copyToClipboard(fullPortalUrl, 'Direkt-Link')} class="orga-button-ghost w-full py-1.5 px-3 text-xs font-bold text-indigo-700 hover:bg-indigo-50">
-                                    🔗 Link kopieren
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- QR-CODE -->
-                        <div class="orga-card-white p-5 border border-neutral-200 flex flex-col items-center justify-between text-center">
-                            <span class="text-xs font-bold text-neutral-500 uppercase tracking-wider block mb-1">QR-Code</span>
-                            <div class="p-2 bg-white rounded-xl border border-neutral-200 shadow-sm my-1">
-                                {#if qrDataUrl}
-                                    <img src={qrDataUrl} alt="QR-Code" class="w-24 h-24 object-contain" />
-                                {/if}
-                            </div>
-                            <button type="button" onclick={triggerPrint} class="orga-button-primary w-full py-1.5 text-xs font-bold mt-2">
-                                🖨️ Als Karte drucken
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- EIGENE WUNSCH-PIN FESTLEGEN -->
-                    <div class="orga-card-white p-5 border border-neutral-200">
-                        <h3 class="text-sm font-bold text-neutral-900 mb-2 flex items-center gap-2">
-                            <span>✏️</span> Eigene Wunsch-PIN festlegen
-                        </h3>
-                        <p class="text-xs text-neutral-500 mb-3">
-                            Möchten Sie eine leicht merkbare PIN für den Klienten hinterlegen (z. B. 4 bis 6 Ziffern)?
-                        </p>
-                        <form onsubmit={(e) => { e.preventDefault(); handleSaveCustomPin(); }} class="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
-                            <input 
-                                type="text"
-                                bind:value={customPinInput}
-                                placeholder="z. B. 123456"
-                                maxlength="12"
-                                class="orga-input-clear py-2 text-sm font-mono max-w-xs"
-                                disabled={isSaving || isLoading}
-                            />
-                            <button 
-                                type="submit" 
-                                disabled={isSaving || isLoading || !customPinInput.trim() || customPinInput.trim() === portalPin}
-                                class="orga-button-primary py-2 px-5 text-xs font-bold shrink-0">
-                                {isSaving ? 'Speichert...' : 'PIN speichern'}
-                            </button>
-                        </form>
-                    </div>
-
-                    <!-- SENIOREN-HINWEIS -->
-                    <div class="bg-indigo-50/60 border border-indigo-100 rounded-2xl p-4 flex items-start gap-3 text-xs text-indigo-950">
-                        <span class="text-xl shrink-0">💡</span>
-                        <div class="space-y-1">
-                            <p class="font-bold">Seniorenfreundlicher Praxis-Tipp:</p>
-                            <p class="text-indigo-900/80 leading-relaxed">
-                                Drucken Sie die <strong>Zugangskarte</strong> mit dem Button oben rechts aus und übergeben Sie sie dem Klienten oder dessen Angehörigen bei Ihrem nächsten Termin. 
-                                Ältere Menschen müssen dadurch kein Passwort tippen, sondern halten einfach ihr Tablet oder Smartphone an den QR-Code.
-                            </p>
-                        </div>
-                    </div>
-
-                </div>
+                <PortalAccessManageView 
+                    {accessState}
+                    {copiedPin}
+                    {copiedLink}
+                    onCopyPin={handleCopyPin}
+                    onCopyLink={handleCopyLink}
+                    onOpenWhatsApp={handleOpenWhatsApp}
+                    onTriggerPrint={triggerPrint}
+                />
             {/if}
         </div>
     </div>
-    
-    <QuickAccessMailModal bind:this={quickMailModal} />
 </dialog>
+
+<!-- Quick-Mail Vorlage Dialog -->
+<QuickAccessMailModal bind:this={quickMailModal} />

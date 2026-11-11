@@ -4,6 +4,12 @@ import { GoogleGenAI, Type } from '@google/genai';
 import crypto from 'crypto';
 import PocketBase from 'pocketbase';
 import { env } from '$env/dynamic/private';
+import {
+    buildCacheOptimizedPrompt,
+    getAvailableFrontendModels,
+    recordFrontendModelRequest,
+    markFrontendModelFailure
+} from '$lib/utils/tokenSaverEngine';
 
 const PB_URL = process.env.POCKETBASE_URL || 'http://127.0.0.1:8090';
 
@@ -37,7 +43,6 @@ export const POST: RequestHandler = async ({ request }) => {
 
         // 1. Caching & Idempotenz Prüfung
         if (!force_refresh) {
-            // A: Direkte Prüfung über Datensatz-ID
             if (inquiry_id) {
                 try {
                     const existingInquiry = await pbAdmin.collection('inquiries').getOne(inquiry_id, { requestKey: null });
@@ -52,7 +57,6 @@ export const POST: RequestHandler = async ({ request }) => {
                 } catch {}
             }
 
-            // B: Globale Prüfung über Content-Hash
             try {
                 const cached = await pbAdmin.collection('inquiries').getFirstListItem(
                     `content_hash = "${contentHash}" && ai_processed = true`,
@@ -69,7 +73,7 @@ export const POST: RequestHandler = async ({ request }) => {
             } catch {}
         }
 
-        // 2. Kein Cache vorhanden -> Gemini API Call vorbereiten
+        // 2. Gemini API Call mit Rate-Limit-Guard (High-Quota Flash-Lite Kaskade)
         const apiKey = env.GEMINI_API_KEY || process.env.GEMINI_API_KEY;
         if (!apiKey) {
             throw error(500, 'GEMINI_API_KEY ist serverseitig nicht konfiguriert.');
@@ -79,78 +83,58 @@ export const POST: RequestHandler = async ({ request }) => {
         const nowIso = new Date().toISOString();
         const nowFormatted = new Date().toLocaleString('de-DE', { timeZone: 'Europe/Berlin' });
 
-        const prompt = `Du bist ein intelligenter KI-Assistent für das Assistenz- und Betreuungsunternehmen "Seniorenassistenz Jenzsch" (OrgaFlow).
-Analysiere die folgende unstrukturierte Kundenanfrage (z. B. aus einer E-Mail, einem Kontaktformular oder einer Sprachnotiz).
+        const staticSystem = `Du bist ein intelligenter Assistent für das Assistenz- und Betreuungsunternehmen "Seniorenassistenz Jenzsch" (OrgaFlow).
+Analysiere eine unstrukturierte Kundenanfrage (E-Mail, Kontaktformular, Sprachnotiz) und extrahiere strukturierte Daten.
+Konvertiere relative Datumsangaben ("nächsten Dienstag 14 Uhr", "übermorgen Vormittag") in valide ISO-8601 Daten.
+Antworte ausschließlich mit dem geforderten JSON-Schema. Kein Vorgeplänkel.`;
 
-Aktueller Zeitpunkt: ${nowFormatted} (${nowIso}).
-Konvertiere relative Datums- oder Zeitangaben (z. B. "nächsten Dienstag 14 Uhr", "übermorgen Vormittag", "am 15. des Monats") basierend auf diesem aktuellen Zeitpunkt in ein valides ISO-8601 Datum (z. B. 2026-09-08T14:00:00.000Z).
-
+        const dynamicQuery = `Aktueller Zeitpunkt: ${nowFormatted} (${nowIso}).
 Text der Anfrage:
 """
 ${trimmedText}
-"""
-`;
+"""`;
 
-        const candidateModels = ['gemini-2.5-flash', 'gemini-3.5-flash', 'gemini-flash-latest', 'gemini-3.5-flash-lite'];
+        const { systemPart, userPart } = buildCacheOptimizedPrompt(staticSystem, dynamicQuery, { skipEnvelope: true });
+        const candidateModels = getAvailableFrontendModels();
         let aiResult: any = null;
 
         for (const modelName of candidateModels) {
             try {
+                recordFrontendModelRequest(modelName);
                 const response = await ai.models.generateContent({
                     model: modelName,
-                    contents: prompt,
+                    contents: userPart,
                     config: {
+                        systemInstruction: systemPart,
                         responseMimeType: 'application/json',
                         responseSchema: {
                             type: Type.OBJECT,
                             properties: {
-                                clientName: { 
-                                    type: Type.STRING, 
-                                    description: 'Vollständiger Name des Klienten bzw. Anfragenden' 
-                                },
+                                clientName: { type: Type.STRING },
                                 contactInfo: {
                                     type: Type.OBJECT,
                                     properties: {
-                                        email: { type: Type.STRING, description: 'E-Mail-Adresse oder leer' },
-                                        phone: { type: Type.STRING, description: 'Telefon- oder Mobilnummer oder leer' }
+                                        email: { type: Type.STRING },
+                                        phone: { type: Type.STRING }
                                     },
                                     required: ['email', 'phone']
                                 },
                                 category: {
                                     type: Type.STRING,
-                                    enum: ['Erstberatung', 'Begleitung', 'Alltagshilfe', 'Verhinderungspflege', 'Sonstiges'],
-                                    description: 'Kategorie der gewünschten Unterstützung'
+                                    enum: ['Erstberatung', 'Begleitung', 'Alltagshilfe', 'Verhinderungspflege', 'Sonstiges']
                                 },
                                 urgency: {
                                     type: Type.STRING,
-                                    enum: ['low', 'medium', 'high'],
-                                    description: 'Dringlichkeitsstufe'
+                                    enum: ['low', 'medium', 'high']
                                 },
-                                appointmentRequested: {
-                                    type: Type.BOOLEAN,
-                                    description: 'Ob in der Anfrage ein konkreter Termin gewünscht wird'
-                                },
-                                preferredDate: {
-                                    type: Type.STRING,
-                                    description: 'Valides ISO-8601 Datum/Uhrzeit bezogen auf das aktuelle Tagesdatum oder null'
-                                },
-                                summary: {
-                                    type: Type.STRING,
-                                    description: 'Prägnante Zusammenfassung des Anliegens in 1-2 Sätzen'
-                                },
-                                suggestedResponse: {
-                                    type: Type.STRING,
-                                    description: 'Freundlicher und professioneller E-Mail-Antwortentwurf für eine Seniorenassistenz'
-                                }
+                                appointmentRequested: { type: Type.BOOLEAN },
+                                preferredDate: { type: Type.STRING },
+                                summary: { type: Type.STRING },
+                                suggestedResponse: { type: Type.STRING }
                             },
                             required: [
-                                'clientName',
-                                'contactInfo',
-                                'category',
-                                'urgency',
-                                'appointmentRequested',
-                                'summary',
-                                'suggestedResponse'
+                                'clientName', 'contactInfo', 'category', 'urgency',
+                                'appointmentRequested', 'summary', 'suggestedResponse'
                             ]
                         }
                     }
@@ -160,15 +144,16 @@ ${trimmedText}
                 aiResult = JSON.parse(rawJsonText);
                 break;
             } catch (err: any) {
+                markFrontendModelFailure(modelName, err);
                 console.warn(`[API Process Inquiry] Modell ${modelName} fehlgeschlagen (${err.status || err.message}). Versuche nächstes...`);
             }
         }
 
         if (!aiResult) {
-            return json({ error: 'Kein KI-Modell konnte die Anfrage verarbeiten (Quota erschöpft).' }, { status: 500 });
+            return json({ error: 'Anfrage konnte momentan nicht automatisch analysiert werden.' }, { status: 500 });
         }
 
-        // 3. Automatischer Terminentwurf bei Terminwunsch (status: 'pending')
+        // 3. Automatischer Terminentwurf bei Terminwunsch
         let appointmentId: string | null = null;
         if (aiResult.appointmentRequested && aiResult.preferredDate) {
             try {
@@ -179,7 +164,7 @@ ${trimmedText}
                         description: `[ANFRAGE: ${aiResult.category}] ${aiResult.summary} (Klient: ${aiResult.clientName})`,
                         is_private: false,
                         status: 'pending',
-                        notes: `KI-generierter Terminentwurf aus Kundenanfrage.\n\nKategorie: ${aiResult.category}\nDringlichkeit: ${aiResult.urgency}\nKontakt: ${aiResult.contactInfo?.phone || '-'} / ${aiResult.contactInfo?.email || '-'}\n\nAntwortentwurf:\n${aiResult.suggestedResponse}`
+                        notes: `Terminentwurf aus Kundenanfrage.\n\nKategorie: ${aiResult.category}\nDringlichkeit: ${aiResult.urgency}\nKontakt: ${aiResult.contactInfo?.phone || '-'} / ${aiResult.contactInfo?.email || '-'}\n\nAntwortentwurf:\n${aiResult.suggestedResponse}`
                     });
                     appointmentId = newApp.id;
                 }
@@ -226,6 +211,6 @@ ${trimmedText}
         });
     } catch (err: any) {
         console.error('[AI Inquiry Error]', err);
-        throw error(err.status || 500, err.message || 'Fehler bei der KI-Anfragenverarbeitung.');
+        throw error(err.status || 500, err.message || 'Fehler bei der Anfragenverarbeitung.');
     }
 };

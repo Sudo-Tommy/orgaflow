@@ -20,6 +20,9 @@ const config = {
 				'http://localhost:5173',
 				'https://www.ihre-seniorenassistenz.com'
 			]
+		},
+		version: {
+			pollInterval: 20000
 		}
 	}
 };

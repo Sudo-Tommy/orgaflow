@@ -3,7 +3,7 @@
 </script>
 
 <svelte:head>
-    <title>Privacy Policy | Ihre Seniorenassistenz</title>
+    <title>Privacy Policy | Seniorenassistenz OrgaFlow</title>
 </svelte:head>
 
 <DatenschutzPage />

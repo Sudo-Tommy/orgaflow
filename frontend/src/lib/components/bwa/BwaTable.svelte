@@ -1,6 +1,7 @@
 <script lang="ts">
     import { orgaStore } from "$lib/stores/orgaStore.svelte";
     import { calculateTaxEstimate } from "$lib/services/bwaService.svelte";
+    import { compareInvoicesByDateDesc } from "$lib/utils/invoice";
     let { currentBWA, ytdBWA, viewMode, selectedMonth, selectedQuarter, selectedYear, selectedCompanyId = "all" } = $props<any>();
     function formatCurrency(val: number) { return (val || 0).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' }); }
 
@@ -36,7 +37,7 @@
             if (viewMode === 'monthly') return d.getMonth() + 1 === targetMonth;
             if (viewMode === 'quarterly') return Math.ceil((d.getMonth() + 1) / 3) === targetQuarter;
             return true;
-        });
+        }).sort(compareInvoicesByDateDesc);
     });
 </script>
 
@@ -118,7 +119,7 @@
             <td class="px-6 py-3.5 text-right font-black {curTax.netAfterTaxes >= 0 ? 'text-emerald-400' : 'text-rose-400'}">{formatCurrency(curTax.netAfterTaxes)}</td>
             <td class="px-6 py-3.5 text-right text-slate-300 text-xs font-semibold">{currentBWA.summeErloese ? (curTax.netAfterTaxes / currentBWA.summeErloese * 100).toFixed(2).replace('.', ',') + ' %' : '-'}</td>
             <td class="px-6 py-3.5 text-center text-slate-500">-</td>
-            <td class="px-6 py-3.5 text-right font-black {ytdTax.netAfterTaxes >= 0 ? 'text-emerald-400' : 'text-rose-400'}">{formatCurrency(ytdTax.netAfterTaxes)}</td>
+            <td class="px-6 py-3.5 text-right font-black {ytdTax.netAfterTaxes >= 0 ? 'text-emerald-400' : 'text-rose-400'}">{formatCurrency(ytdBWA.netAfterTaxes)}</td>
             <td class="px-6 py-3.5 text-right text-slate-300 text-xs font-semibold">{ytdBWA.summeErloese ? (ytdTax.netAfterTaxes / ytdBWA.summeErloese * 100).toFixed(2).replace('.', ',') + ' %' : '-'}</td>
             <td class="px-6 py-3.5 text-center text-slate-500">-</td>
         </tr>

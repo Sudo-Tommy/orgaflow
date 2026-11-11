@@ -1,5 +1,26 @@
 # OrgaFlow - Update-Log & Changelog
 
+## [Version 2.0.3] - 2026-11-04
+
+### 1. 👥 Einheitliche Kontakte & Konsolidierung der Pflegepersonen & Vertretungen
+- **Zentrales Adressbuch ohne Daten-Duplikate:** Pflegepersonen, Bevollmächtigte und Betreuer werden nicht mehr als lose Freitexte geführt, sondern sind vollständige Personen im Adressbuch (`contacts`).
+- **Schnelle Rollen-Zuweisung per Klick:** Bei verknüpften Kontakten (in der Klientenakte und im Assistenten „Neuer Klient“) können Rollen flexibel zugewiesen werden:
+  - ⭐ `Hauptansprechpartner/in` (`is_primary`)
+  - 🤝 `Ist Pflegeperson (§ 39 SGB XI)` (`is_careperson`)
+  - 📜 `Rechtliche Vertretung / Vorsorgevollmacht` (`has_power_of_attorney`)
+- **Einmalige Unterschrift pro Person:** Unterschriften werden direkt am jeweiligen Kontakt-Datensatz (`contacts.sign`) gespeichert. Ist eine Person sowohl Pflegeperson als auch Vertretung, genügt eine einzige Unterschrift – in der Klientenakte erscheint dafür nur ein kombinierter Button (`Unterschrift erfassen`), der nach dem Speichern sofort verschwindet.
+- **Aufgeräumte Klientenakte:** Der redundante Tab *„Erbe & Vollmacht“* im Bearbeiten-Modal sowie separate Betreuer-Felder wurden entfernt; alle Bezugspersonen werden einheitlich im Reiter *„Netzwerk“* verwaltet.
+- **Automatische Dokumentenvorlagen:** Alle Platzhalter (`{{careperson.*}}`, `{{inheritor.*}}`, `{{caregiver.*}}`) laden Name, Anschrift und Signatur direkt und konsistent aus dem verknüpften Kontakt.
+- **Vollständige Daten-Migration:** 29 bestehende Klienten-Datensätze wurden in PocketBase automatisch migriert.
+
+### 2. 💬 Omni KI-Support & Problem-Erörterung
+- **Verbot der Bestätigungs-Floskel:** Die Frage *„Habe ich das Problem richtig verstanden?“* wurde systemweit verbannt und serverseitig herausgefiltert.
+- **Gezielte Problemerörterung vor Ticket-Erstellung:** Bei Problemmeldungen fragt Omni in einem kurzen, alltagstauglichen Dialog (immer nur eine präzise Frage bezogen auf die aktuelle Seite) nach dem betroffenen Element und dem gewünschten Ziel, bevor ein Ticket vorbereitet wird.
+- **Erweitertes Korrektur-Handling:** Ein Klick auf *„Nein, weiter erklären“* öffnet eine freundliche Nachfrage (*„Was möchtest du noch ergänzen oder korrigieren?“*).
+- **Robuste Ticket-Verarbeitung:** Anhebung der PocketBase-Textlimits (`annotations_data`) und Härtung des Microservices gegen Timeouts.
+
+---
+
 ## [Version 1.9.1] - 2026-09-03
 
 Dieses Wartungs- und Stabilitäts-Release bringt eine vollständige Härtung der PDF-Export- und Druck-Infrastruktur im gesamten System:

@@ -18,27 +18,101 @@
     --color-brand-900: #134e4a;
     --color-brand-950: #042f2e;
 
-    /* Primary Accent Colors - Frisches, modernes Indigo */
-    --color-primary-50: #eef2ff;
-    --color-primary-100: #e0e7ff;
-    --color-primary-200: #c7d2fe;
-    --color-primary-300: #a5b4fc;
-    --color-primary-400: #818cf8;
-    --color-primary-500: #6366f1;
-    --color-primary-600: #4f46e5;
-    --color-primary-700: #4338ca;
-    --color-primary-800: #3730a3;
-    --color-primary-900: #312e81;
-    --color-primary-950: #1e1b4b;
+    /* Primary Accent Colors - Sattes OrgaFlow-Violett */
+    --color-primary-50: #f5f3ff;
+    --color-primary-100: #ede9fe;
+    --color-primary-200: #ddd6fe;
+    --color-primary-300: #c4b5fd;
+    --color-primary-400: #a78bfa;
+    --color-primary-500: #8b5cf6;
+    --color-primary-600: #7c3aed;
+    --color-primary-700: #6d28d9;
+    --color-primary-800: #5b21b6;
+    --color-primary-900: #4c1d95;
+    --color-primary-950: #2e1065;
+
+    /* ============================================================ */
+    /* SYSTEMWEITE FARB-VEREINHEITLICHUNG (OrgaFlow-Theming)          */
+    /* Alle Grautöne -> Slate, Indigo/Purple -> Violett,               */
+    /* Red -> Rose, Green -> Emerald, Yellow/Orange -> Amber           */
+    /* ============================================================ */
+
+    /* Slate-Basis mit tiefem Marine-Ton für den Dunkelmodus */
+    --color-slate-950: #0b1120;
+
+    /* Grautöne neutral / gray / zinc / stone -> Slate */
+    --color-neutral-50: #f8fafc;  --color-gray-50: #f8fafc;  --color-zinc-50: #f8fafc;  --color-stone-50: #f8fafc;
+    --color-neutral-100: #f1f5f9; --color-gray-100: #f1f5f9; --color-zinc-100: #f1f5f9; --color-stone-100: #f1f5f9;
+    --color-neutral-200: #e2e8f0; --color-gray-200: #e2e8f0; --color-zinc-200: #e2e8f0; --color-stone-200: #e2e8f0;
+    --color-neutral-300: #cbd5e1; --color-gray-300: #cbd5e1; --color-zinc-300: #cbd5e1; --color-stone-300: #cbd5e1;
+    --color-neutral-400: #94a3b8; --color-gray-400: #94a3b8; --color-zinc-400: #94a3b8; --color-stone-400: #94a3b8;
+    --color-neutral-500: #64748b; --color-gray-500: #64748b; --color-zinc-500: #64748b; --color-stone-500: #64748b;
+    --color-neutral-600: #475569; --color-gray-600: #475569; --color-zinc-600: #475569; --color-stone-600: #475569;
+    --color-neutral-700: #334155; --color-gray-700: #334155; --color-zinc-700: #334155; --color-stone-700: #334155;
+    --color-neutral-800: #1e293b; --color-gray-800: #1e293b; --color-zinc-800: #1e293b; --color-stone-800: #1e293b;
+    --color-neutral-900: #0f172a; --color-gray-900: #0f172a; --color-zinc-900: #0f172a; --color-stone-900: #0f172a;
+    --color-neutral-950: #0b1120; --color-gray-950: #0b1120; --color-zinc-950: #0b1120; --color-stone-950: #0b1120;
+
+    /* Hauptaktionen: Indigo & Purple -> Violett */
+    --color-indigo-50: #f5f3ff;  --color-purple-50: #f5f3ff;
+    --color-indigo-100: #ede9fe; --color-purple-100: #ede9fe;
+    --color-indigo-200: #ddd6fe; --color-purple-200: #ddd6fe;
+    --color-indigo-300: #c4b5fd; --color-purple-300: #c4b5fd;
+    --color-indigo-400: #a78bfa; --color-purple-400: #a78bfa;
+    --color-indigo-500: #8b5cf6; --color-purple-500: #8b5cf6;
+    --color-indigo-600: #7c3aed; --color-purple-600: #7c3aed;
+    --color-indigo-700: #6d28d9; --color-purple-700: #6d28d9;
+    --color-indigo-800: #5b21b6; --color-purple-800: #5b21b6;
+    --color-indigo-900: #4c1d95; --color-purple-900: #4c1d95;
+    --color-indigo-950: #2e1065; --color-purple-950: #2e1065;
+
+    /* Fehler / Löschen / Abgelehnt: Red -> Rose */
+    --color-red-50: #fff1f2;  --color-red-100: #ffe4e6; --color-red-200: #fecdd3;
+    --color-red-300: #fda4af; --color-red-400: #fb7185; --color-red-500: #f43f5e;
+    --color-red-600: #e11d48; --color-red-700: #be123c; --color-red-800: #9f1239;
+    --color-red-900: #881337; --color-red-950: #4c0519;
+
+    /* Aktive Zustände / Bezahlt: Green -> Emerald */
+    --color-green-50: #ecfdf5;  --color-green-100: #d1fae5; --color-green-200: #a7f3d0;
+    --color-green-300: #6ee7b7; --color-green-400: #34d399; --color-green-500: #10b981;
+    --color-green-600: #059669; --color-green-700: #047857; --color-green-800: #065f46;
+    --color-green-900: #064e3b; --color-green-950: #022c22;
+
+    /* Wichtige Hinweise / Fällig: Yellow & Orange -> warmes Bernstein */
+    --color-yellow-50: #fffbeb;  --color-orange-50: #fffbeb;
+    --color-yellow-100: #fef3c7; --color-orange-100: #fef3c7;
+    --color-yellow-200: #fde68a; --color-orange-200: #fde68a;
+    --color-yellow-300: #fcd34d; --color-orange-300: #fcd34d;
+    --color-yellow-400: #fbbf24; --color-orange-400: #fbbf24;
+    --color-yellow-500: #f59e0b; --color-orange-500: #f59e0b;
+    --color-yellow-600: #d97706; --color-orange-600: #d97706;
+    --color-yellow-700: #b45309; --color-orange-700: #b45309;
+    --color-yellow-800: #92400e; --color-orange-800: #92400e;
+    --color-yellow-900: #78350f; --color-orange-900: #78350f;
+    --color-yellow-950: #451a03; --color-orange-950: #451a03;
+
+    /* Portal- & Infoanzeigen: Sky -> Cyan */
+    --color-sky-50: #ecfeff;  --color-sky-100: #cffafe; --color-sky-200: #a5f3fc;
+    --color-sky-300: #67e8f9; --color-sky-400: #22d3ee; --color-sky-500: #06b6d4;
+    --color-sky-600: #0891b2; --color-sky-700: #0e7490; --color-sky-800: #155e75;
+    --color-sky-900: #164e63; --color-sky-950: #083344;
 }
 
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* 3. Basis-HTML & Body Setup */
 @layer base {
+    /* ------------------------------------------------------------- */
+    /* GLITCH-FREIER THEME-WECHSEL (VIEW TRANSITIONS & CSS FADE)     */
+    /* ------------------------------------------------------------- */
+    ::view-transition-old(root),
+    ::view-transition-new(root) {
+        animation-duration: 0.22s;
+        animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
     html {
         color-scheme: light dark;
-        transition: background-color 0.2s ease, color 0.2s ease;
     }
 
     html.dark, html.theme-negative {
@@ -47,19 +121,59 @@
 
     html, body {
         @apply antialiased min-h-screen font-sans;
-        background-color: #f8fafc; /* Klares, modernes Slate-50 */
-        color: #0f172a; /* Klares Slate-900 */
+        background-color: var(--app-bg, #f8fafc); /* Dynamisch von warmem Sonnenaufgang über klares Weiß bis Slate-50 */
+        color: #0f172a; /* Klares Slate-900 für besten Kontrast */
         -webkit-text-size-adjust: 100%;
-        @apply selection:bg-indigo-600 selection:text-white;
+        @apply selection:bg-violet-600 selection:text-white;
         touch-action: manipulation;
+        transition: background-color 0.25s ease, color 0.2s ease;
     }
 
     html.dark,
     html.theme-negative,
     html.dark body,
     html.theme-negative body {
-        background-color: #020617; /* Reines, tiefes Slate-950 */
-        color: #f8fafc; /* Klares Slate-50 */
+        background-color: var(--app-bg-dark, #0b1120); /* Tiefes Marine-Schiefer */
+        color: #f8fafc; /* Klares, strahlendes Slate-50 für maximalen Kontrast */
+    }
+
+    /* Kontrollierter Fallback-Fade für Haupt-Layoutstrukturen ohne Universal-Selektor (*) */
+    html.theme-transitioning,
+    html.theme-transitioning body,
+    html.theme-transitioning aside,
+    html.theme-transitioning nav,
+    html.theme-transitioning header,
+    html.theme-transitioning dialog {
+        transition: background-color 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                    border-color 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                    color 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        transition-delay: 0s !important;
+    }
+
+    /* ------------------------------------------------------------- */
+    /* DYNAMISCHE TAGESZEIT-ATMOSPHÄRE (SONNENAUFGANG / MITTAG / SONNENUNTERGANG / NACHT) */
+    /* ------------------------------------------------------------- */
+    #ambient-sun-overlay {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 0;
+        background: var(--sun-gradient, none);
+        opacity: var(--sun-warmth, 0);
+        mix-blend-mode: soft-light;
+        transition: opacity 1s cubic-bezier(0.4, 0, 0.2, 1), background 1s cubic-bezier(0.4, 0, 0.2, 1);
+        will-change: opacity;
+    }
+
+    #ambient-horizon-glow {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 1;
+        background: var(--sun-horizon-gradient, none);
+        opacity: var(--sun-horizon-opacity, 0);
+        transition: opacity 2s cubic-bezier(0.4, 0, 0.2, 1), background 2s cubic-bezier(0.4, 0, 0.2, 1);
+        will-change: opacity;
     }
 
     /* Native <dialog> Backdrop Styling (modern, dezent, unaufdringlich) */
@@ -69,7 +183,90 @@
         -webkit-backdrop-filter: blur(8px);
     }
 
+    /* Universelle Zentrierung & kompakte Viewport-Begrenzung für alle Modale */
+    dialog {
+        position: fixed !important;
+        inset: 0 !important;
+        margin: auto !important;
+        width: auto;
+        max-width: min(56rem, calc(100vw - 2rem)) !important;
+        height: auto !important;
+        max-height: calc(100dvh - 2rem) !important;
+        max-height: calc(100vh - 2rem) !important;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
+    }
+
+    dialog:not([open]) {
+        display: none !important;
+    }
+
+    dialog[open] {
+        position: fixed !important;
+        inset: 0 !important;
+        margin: auto !important;
+        width: auto;
+        max-width: min(56rem, calc(100vw - 2rem)) !important;
+        height: auto !important;
+        max-height: calc(100dvh - 2rem) !important;
+        max-height: calc(100vh - 2rem) !important;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* Adaptive Größenstufen für Dialogfenster */
+    dialog:where([class*="max-w-xs"], [class*="max-w-sm"]) {
+        max-width: min(24rem, calc(100vw - 2rem)) !important;
+    }
+    dialog:where([class*="max-w-md"]) {
+        max-width: min(28rem, calc(100vw - 2rem)) !important;
+    }
+    dialog:where([class*="max-w-lg"]) {
+        max-width: min(32rem, calc(100vw - 2rem)) !important;
+    }
+    dialog:where([class*="max-w-xl"]) {
+        max-width: min(36rem, calc(100vw - 2rem)) !important;
+    }
+    dialog:where([class*="max-w-2xl"]) {
+        max-width: min(42rem, calc(100vw - 2rem)) !important;
+    }
+    dialog:where([class*="max-w-3xl"]) {
+        max-width: min(48rem, calc(100vw - 2rem)) !important;
+    }
+    dialog:where([class*="max-w-4xl"]) {
+        max-width: min(56rem, calc(100vw - 2rem)) !important;
+    }
+    dialog:where([class*="max-w-5xl"]) {
+        max-width: min(64rem, calc(100vw - 2rem)) !important;
+    }
+    dialog:where([class*="max-w-6xl"], [class*="max-w-7xl"]) {
+        max-width: min(74rem, calc(100vw - 2rem)) !important;
+    }
+
+    @media screen and (max-width: 640px) {
+        dialog,
+        dialog[open] {
+            width: calc(100vw - 1rem) !important;
+            max-width: calc(100vw - 1rem) !important;
+            max-height: calc(100dvh - 1rem) !important;
+            max-height: calc(100vh - 1rem) !important;
+            margin: auto !important;
+        }
+    }
+
     /* Standard-Scrollbar global (elegant, modern und schmal) */
+    * {
+        scrollbar-width: thin;
+        scrollbar-color: #cbd5e1 transparent;
+    }
+
+    html.dark *, html.theme-negative * {
+        scrollbar-color: #475569 transparent;
+    }
+
     ::-webkit-scrollbar {
         width: 6px;
         height: 6px;
@@ -78,7 +275,30 @@
         background: transparent;
     }
     ::-webkit-scrollbar-thumb {
-        @apply bg-slate-300 dark:bg-slate-700 rounded-full hover:bg-slate-400 dark:hover:bg-slate-600 transition-colors;
+        background-color: #cbd5e1;
+        border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+        background-color: #94a3b8;
+    }
+
+    html.dark ::-webkit-scrollbar-thumb,
+    html.theme-negative ::-webkit-scrollbar-thumb {
+        background-color: #475569;
+    }
+    html.dark ::-webkit-scrollbar-thumb:hover,
+    html.theme-negative ::-webkit-scrollbar-thumb:hover {
+        background-color: #64748b;
+    }
+
+    /* Verhindert Layout-Shift beim Einblenden von Scrollbars */
+    html {
+        scrollbar-gutter: stable;
+    }
+
+    /* Globale Signatur-Darstellung bei High-Contrast / Negative Themes */
+    .theme-negative .safe-signature {
+        filter: invert(1) hue-rotate(180deg);
     }
 
     /* Fix für iOS PWA (Homescreen): Textfelder immer auswählbar machen */
@@ -95,10 +315,7 @@
         }
     }
 
-    /* Fix für native <dialog>-Elemente */
-    dialog:not([open]) {
-        display: none !important;
-    }
+
 
     /* Globale Tabellen-Schrift- und Lesbarkeits-Optimierung */
     table {
@@ -119,18 +336,19 @@
 /* 4. Custom Utilities für softe Animationen & Glassmorphism */
 @layer utilities {
     .animate-enter {
-        animation: slideFadeUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-        opacity: 0;
-        transform: translateY(12px);
+        animation: slideFadeUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+        transform: none !important;
     }
     .delay-100 { animation-delay: 100ms; }
     .delay-200 { animation-delay: 200ms; }
     .delay-300 { animation-delay: 300ms; }
 
     @keyframes slideFadeUp {
+        from {
+            opacity: 0;
+        }
         to {
             opacity: 1;
-            transform: translateY(0);
         }
     }
 
@@ -157,7 +375,10 @@
     /* --- KARTEN & CONTAINER --- */
     .orga-card-white,
     .orga-dashboard-card,
-    .orga-client-card,
+    .orga-client-card {
+        @apply bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs hover:shadow-md dark:shadow-none hover:border-slate-300 dark:hover:border-slate-700 transition-all duration-200;
+    }
+
     .orga-calendar-wrapper {
         @apply bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs hover:shadow-md dark:shadow-none hover:border-slate-300 dark:hover:border-slate-700 overflow-hidden transition-all duration-200;
     }
@@ -166,76 +387,78 @@
         @apply bg-slate-900 text-slate-100 border border-slate-800 rounded-2xl shadow-xl overflow-hidden;
     }
 
-    /* --- MODALE & DIALOGE --- */
+    /* --- MODALE & DIALOGE (DESIGN-SYSTEM GROUND TRUTH) --- */
     .orga-modal-backdrop {
-        @apply fixed inset-0 z-50 bg-slate-950/65 backdrop-blur-md flex items-center justify-center p-3 sm:p-6;
+        @apply fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 overflow-hidden;
     }
 
     .orga-modal-window {
-        @apply bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col transition-all duration-200;
+        @apply bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-2xl overflow-y-auto overflow-x-hidden flex flex-col transition-all duration-200 max-h-[85dvh] h-auto w-full max-w-xl;
     }
 
     .orga-modal-header {
-        @apply px-5 sm:px-8 py-4 sm:py-5 border-b border-slate-200/80 dark:border-slate-800 shrink-0 sticky top-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md z-20 flex justify-between items-center;
+        @apply px-4 sm:px-5 py-3 sm:py-3.5 border-b border-slate-100 dark:border-slate-800 shrink-0 bg-white dark:bg-slate-900 z-20 flex justify-between items-center;
     }
 
     .orga-modal-title {
-        @apply text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100 tracking-tight;
+        @apply text-sm sm:text-base font-bold text-slate-900 dark:text-white flex items-center gap-2;
     }
 
     .orga-modal-subtitle {
-        @apply text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium mt-0.5;
+        @apply text-xs text-slate-500 dark:text-slate-400 font-medium;
     }
 
     .orga-modal-close {
-        @apply w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center transition-colors shrink-0 cursor-pointer;
+        @apply w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 flex items-center justify-center transition cursor-pointer shrink-0;
+    }
+
+    .orga-modal-section-title {
+        @apply text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2.5;
     }
 
     .orga-modal-body {
-        @apply flex-1 overflow-y-auto p-5 sm:p-7 bg-slate-50/50 dark:bg-slate-950/40 text-slate-800 dark:text-slate-100;
+        @apply flex-1 p-4 sm:p-5 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100;
     }
 
     .orga-modal-footer {
-        @apply px-5 sm:px-8 py-4 border-t border-slate-200/80 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md flex items-center justify-end gap-3 shrink-0;
+        @apply px-4 sm:px-5 py-3 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-end gap-2.5 shrink-0 z-20;
+        padding-bottom: max(env(safe-area-inset-bottom, 0px), 0.75rem);
     }
 
-    /* --- EINGABEFELDER --- */
-    .orga-input-clear {
-        @apply bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 border border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 rounded-xl 
-               px-3.5 py-2.5 min-h-[44px] w-full transition-all text-base sm:text-sm font-medium
-               focus:outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600/20 dark:focus:border-indigo-500 dark:focus:ring-indigo-500/20
-               placeholder:text-slate-400 dark:placeholder:text-slate-500 disabled:opacity-50 disabled:bg-slate-100 dark:disabled:bg-slate-800/50;
+    /* --- MENÜS, DROPDOWNS & NAVIGATION (DESIGN-SYSTEM GROUND TRUTH) --- */
+    .orga-dropdown-container {
+        @apply rounded-2xl bg-white dark:bg-slate-900 shadow-xl border border-slate-200 dark:border-slate-800 p-1.5;
     }
 
+    .orga-nav-item {
+        @apply rounded-xl px-3 py-2 text-xs font-medium transition flex items-center gap-3 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100;
+    }
+
+    .orga-nav-item-active {
+        @apply rounded-xl px-3 py-2 text-xs font-semibold transition flex items-center gap-3 bg-violet-50 text-violet-700 border border-violet-200/60 dark:bg-violet-950/50 dark:text-violet-300 dark:border-violet-800 dark:shadow-[0_0_14px_-6px_rgba(139,92,246,0.6)];
+    }
+
+    /* --- FORMULARE & INPUTS (DESIGN-SYSTEM GROUND TRUTH) --- */
+    .orga-input-clear,
     .orga-input {
-        @apply bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 border border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 rounded-xl 
-               px-3 py-2 text-sm font-medium
-               focus:outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600/20 dark:focus:border-indigo-500 dark:focus:ring-indigo-500/20
-               placeholder:text-slate-400 dark:placeholder:text-slate-500;
+        @apply rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-3 py-2.5 text-xs text-slate-800 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:outline-violet-600 transition w-full;
     }
 
-    .orga-input-dark {
-        @apply bg-slate-800 text-slate-100 border border-slate-700 hover:border-slate-600 rounded-xl 
-               px-3.5 py-2.5 min-h-[44px] w-full transition-all text-base sm:text-sm font-medium
-               focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 placeholder:text-slate-400;
+    .orga-label {
+        @apply block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1;
     }
 
-    /* --- BUTTONS --- */
+    /* --- BUTTONS (DESIGN-SYSTEM GROUND TRUTH) --- */
     .orga-button-primary {
-        @apply inline-flex justify-center items-center gap-2 bg-indigo-600 hover:bg-indigo-700 active:scale-98 text-white font-semibold 
-               py-2.5 px-5 min-h-[44px] rounded-xl transition-all duration-200 shadow-xs hover:shadow-indigo-600/25 cursor-pointer
-               disabled:opacity-50 disabled:pointer-events-none disabled:shadow-none;
+        @apply bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs font-semibold px-4 py-2 shadow-sm dark:shadow-[0_0_18px_-4px_rgba(139,92,246,0.55)] transition inline-flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:pointer-events-none;
     }
 
     .orga-button-ghost {
-        @apply inline-flex justify-center items-center gap-2 bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-700/90 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700
-               font-semibold py-2.5 px-4 min-h-[44px] rounded-xl transition-all duration-200 shadow-2xs hover:border-slate-400 active:scale-98 cursor-pointer;
+        @apply bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold px-4 py-2 transition inline-flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50;
     }
 
     .orga-button-danger {
-        @apply inline-flex justify-center items-center gap-2 bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white border border-rose-200 hover:border-rose-600
-               dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900/60 dark:hover:bg-rose-600 dark:hover:text-white
-               font-semibold py-2.5 px-4 min-h-[44px] rounded-xl transition-all duration-200 shadow-2xs active:scale-98 cursor-pointer;
+        @apply bg-rose-50 border border-rose-200 text-rose-600 hover:bg-rose-100 dark:bg-rose-950/40 dark:border-rose-900/60 dark:text-rose-300 dark:hover:bg-rose-900/60 rounded-xl text-xs font-semibold px-4 py-2 transition inline-flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50;
     }
 
     /* --- TABELLEN STYLING (HOHE LESBARKEIT & KONTRAST) --- */
@@ -271,52 +494,97 @@
     .custom-scrollbar {
         scrollbar-width: thin;
         scrollbar-color: #cbd5e1 transparent;
+        -webkit-overflow-scrolling: touch;
     }
     .custom-scrollbar::-webkit-scrollbar {
-        width: 5px;
-        height: 5px;
+        width: 6px;
+        height: 6px;
     }
     .custom-scrollbar::-webkit-scrollbar-track {
         background: transparent;
     }
     .custom-scrollbar::-webkit-scrollbar-thumb {
         background-color: #cbd5e1;
-        border-radius: 20px;
+        border-radius: 9999px;
+        transition: background-color 0.15s ease;
     }
-    :global(.theme-negative) .custom-scrollbar::-webkit-scrollbar-thumb,
-    :global(.dark) .custom-scrollbar::-webkit-scrollbar-thumb {
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+        background-color: #94a3b8;
+    }
+    .theme-negative .custom-scrollbar::-webkit-scrollbar-thumb,
+    .dark .custom-scrollbar::-webkit-scrollbar-thumb {
         background-color: #475569;
     }
+    .theme-negative .custom-scrollbar::-webkit-scrollbar-thumb:hover,
+    .dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+        background-color: #64748b;
+    }
 
-    :global(.theme-negative) th,
-    :global(.theme-negative) .orga-table th {
+    .dark th,
+    .dark .orga-table th,
+    .theme-negative th,
+    .theme-negative .orga-table th {
         color: #f1f5f9 !important;
     }
-    :global(.theme-negative) td,
-    :global(.theme-negative) .orga-table td {
-        color: #ffffff !important;
+    .dark td,
+    .dark .orga-table td,
+    .theme-negative td,
+    .theme-negative .orga-table td {
+        color: #f8fafc !important;
+    }
+
+    /* Garantierter Text- und Schriftkontrast für Formulare & Inputs */
+    html.dark input,
+    html.dark textarea,
+    html.dark select,
+    html.theme-negative input,
+    html.theme-negative textarea,
+    html.theme-negative select {
+        color-scheme: dark;
+        color: #f8fafc;
+    }
+
+    html:not(.dark):not(.theme-negative) input,
+    html:not(.dark):not(.theme-negative) textarea,
+    html:not(.dark):not(.theme-negative) select {
+        color-scheme: light;
+        color: #0f172a;
+    }
+
+    ::placeholder {
+        color: #94a3b8;
+        opacity: 0.9;
+    }
+    html.dark ::placeholder,
+    html.theme-negative ::placeholder {
+        color: #94a3b8;
+        opacity: 0.9;
     }
 
     /* --- LAYOUT --- */
     .orga-layout-wrapper {
-        @apply min-h-screen bg-slate-50/50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans antialiased selection:bg-indigo-500/30 flex flex-col relative;
+        @apply min-h-screen bg-slate-50/50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans antialiased selection:bg-violet-500/30 flex flex-col relative;
     }
 
     .orga-layout-content {
         @apply relative w-full h-full flex-1 flex flex-col;
     }
 
-    /* --- GENERISCHE SEITEN-LAYOUTS --- */
+    /* --- GENERISCHE SEITEN-LAYOUTS (NATIVE APP HEADER) --- */
     .orga-page-header {
-        @apply mb-6 md:mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4;
+        @apply relative z-30 pt-3 sm:pt-4 pb-3 sm:pb-5 mb-4 sm:mb-6 flex flex-col items-center text-center sm:flex-row sm:items-center sm:justify-between sm:text-left gap-3 sm:gap-4;
+    }
+
+    .orga-page-header > div:first-child {
+        @apply w-full sm:w-auto flex flex-col items-center sm:items-start text-center sm:text-left;
     }
 
     .orga-page-title {
-        @apply text-2xl sm:text-3xl font-black text-slate-900 dark:text-slate-100 tracking-tight;
+        @apply text-2xl sm:text-3xl md:text-4xl font-black tracking-tight text-slate-900 dark:text-white text-center sm:text-left leading-tight;
     }
 
     .orga-page-subtitle {
-        @apply text-slate-500 dark:text-slate-400 text-xs sm:text-sm mt-1;
+        @apply text-slate-500 dark:text-slate-400 text-xs sm:text-sm font-medium mt-1 leading-relaxed text-center sm:text-left;
     }
 
     .orga-filter-bar {
@@ -327,17 +595,17 @@
         @apply grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 xl:gap-6;
     }
 
-    /* --- DASHBOARD --- */
+    /* --- DASHBOARD (NATIVE APP HEADER) --- */
     .orga-dashboard-header {
-        @apply mb-6;
+        @apply pt-3 sm:pt-4 pb-3 sm:pb-5 mb-4 sm:mb-6;
     }
 
     .orga-dashboard-title {
-        @apply text-2xl sm:text-3xl font-black text-slate-900 dark:text-slate-100 tracking-tight;
+        @apply text-2xl sm:text-3xl md:text-4xl font-black tracking-tight text-slate-900 dark:text-white text-center sm:text-left leading-tight;
     }
 
     .orga-dashboard-subtitle {
-        @apply text-slate-500 dark:text-slate-400 text-xs sm:text-sm mt-1;
+        @apply text-slate-500 dark:text-slate-400 text-xs sm:text-sm font-medium mt-1 leading-relaxed text-center sm:text-left;
     }
 
     .orga-dashboard-grid {
@@ -405,10 +673,64 @@
         background-image: 
             linear-gradient(to right, rgba(0,0,0,0.03) 1px, transparent 1px), 
             linear-gradient(to bottom, rgba(0,0,0,0.03) 1px, transparent 1px),
-            linear-gradient(to bottom, rgba(79, 70, 229, 0.3) 2px, transparent 2px);
+            linear-gradient(to bottom, rgba(124, 58, 237, 0.3) 2px, transparent 2px);
         background-size: 20px 20px, 20px 20px, 100% 1123px;
         position: relative;
     }
+}
+
+/* ------------------------------------------------------------- */
+/* ZERO-INNER-SCROLL & DYNAMISCHES AUTO-GROW STANDARD             */
+/* ------------------------------------------------------------- */
+@layer utilities {
+    textarea.auto-grow,
+    textarea[data-auto-grow] {
+        field-sizing: content;
+        overflow-y: hidden !important;
+        resize: none !important;
+    }
+
+    .zero-inner-scroll {
+        overflow: visible !important;
+        max-height: none !important;
+        height: auto !important;
+    }
+
+    /* Modals im Zero-Inner-Scroll Modus: Kompakt, zentriert & am Stück scrollbar */
+    dialog.zero-inner-scroll-modal {
+        width: calc(100vw - 1.5rem);
+        height: auto !important;
+        max-height: 94vh !important;
+        max-height: 94dvh !important;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
+        touch-action: pan-y;
+        isolation: isolate;
+        backface-visibility: hidden;
+        -webkit-backface-visibility: hidden;
+    }
+
+    dialog.zero-inner-scroll-modal:where(.overflow-hidden, [class*="overflow-hidden"]) {
+        overflow-y: hidden !important;
+        overflow: hidden !important;
+    }
+
+    @media (min-width: 640px) {
+        dialog.zero-inner-scroll-modal {
+            width: calc(100vw - 3rem);
+        }
+    }
+}
+
+/* --- LANDINGPAGE SCHUTZ: Keine internen Feedback-Buttons anzeigen --- */
+body:has(#landing-page-root) #feedback-widget-button,
+body:has(#landing-page-root) #feedback-widget-button[popover] {
+    display: none !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    visibility: hidden !important;
 }
 
 /* --- GLOBALE PRINT- & PDF-EXPORT STYLES --- */
@@ -444,7 +766,8 @@
     header,
     .orga-page-header,
     [class*="print:hidden"],
-    .toast-layer {
+    .toast-layer,
+    dialog:not([open]) {
         display: none !important;
     }
 
@@ -461,4 +784,151 @@
     tfoot {
         display: table-footer-group;
     }
+}
+
+/* ============================================================= */
+/* MOBILE TOUCH, LANDSCAPE & ZERO-INNER-SCROLL ERGONOMICS        */
+/* ============================================================= */
+
+/* Garantierte Mindestgröße 44x44px für barrierefreie Touch-Bedienung */
+.touch-target {
+    min-height: 44px;
+    min-width: 44px;
+    touch-action: manipulation;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+/* Zero-Inner-Scroll: Verhindert elastic rubber-banding auf internen Containern */
+.zero-inner-scroll {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+}
+
+/* Nativer HTML5 Dialog & Top-Layer Backdrop */
+dialog {
+    border: none;
+    background: transparent;
+    padding: 0;
+    margin: auto;
+}
+
+dialog[open] {
+    will-change: transform, opacity;
+}
+
+canvas {
+    touch-action: none;
+}
+
+dialog::backdrop {
+    background: rgba(15, 23, 42, 0.75);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    animation: dialog-backdrop-fade 0.2s ease-out;
+}
+
+@keyframes dialog-backdrop-fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+/* Mobile & Touch Backdrop-Optimierung: Verhindert GPU-Kachelausfälle (Black/Dark Tiles) beim Scrollen */
+@media (max-width: 768px), (pointer: coarse) {
+    dialog::backdrop,
+    dialog[class*="backdrop:"]::backdrop {
+        background: rgba(15, 23, 42, 0.85) !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+    }
+
+    /* Verhindert persistente Compositing-Layers in Dialogen auf Smartphones */
+    dialog.zero-inner-scroll-modal .animate-enter,
+    dialog .animate-enter {
+        animation: modalFadeInMobile 0.2s ease-out forwards;
+        transform: none !important;
+    }
+}
+
+@keyframes modalFadeInMobile {
+    from { opacity: 0; }
+    to { opacity: 1; transform: none; }
+}
+
+/* Mobile Landscape Optimierungen (unter 500px Höhe) */
+@media (max-height: 500px) and (orientation: landscape) {
+    dialog,
+    dialog[open],
+    dialog.zero-inner-scroll-modal {
+        max-height: 85dvh !important;
+        max-height: 85vh !important;
+        max-width: min(40rem, calc(100vw - 2rem)) !important;
+    }
+    .landscape-compact-nav {
+        height: 2.75rem !important;
+        padding-top: 0.125rem !important;
+        padding-bottom: 0.125rem !important;
+    }
+    .landscape-hide {
+        display: none !important;
+    }
+    .landscape-compact-modal {
+        max-height: 85dvh !important;
+        padding: 0.75rem !important;
+    }
+}
+
+/* ============================================================ */
+/* SYSTEMWEITE ORGAFLOW PILL- & BADGE-STANDARDS                */
+/* Voll abgerundete Kapseln (rounded-full) mit einheitlicher     */
+/* Grundlinie (22px), lesbarer Typo (10px) & Micro-Interaktionen */
+/* ============================================================ */
+
+.orga-pill-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding-left: 0.625rem;
+    padding-right: 0.625rem;
+    padding-top: 0.125rem;
+    padding-bottom: 0.125rem;
+    min-height: 1.375rem; /* 22px */
+    border-radius: 9999px;
+    font-size: 0.625rem; /* 10px */
+    line-height: 1;
+    font-weight: 700;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    white-space: nowrap;
+    user-select: none;
+    flex-shrink: 0;
+}
+
+.orga-pill-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding-left: 0.625rem;
+    padding-right: 0.625rem;
+    padding-top: 0.125rem;
+    padding-bottom: 0.125rem;
+    min-height: 1.375rem; /* 22px */
+    border-radius: 9999px;
+    font-size: 0.625rem; /* 10px */
+    line-height: 1;
+    font-weight: 700;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    white-space: nowrap;
+    user-select: none;
+    cursor: pointer;
+    transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+    flex-shrink: 0;
+}
+
+.orga-pill-action:hover {
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.12);
+}
+
+.orga-pill-action:active {
+    transform: scale(0.95);
 }

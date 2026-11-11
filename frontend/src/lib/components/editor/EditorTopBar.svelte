@@ -51,7 +51,7 @@
         </div>
     </div>
     
-    <div class="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-8 relative z-10">
+    <div class="flex-1 p-6 space-y-8 relative z-10 overflow-y-auto">
         <!-- Dokumenten-Einstellungen -->
         <div class="space-y-4">
             <h3 class="text-xs font-bold uppercase tracking-wider text-neutral-500">Dokument</h3>

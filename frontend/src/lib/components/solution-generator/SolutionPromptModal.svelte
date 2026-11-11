@@ -1,6 +1,7 @@
 <script lang="ts">
     import { toastStore } from '$lib/services/toastService.svelte';
-    import { pb } from '$lib/services/pocketbase';
+    import { autoGrow } from '$lib/actions/autoGrow';
+    import { requestSolutionConcept } from '$lib/services/solutionGeneratorApi';
     import { X, Sparkles, Check, Loader2, Copy, RefreshCw } from 'lucide-svelte';
 
     interface Props {
@@ -20,10 +21,7 @@
     let context = $state('');
     let generatedConcept = $state('');
 
-    // Optionaler Callback für spezifischen Aufruf
     let currentCallback: ((concept: string) => void) | null = null;
-
-    // Reaktiver Status für Generierungs-Button
     let canGenerate = $derived((!!title.trim() || !!description.trim()) && !isLoading);
 
     export function open(options: {
@@ -43,8 +41,6 @@
         isOpen = true;
         dialog?.showModal();
 
-        // Wenn noch kein Konzept da ist, aber Titel und Beschreibung vorhanden sind,
-        // kann optional direkt generiert werden:
         if (!generatedConcept && (title.trim() || description.trim())) {
             generate();
         }
@@ -55,9 +51,8 @@
         dialog?.close();
     }
 
-    // Double-Submission geschützter API-Call
     async function generate() {
-        if (isLoading) return; // Strikter Klick-Schutz
+        if (isLoading) return;
         if (!title.trim() && !description.trim()) {
             toastStore.warning('Bitte geben Sie mindestens einen Titel oder eine Problembeschreibung an.');
             return;
@@ -67,48 +62,12 @@
         errorMsg = '';
 
         try {
-            const isLocal = typeof window !== 'undefined' && !window.location.hostname.includes('ihre-seniorenassistenz.com') && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-            const microserviceUrl = isLocal ? `http://${window.location.hostname}:3000` : '';
-
-            // Nutzt /api/emails/ Präfix für korrektes Nginx-Routing in Produktion
-            let response = await fetch(`${microserviceUrl}/api/emails/admin/generate-solution`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': pb.authStore.token ? `Bearer ${pb.authStore.token}` : ''
-                },
-                body: JSON.stringify({
-                    title: title.trim(),
-                    description: description.trim(),
-                    category,
-                    context
-                })
+            generatedConcept = await requestSolutionConcept({
+                title: title.trim(),
+                description: description.trim(),
+                category,
+                context
             });
-
-            // Fallback falls direkter Endpoint
-            if (response.status === 404) {
-                response = await fetch(`${microserviceUrl}/api/v1/generate-solution`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': pb.authStore.token ? `Bearer ${pb.authStore.token}` : ''
-                    },
-                    body: JSON.stringify({
-                        title: title.trim(),
-                        description: description.trim(),
-                        category,
-                        context
-                    })
-                });
-            }
-
-            const data = await response.json();
-
-            if (!response.ok || !data.success) {
-                throw new Error(data.error || 'Fehler bei der automatisierten Generierung.');
-            }
-
-            generatedConcept = data.solutionConcept || '';
             toastStore.success('Lösungs- und Maßnahmenkonzept erfolgreich generiert! ✨');
         } catch (err: any) {
             console.error('[Solution Generator Error]:', err);
@@ -148,12 +107,11 @@
 
 <dialog
     bind:this={dialog}
-    class="backdrop:bg-neutral-950/60 backdrop:backdrop-blur-sm bg-transparent p-0 w-full max-w-3xl rounded-3xl shadow-2xl transition-all border-0 open:flex open:flex-col overflow-hidden m-auto"
+    class="zero-inner-scroll-modal backdrop:bg-neutral-950/60 backdrop:backdrop-blur-sm bg-transparent p-0 w-full max-w-3xl mx-auto my-6 sm:my-10 rounded-3xl shadow-2xl transition-all border-0 open:flex open:flex-col"
 >
-    <div class="bg-white flex flex-col max-h-[92vh] w-full rounded-3xl overflow-hidden border border-neutral-200">
-        
-        <!-- Header: Konform mit der KI-Blacklist (Neutraler "Vorschlags-Assistent") -->
-        <div class="px-6 py-4 bg-gradient-to-r from-brand-500/10 via-indigo-50 to-white border-b border-neutral-100 flex items-center justify-between shrink-0">
+    <div class="bg-white flex flex-col w-full rounded-3xl border border-neutral-200">
+        <!-- Header -->
+        <div class="px-6 py-4 bg-gradient-to-r from-brand-500/10 via-indigo-50 to-white border-b border-neutral-100 flex items-center justify-between shrink-0 rounded-t-3xl">
             <div class="flex items-center gap-3">
                 <div class="w-10 h-10 rounded-2xl bg-brand-600 text-white flex items-center justify-center text-lg shadow-sm shadow-brand-600/30 shrink-0">
                     <Sparkles class="w-5 h-5" />
@@ -180,9 +138,7 @@
         </div>
 
         <!-- Body -->
-        <div class="p-6 overflow-y-auto space-y-5 custom-scrollbar flex-1">
-            
-            <!-- Kontext-Zusammenfassung -->
+        <div class="p-6 space-y-5 flex-1">
             <div class="bg-neutral-50 rounded-2xl p-4 border border-neutral-100 space-y-2">
                 <div class="flex flex-wrap items-center justify-between gap-2">
                     <span class="text-[11px] font-bold text-neutral-500 uppercase tracking-wider">Ausgangslage</span>
@@ -200,14 +156,12 @@
                 {/if}
             </div>
 
-            <!-- Fehlermeldung falls vorhanden -->
             {#if errorMsg}
                 <div class="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 font-medium">
                     ⚠️ {errorMsg}
                 </div>
             {/if}
 
-            <!-- Generierter Textbereich -->
             <div class="space-y-2">
                 <div class="flex items-center justify-between">
                     <label for="generated-solution-text" class="text-xs font-bold text-neutral-800 flex items-center gap-1.5">
@@ -231,12 +185,13 @@
 
                 <div class="relative">
                     <textarea
+                        use:autoGrow
                         id="generated-solution-text"
                         bind:value={generatedConcept}
-                        rows="12"
+                        rows="8"
                         placeholder={isLoading ? "Lösungs- und Maßnahmenkonzept wird strukturiert erstellt..." : "Klicken Sie auf 'Lösungskonzept generieren', um den automatisierten Vorschlags-Assistenten zu starten."}
                         disabled={isLoading}
-                        class="orga-input-clear text-xs py-3 px-3.5 w-full bg-neutral-50 focus:bg-white leading-relaxed resize-y custom-scrollbar font-sans {isLoading ? 'opacity-60 animate-pulse' : ''}"
+                        class="auto-grow orga-input-clear text-xs py-3 px-3.5 w-full bg-neutral-50 focus:bg-white leading-relaxed resize-none font-sans {isLoading ? 'opacity-60 animate-pulse' : ''}"
                     ></textarea>
 
                     {#if isLoading}
@@ -249,8 +204,8 @@
             </div>
         </div>
 
-        <!-- Footer mit Double-Submission-Schutz und 44px Touch-Targets -->
-        <div class="px-6 py-4 bg-neutral-50 border-t border-neutral-100 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
+        <!-- Footer -->
+        <div class="px-6 py-4 bg-neutral-50 border-t border-neutral-100 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0 rounded-b-3xl">
             <div class="flex items-center gap-2 w-full sm:w-auto">
                 <button
                     type="button"
@@ -289,6 +244,5 @@
                 </button>
             </div>
         </div>
-
     </div>
 </dialog>

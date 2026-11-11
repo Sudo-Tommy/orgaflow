@@ -3,10 +3,15 @@
     import { landingCmsStore } from "$lib/services/landingCmsStore.svelte";
 
     const defaultFaqs = getFaqs();
+
+    let headline = $derived(landingCmsStore.content.faq?.headline || "Häufige Fragen kurz erklärt");
+    let subtitle = $derived(landingCmsStore.content.faq?.subtitle || "");
+
     let faqs = $derived.by(() => {
-        const cmsFaqs = landingCmsStore.content.faq;
-        if (Array.isArray(cmsFaqs) && cmsFaqs.length > 0) {
-            return cmsFaqs.map(f => ({
+        const raw = landingCmsStore.content.faq;
+        const items = Array.isArray(raw) ? raw : (raw?.items || []);
+        if (items.length > 0) {
+            return items.map(f => ({
                 question: f.q,
                 answerLines: [f.a]
             }));
@@ -17,7 +22,12 @@
 
 <div class="w-full max-w-5xl mx-auto px-4 py-20 text-left transition-colors">
     <div class="bg-amber-50/60 dark:bg-slate-900/80 border border-amber-100/60 dark:border-slate-800 rounded-[2.5rem] p-8 md:p-14 shadow-xl dark:shadow-none">
-        <h2 class="text-3xl md:text-4xl font-bold text-brand-950 dark:text-white mb-10 text-center">Häufige Fragen kurz erklärt</h2>
+        <h2 class="text-3xl md:text-4xl font-bold text-brand-950 dark:text-white mb-4 text-center">{headline}</h2>
+        {#if subtitle}
+            <p class="text-neutral-600 dark:text-slate-400 text-center mb-10 max-w-xl mx-auto text-sm">{subtitle}</p>
+        {:else}
+            <div class="mb-8"></div>
+        {/if}
         
         <div class="grid grid-cols-1 md:grid-cols-2 gap-12">
             {#each faqs as faq, i}

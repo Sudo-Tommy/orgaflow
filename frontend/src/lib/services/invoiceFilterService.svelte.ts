@@ -1,33 +1,44 @@
 import { rbacService } from "$lib/services/rbacService.svelte";
+import { compareInvoicesByDateDesc } from "$lib/utils/invoice";
 
-export function useInvoiceFilter(invoicesProvider: () => any[]) {
+export function isOpenInvoice(inv: any): boolean {
+    if (!inv) return false;
+    const s = inv.status || '';
+    return s !== 'Abgeschlossen' && s !== 'Storniert' && s !== 'Abgelehnt';
+}
+
+export function useInvoiceFilter(invoicesProvider: () => any[], initialStatus = "all") {
     let searchQuery = $state("");
-    let statusFilter = $state("all");
+    let statusFilter = $state(initialStatus);
     let companyFilter = $state(rbacService.isFacilityAdmin && rbacService.userCompanyId ? rbacService.userCompanyId : "all");
 
-    let filtered = $derived.by(() => {
+    let scopedList = $derived.by(() => {
         if (!rbacService.canAccessFinances) return [];
         const list = invoicesProvider();
         if (!list) return [];
-        
-        return list.filter(inv => {
-            // HRBAC Scoping: Invoices only visible in appropriate scope
-            if (!rbacService.isRecordInScope(inv)) return false;
+        return list.filter(inv => rbacService.isRecordInScope(inv));
+    });
 
-            const query = searchQuery.toLowerCase();
-            
-            // Klienten sicher entpacken (kann in PocketBase Array oder Einzelobjekt sein)
+    let filtered = $derived.by(() => {
+        return scopedList.filter(inv => {
+            const query = searchQuery.toLowerCase().trim();
             const c = Array.isArray(inv.expand?.client) ? inv.expand.client[0] : inv.expand?.client;
             const clientName = c ? `${c.name_first || ''} ${c.name_last || ''}`.toLowerCase() : '';
             
-            // Suche in Rechnungsnummer, Klientenname oder Notizen
             const matchQuery = !query || 
                 (inv.invoice_nr || '').toLowerCase().includes(query) || 
                 clientName.includes(query) ||
                 (inv.notes || '').toLowerCase().includes(query);
             
-            // Filter nach Status
-            const matchStatus = statusFilter === 'all' || (inv.status || '') === statusFilter;
+            let matchStatus = true;
+            if (statusFilter === 'offen' || statusFilter === 'open') {
+                matchStatus = isOpenInvoice(inv);
+            } else if (statusFilter === 'bezahlt') {
+                matchStatus = (inv.status || '').toLowerCase() === 'abgeschlossen';
+            } else if (statusFilter !== 'all') {
+                matchStatus = (inv.status || '') === statusFilter;
+            }
+
             const effectiveCompanyFilter = rbacService.isFacilityAdmin && rbacService.userCompanyId ? rbacService.userCompanyId : companyFilter;
             const matchCompany = effectiveCompanyFilter === 'all' || inv.company === effectiveCompanyFilter || (Array.isArray(inv.company) && inv.company.includes(effectiveCompanyFilter));
             
@@ -35,16 +46,10 @@ export function useInvoiceFilter(invoicesProvider: () => any[]) {
         });
     });
 
-    // Rechnungen nach Rechnungsnummer sortieren (neueste oben)
     let sorted = $derived.by(() => {
-        return [...filtered].sort((a, b) => {
-            const nrA = a.invoice_nr || '';
-            const nrB = b.invoice_nr || '';
-            return nrB.localeCompare(nrA, undefined, { numeric: true });
-        });
+        return [...filtered].sort(compareInvoicesByDateDesc);
     });
 
-    // Nach Firma gruppieren inkl. Gesamtsummen der Beträge
     let grouped = $derived.by(() => {
         const groups: Record<string, { invoices: any[], totalBrutto: number, totalNetto: number }> = {};
         for (const inv of sorted) {
@@ -56,9 +61,13 @@ export function useInvoiceFilter(invoicesProvider: () => any[]) {
             groups[companyName].totalBrutto += (inv.brutto || 0);
             groups[companyName].totalNetto += (inv.netto || 0);
         }
-        // Alphabetisch nach Firmenname sortieren
         return Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0]));
     });
+
+    let filteredSum = $derived(filtered.reduce((sum, inv) => sum + (inv.brutto || 0), 0));
+    let openCount = $derived(scopedList.filter(isOpenInvoice).length);
+    let openSum = $derived(scopedList.filter(isOpenInvoice).reduce((sum, inv) => sum + (inv.brutto || 0), 0));
+    let paidCount = $derived(scopedList.filter(inv => (inv.status || '').toLowerCase() === 'abgeschlossen').length);
 
     return {
         get searchQuery() { return searchQuery; },
@@ -69,6 +78,10 @@ export function useInvoiceFilter(invoicesProvider: () => any[]) {
         set companyFilter(v) { companyFilter = v; },
         get filtered() { return filtered; },
         get sorted() { return sorted; },
-        get grouped() { return grouped; }
+        get grouped() { return grouped; },
+        get filteredSum() { return filteredSum; },
+        get openCount() { return openCount; },
+        get openSum() { return openSum; },
+        get paidCount() { return paidCount; }
     };
 }

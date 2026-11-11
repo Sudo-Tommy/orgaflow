@@ -8,17 +8,22 @@
 
     let contact = $derived(landingCmsStore.content.contact);
 
-    // Öffnungszeiten zentral und getrennt für beide Standorte definiert,
-    // damit sie später flexibel und unabhängig voneinander angepasst werden können.
-    const openingHoursHalle = [
+    // Öffnungszeiten dynamisch aus CMS oder Standard
+    let openingHoursHalle = $derived(contact?.opening_hours_halle ? [
+        { days: 'Mo - Fr', times: contact.opening_hours_halle },
+        { days: 'Sa - So', times: 'Nach Vereinbarung' }
+    ] : [
         { days: 'Mo - Fr', times: '08:00 - 18:00 Uhr' },
         { days: 'Sa - So', times: 'Geschlossen' }
-    ];
+    ]);
 
-    const openingHoursWittenberg = [
+    let openingHoursWittenberg = $derived(contact?.opening_hours_wittenberg ? [
+        { days: 'Mo - Fr', times: contact.opening_hours_wittenberg },
+        { days: 'Sa - So', times: 'Nach Vereinbarung' }
+    ] : [
         { days: 'Mo - Fr', times: '08:00 - 18:00 Uhr' },
         { days: 'Sa - So', times: 'Geschlossen' }
-    ];
+    ]);
 </script>
 
 <footer id="kontakt" class="bg-brand-900 dark:bg-slate-950 text-brand-100/90 dark:text-slate-300 pt-20 pb-10 mt-auto border-t border-brand-800 dark:border-slate-800/80 relative overflow-hidden transition-colors">

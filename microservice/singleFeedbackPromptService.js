@@ -10,10 +10,10 @@
  */
 
 import PocketBase from 'pocketbase';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { buildCacheOptimizedPrompt, callGeminiWithFallback } from './tokenSaverEngine.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -67,7 +67,6 @@ export async function generateSingleFeedbackPrompt(options = {}) {
     }
 
     const apiKey = process.env.GEMINI_API_KEY;
-    const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
 
     const ratingInfo = rating ? `Bewertung: ${rating}/10 Sternen` : 'Bewertung: Keine numerische Bewertung';
     const sourceLabel = {
@@ -78,108 +77,87 @@ export async function generateSingleFeedbackPrompt(options = {}) {
         'proposal': 'Superadmin Verbesserungsvorschlag'
     }[source] || 'Verbesserungsvorschlag';
 
-    const systemInstruction = `Du bist der Lead Software Architect und Pair Programming AI für "OrgaFlow", eine Enterprise-Software für Seniorenbetreuung und Pflegedienste (Technologie: SvelteKit 2 mit Svelte 5 Runes, Tailwind CSS, PocketBase, Node.js Microservice).
+    // --- TOKEN-SAVER ENGINE: Statische Instruktionen ZUERST (Caching-Optimierung) ---
+    const staticSystemInstruction = `Du bist der Lead Software Architect und Pair Programming AI für "OrgaFlow", eine Enterprise-Software für Seniorenbetreuung und Pflegedienste (Technologie: SvelteKit 2 mit Svelte 5 Runes, Tailwind CSS, PocketBase, Node.js Microservice).
 
 Deine Aufgabe:
-Ein Superadmin hat ein einzelnes, konkretes Feedback oder Support-Ticket ausgewählt. Du sollst dieses analysieren und einen hochpräzisen, detaillierten und sofort ausführbaren AUSBESSERUNGSPROMPT erstellen, der SPEZIFISCH FÜR GEMINI CODE ASSIST (AGENT) IN ANTIGRAVITY formuliert ist.
+Ein Superadmin hat ein einzelnes, konkretes Feedback oder Support-Ticket ausgewählt. Analysiere es und erstelle einen hochpräzisen, sofort ausführbaren AUSBESSERUNGSPROMPT für Gemini Code Assist (Agent) in Antigravity.
 
-WICHTIGE ANWEISUNGEN:
-- Lasse jegliche Abschnitte für Team Chat, Support-Briefings oder Kundenantwort-Entwürfe KOMPLETT WEG!
-- Der generierte Prompt richtet sich AUSSCHLIESSLICH an den Entwickler-Agenten "Gemini Code Assist (Agent) in Antigravity".
+STRENGE RICHTLINIEN (unveränderlich):
+1. REINER FLIESSTEXT: Der Prompt muss AUSNAHMSLOS ALS KOHÄRENTER, PROFESSIONELLER FLIESSTEXT in zusammenhängenden Absätzen formuliert sein.
+2. KEINE LISTEN: Verwende KEINE Aufzählungszeichen, KEINE Bullet-Points (- oder *), KEINE Kacheln, KEINE Checkboxen.
+3. Nur thematische Markdown-Überschriften (# und ##) zur Gliederung verwenden. Unter jeder Überschrift folgt zusammenhängender Fließtext.
+4. Nur Abschnitte 1–4 ausgeben. Kein Team-Chat, kein Support-Briefing, keine Kundenantworten.
+5. Svelte 5 Runes ($state, $derived, $props, $effect). Kein veraltetes let/export let.
+6. Tailwind CSS. Barrierefreie Touch-Flächen (mindestens 44×44 px / h-11).
+7. Formelle Sie-Form im Portal. KI-Blacklist: Nie "KI"/"AI" in nutzer-sichtbaren Texten.
+8. Double-Submission-Schutz bei allen asynchronen Aktionen (isSubmitting-Flag).
+9. Konkrete Dateipfade und Verifikations-Befehle (npm run check, npm run build, robocopy) fließend im Text erwähnen.
 
-STRENG ZU BEACHTENDE ORGAFLOW- & ANTIGRAVITY-RICHTLINIEN:
-1. Svelte 5 Runes verwenden ($state, $derived, $props, $effect). Kein veraltetes let/export let.
-2. Tailwind CSS für Design (keine ad-hoc Inline-Styles). Barrierefreie Touch-Flächen (mindestens 44x44px / h-11).
-3. Durchgängig formelle Sie-Form im Klienten-Portal ("Ihr Profil", "Ihre Termine", "Ihre Unterschrift").
-4. Strikte KI-Blacklist: Das Wort "KI" oder "AI" darf in Besuchsberichten oder sichtbaren Formularen NIE erscheinen (Verwende stattdessen: "Spezifikation für automatischen Aktions-Entwurf", "automatische Text-Optimierung", "System-Spezifikation").
-5. Double-Submission-Schutz bei allen asynchronen Aktionen (isSubmitting Flag & Lade-Spinner).
-6. Konkrete Dateipfade im Workspace nennen (z. B. frontend/src/routes/... oder microservice/...).
-7. Konkrete Verifikations-Befehle angeben (z. B. "cd frontend && npm run check", "npm run build", "robocopy frontend\\pb_public backend\\pb_public /MIR").
-
-FORMATIERUNG DES AUSZUGEBENDEN PROMPTS:
-Erzeuge deinen Output mit exakt folgenden vier strukturierten Abschnitten und KEINEN weiteren:
-
-# Spezifischer Ausbesserungsprompt für Gemini Code Assist (Agent) in Antigravity: [Prägnanter Titel]
-
+AUSGABEFORMAT (exakt 4 Abschnitte als Fließtext-Absätze, keine weiteren):
+# Spezifischer Ausbesserungsprompt für Gemini Code Assist (Agent) in Antigravity: [Titel]
 ## 1. Executive Problem-Diagnose & Kontext
-- **Quelle:** ${sourceLabel} (Absender: ${sender})
-- **Bewertung:** ${rating ? rating + '/10' : 'N/A'}
-- **Problemursache (Root Cause):** Warum tritt dieses Problem auf oder warum fehlt das Feature?
-- **Dringlichkeit & UX-Impact:** Einschätzung des Einflusses auf den Außendienst / Klienten / Administratoren.
-
 ## 2. Betroffene Komponenten & Dateien
-- Nenne konkrete Dateipfade (z. B. \`frontend/src/routes/...\` oder \`microservice/...\`) und Komponenten mit genauer Aufgabenbeschreibung.
-
 ## 3. Konkreter technischer Ausbesserungsplan
-- Detaillierte Schritt-für-Schritt-Anleitung für den Gemini Code Assist Agenten
-- Konkrete Code-Anpassungen (Svelte 5 Runes, Tailwind CSS, PocketBase SDK, Node.js Microservice)
-- Fehlerbehandlung & Edge Cases (z. B. Timeouts, Null-Checks, Double-Submission-Locks)
-- Ergonomie: Mindestens 44x44px Touch-Ziele (h-11) und Safe-Area-Insets
+## 4. Test- & Verifikationskriterien`;
 
-## 4. Test- & Verifikationskriterien
-- Exakte Antigravity-Befehle zur automatisierten Verifikation (\`npm run check\`, \`npm run build\`, \`robocopy\`)
-- Manuelle Prüfschritte (Responsive Viewport Simulation, Touch Targets, Network Throttling)`;
-
-    const userPrompt = `KONKRETER FEEDBACK- / SUPPORT-FALL:
+    // --- DYNAMISCHER TASK-TEIL (immer am Ende – nie gecacht) ---
+    const dynamicTaskPrompt = `KONKRETER FEEDBACK- / SUPPORT-FALL:
 - Quelle: ${sourceLabel}
 - Absender: ${sender}
 - ${ratingInfo}
-- Zusätzlicher Kontext: ${context || 'Kein zusätzlicher Kontext angegeben'}
-- Spezifische Anweisungen des Superadmins: ${adminInstruction || 'Keine spezifischen Sonderwünsche; analysiere und behebe zielgerichtet'}
+- Quelle-ID: ${id || 'Keine ID'}
+- Zusätzlicher Kontext: ${context || 'Kein zusätzlicher Kontext'}
+- Superadmin-Anweisung: ${adminInstruction || 'Keine; analysiere und behebe zielgerichtet'}
 
-URSPRÜNGLICHER NACHRICHTENTEXT DES KUNDEN / NUTZERS:
+NACHRICHTENTEXT:
 """
 ${message}
 """
 
-Erstelle nun den spezifischen Ausbesserungsprompt für Gemini Code Assist (Agent) in Antigravity (ausschließlich Abschnitte 1 bis 4, keine Team- oder Kundenantworten):`;
+Erstelle ausschließlich die 4 Abschnitte des Ausbesserungsprompts:`;
 
-    const candidateModels = [
-        'gemini-3.8-flash',
-        'gemini-3.5-flash',
-        'gemini-flash-latest'
-    ];
+    // skipEnvelope: true, da der TOKEN_SAVER_ENVELOPE ("Ausschließlich 3-7 Bullet Points") die Prompt-Synthese der 4 Abschnitte sonst abbricht!
+    const { systemPart, userPart } = buildCacheOptimizedPrompt(staticSystemInstruction, dynamicTaskPrompt, { skipEnvelope: true });
 
+    // --- GEMINI AUFRUF via Token-Saver Engine (DRY Kaskade, Timeout, Quota-Handling) ---
     let fullGeneratedText = "";
     let usedModel = "";
 
-    if (genAI) {
-        for (const modelName of candidateModels) {
-            try {
-                console.log(`[SingleFeedbackPrompt] Rufe Gemini '${modelName}' auf...`);
-                const model = genAI.getGenerativeModel({
-                    model: modelName,
-                    generationConfig: {
-                        temperature: 0.2,
-                        maxOutputTokens: 2048,
-                    }
-                });
-                
-                const generatePromise = model.generateContent([
-                    { text: systemInstruction },
-                    { text: userPrompt }
-                ]);
+    if (apiKey) {
+        try {
+            const result = await callGeminiWithFallback({
+                apiKey,
+                systemPart,
+                userPart,
+                timeoutMs: 45000,
+                temperature: 0.2,
+                maxOutputTokens: 8192,
+                label: 'SingleFeedbackPrompt',
+            });
+            fullGeneratedText = result.text;
+            usedModel = result.model;
+        } catch (err) {
+            console.warn('[SingleFeedbackPrompt] Alle Modelle fehlgeschlagen:', err.message);
+        }
+    }
 
-                // 10s harter Timeout pro Modell-Aufruf
-                const timeoutPromise = new Promise((_, reject) => 
-                    setTimeout(() => reject(new Error(`Timeout bei Modell '${modelName}' nach 10s`)), 10000)
-                );
-
-                const res = await Promise.race([generatePromise, timeoutPromise]);
-                const txt = res.response.text();
-                if (txt && txt.length > 200) {
-                    fullGeneratedText = txt;
-                    usedModel = modelName;
-                    console.log(`[SingleFeedbackPrompt] Erfolgreich generiert via '${modelName}' (${txt.length} Zeichen).`);
-                    break;
-                }
-            } catch (err) {
-                console.warn(`[SingleFeedbackPrompt] Fehler bei '${modelName}':`, err.message);
-                // Wenn das tägliche Quota des Projekts erschöpft ist, sofort die Fallback-Synthese nutzen
-                if (err.message.includes('429') || err.message.includes('Quota exceeded')) {
-                    console.log("[SingleFeedbackPrompt] Quota erreicht - wechsle direkt zur System-Synthese.");
-                    break;
-                }
+    // Integritätsprüfung: Hat Gemini den Prompt unvollständig / mittendrin abgebrochen?
+    if (fullGeneratedText) {
+        const hasSec1 = fullGeneratedText.includes('## 1.');
+        const hasSec2 = fullGeneratedText.includes('## 2.');
+        const hasSec3 = fullGeneratedText.includes('## 3.');
+        const hasSec4 = fullGeneratedText.includes('## 4.');
+        if (!hasSec2 || !hasSec3 || !hasSec4) {
+            console.warn('[SingleFeedbackPrompt] Unvollständige Generierung erkannt (Abschnitte fehlen) – ergänze fehlende Abschnitte strukturiert.');
+            if (!hasSec2) {
+                fullGeneratedText += `\n\n## 2. Betroffene Komponenten & Dateien\n- Relevante Frontend-Routen & Widgets (\`frontend/src/routes/.../+\`)\n- Backend-Services & API-Schnittstellen (\`microservice/.../+\`)\n- PocketBase Datenintegrität & Live-Collections (\`pocketbase/pb_migrations/.../+\`)`;
+            }
+            if (!hasSec3) {
+                fullGeneratedText += `\n\n## 3. Konkreter technischer Ausbesserungsplan\n1. **Svelte 5 Runes:** Reaktive Zustände sauber mit \`$state\`, \`$derived\` und \`$props\` abbilden.\n2. **Double-Submission & Fehler-Resilienz:** Schutz aller asynchronen Aktionen mit \`isSubmitting\`-Flag.\n3. **Barrierefreiheit & Daumenzonen:** Alle klickbaren Flächen mobil auf mind. 44x44px (\`h-11\`) vergrößern.\n4. **Datenabgleich:** Lückenlose Synchronisation und Einbindung externer Kalenderdaten.`;
+            }
+            if (!hasSec4) {
+                fullGeneratedText += `\n\n## 4. Test- & Verifikationskriterien\n- TypeScript Check: \`cd frontend && npm run check\`\n- Production Build: \`cd frontend && npm run build\`\n- Asset-Sync: \`robocopy frontend\\pb_public backend\\pb_public /MIR\`\n- Manuelle Prüfung im Viewport (375px) auf Fehlerfreiheit und Kontrast.`;
             }
         }
     }
@@ -195,43 +173,34 @@ Erstelle nun den spezifischen Ausbesserungsprompt für Gemini Code Assist (Agent
         }
 
         const isProposal = source === 'proposal';
-        const componentHints = context.includes('Finanzen') || context.includes('Haushalt')
-            ? "- `frontend/src/routes/finances/+page.svelte` (Haushaltsbuch & Buchungen)\n- `frontend/src/lib/services/personalFinanceService.svelte.ts`"
+        const componentFliesstext = context.includes('Finanzen') || context.includes('Haushalt')
+            ? "Die Ausbesserung betrifft schwerpunktmäßig das Haushaltsbuch und die Buchungsverwaltung in `frontend/src/routes/finances/+page.svelte` sowie die Geschäftslogik in `frontend/src/lib/services/personalFinanceService.svelte.ts`."
             : context.includes('Dokument') || context.includes('Vorlage')
-            ? "- `frontend/src/routes/documents/+page.svelte` (Dokumentenverwaltung)\n- `frontend/src/lib/services/documentGeneratorService.svelte.ts`\n- `frontend/src/lib/components/editor/EditorTopBar.svelte`"
+            ? "Der Eingriff fokussiert sich auf die Dokumentenverwaltung in `frontend/src/routes/documents/+page.svelte`, den Vorlagengenerator in `frontend/src/lib/services/documentGeneratorService.svelte.ts` sowie die Menüleiste in `frontend/src/lib/components/editor/EditorTopBar.svelte`."
             : context.includes('Termin') || context.includes('Außendienst')
-            ? "- `frontend/src/routes/appointments/+page.svelte` (Einsatz- und Terminplanung)\n- `frontend/src/lib/components/AppointmentModal.svelte`"
+            ? "Betroffen sind insbesondere die Einsatz- und Terminplanung in `frontend/src/routes/appointments/+page.svelte` sowie der Buchungsdialog in `frontend/src/lib/components/AppointmentModal.svelte`."
             : context.includes('Sicherheit') || context.includes('Audit')
-            ? "- `pocketbase/pb_migrations/...` (HRBAC Matrix & API Rules)\n- `frontend/src/lib/services/rbacService.svelte.ts`\n- `frontend/src/hooks.server.ts`"
-            : "- Relevante Svelte-Komponenten im Frontend (`frontend/src/routes/...`)\n- State Management & Services (`frontend/src/lib/services/...`)\n- PocketBase API-Rules & Datenintegrität";
+            ? "Die Anpassungen betreffen die PocketBase API-Rules in den Migrationsdateien, das Rechtesystem in `frontend/src/lib/services/rbacService.svelte.ts` sowie die serverseitigen Guards in `frontend/src/hooks.server.ts`."
+            : "Die Umsetzung betrifft die relevanten Svelte-Komponenten im Frontend-Verzeichnis (`frontend/src/routes/...`), die zugehörigen Service-Module sowie die PocketBase API-Regeln.";
+
+        const ratingText = rating ? `mit einer Nutzerbewertung von ${rating} von 10 Punkten` : 'ohne numerische Sternebewertung';
+        const rootCauseText = isProposal
+            ? 'Als Ursache liegt eine gezielte Anforderung zur Funktionserweiterung oder Optimierung des bestehenden Systems gemäß Spezifikation vor.'
+            : 'Der Nutzer beanstandet unzureichende Benutzerführung, fehlende Klarheit oder einen fehlerhaften Ablauf im genannten Kontext.';
 
         fullGeneratedText = `# Spezifischer Ausbesserungsprompt für Gemini Code Assist (Agent) in Antigravity: ${titleLine}
 
 ## 1. Executive Problem-Diagnose & Kontext
-- **Quelle:** ${sourceLabel} (Absender: ${sender})
-- **Bewertung:** ${rating ? rating + '/10' : 'N/A (Standard-Priorität)'}
-- **Original-Nachricht / Anforderung:**
-"""
-${message}
-"""
-- **Problemursache (Root Cause):** ${isProposal ? 'Anforderung zur Funktionserweiterung oder Optimierung des bestehenden Systems gemäß Spezifikation.' : 'Der Nutzer beanstandet unzureichende Benutzerführung, fehlende Klarheit oder einen fehlerhaften Ablauf im genannten Kontext.'}
-- **Admin-Vorgabe:** ${adminInstruction || 'Vollständige und fehlerfreie Ausbesserung nach modernsten OrgaFlow Best Practices.'}
+Dieser Vorgang geht zurück auf eine Meldung aus der Quelle ${sourceLabel}, übermittelt von ${sender} ${ratingText}. Im Originaltext wurde folgende Rückmeldung hinterlegt: „${message.trim()}“. ${rootCauseText} Als verbindliche Vorgabe für die Umsetzung gilt: ${adminInstruction || 'Vollständige und fehlerfreie Ausbesserung nach modernsten OrgaFlow Best Practices.'}
 
 ## 2. Betroffene Komponenten & Dateien
-${componentHints}
+${componentFliesstext} Bei Bedarf sind zusätzlich betroffene Hilfsfunktionen und Typdefinitionen in die Überarbeitung einzubeziehen.
 
 ## 3. Konkreter technischer Ausbesserungsplan
-1. **Zustandsverwaltung mit Svelte 5 Runes:** Alle reaktiven Variablen strikt über \`$state\`, \`$derived\` und \`$props\` deklarieren.
-2. **Double-Submission & Fehler-Resilienz:** Verhindern von Mehrfachklicks während asynchroner Operationen (\`isSubmitting\`-Flag) und Einbau aussagekräftiger Feedback-Meldungen.
-3. **Ergonomie & Mobile Daumenzonen:** Alle interaktiven Schaltflächen auf mindestens 44x44px (\`h-11\`) vergrößern.
-4. **Strikte KI-Blacklist:** Keine Erwähnung von Begriffen wie "KI", "AI", "Prompt" im gerenderten Benutzerinterface.
-5. **Datenintegrität:** Konsistente Übertragung an PocketBase unter Berücksichtigung der HRBAC-Rechte.
+Der Entwickler-Agent implementiert die geforderten Änderungen unter konsequenter Einhaltung moderner Svelte 5 Runes mit $state, $derived und $props. Alle asynchronen Interaktionen und API-Anfragen sind mit einem Double-Submission-Schutz (isSubmitting-Flag) sowie aussagekräftigen Fehler- und Erfolgsmeldungen auszustatten. Für mobile Endgeräte im Außendienst müssen sämtliche interaktiven Klick- und Touchflächen eine barrierefreie Mindesthöhe von 44 Pixeln aufweisen. Zudem ist die strikte KI-Blacklist einzuhalten, sodass in der Benutzeroberfläche keinerlei KI-Begriffe erscheinen.
 
 ## 4. Test- & Verifikationskriterien
-- TypeScript- & Svelte-Check ausführen: \`cd frontend && npm run check\`
-- Frontend Build-Validierung: \`cd frontend && npm run build\`
-- Asset-Synchronisation: \`robocopy frontend\\pb_public backend\\pb_public /MIR\`
-- Manuelle Prüfung im mobilen Viewport (375px Breite) auf Barrierefreiheit und responsives Verhalten.`;
+Zur Verifikation der Änderungen führt der Agent zunächst eine Typprüfung mit „cd frontend && npm run check“ aus. Daraufhin erfolgt der Produktiv-Build mit „cd frontend && npm run build“ sowie die Synchronisation der gebauten Dateien über „robocopy frontend\\pb_public backend\\pb_public /MIR“. Abschließend wird das Verhalten in der mobilen Viewport-Simulation bei 375 Pixeln Breite geprüft.`;
     }
 
     // Extrahiere Titel

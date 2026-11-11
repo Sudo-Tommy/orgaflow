@@ -1,11 +1,14 @@
 <script lang="ts">
     import "../../app.css";
     import LandingAppointmentModal from "$lib/components/LandingAppointmentModal.svelte";
+    import PortalAccessBlockedModal from "$lib/components/portal/PortalAccessBlockedModal.svelte";
     import { page } from "$app/stores";
     import { goto } from "$app/navigation";
     import type LandingAppointmentModalType from "$lib/components/LandingAppointmentModal.svelte";
     import { pb } from "$lib/services/pocketbase";
+    import { rbacService } from "$lib/services/rbacService.svelte";
     import { isSubmitting } from '$lib/states/ui.svelte';
+    import { validatePortalSession, getPortalAuthToken } from "$lib/components/portal/portalDataService";
 
     let { children } = $props();
     
@@ -17,7 +20,7 @@
 
     // Abgeleitete reaktive Werte über Svelte 5 Runen
     const currentUser = $derived($page.data.user || pb.authStore.model);
-    const isOwner = $derived(currentUser?.role === 'owner' || currentUser?.role === 'superadmin');
+    const isOwner = $derived(currentUser?.role === 'owner' || currentUser?.role === 'superadmin' || currentUser?.role === 'developer' || rbacService.isOwner);
     const isAdmin = $derived(currentUser?.role === 'admin');
     const isClient = $derived(currentUser?.role === 'client' || currentUser?.role === 'guest');
 
@@ -30,10 +33,18 @@
         goto(url);
     }
     
+    const API_BASE_URL = (typeof window !== 'undefined' && !window.location.hostname.includes('ihre-seniorenassistenz.com')) 
+        ? `http://${window.location.hostname}:3000/portal` 
+        : '/api/emails/portal';
+
     $effect(() => {
         if (typeof localStorage !== 'undefined') {
             isAdminMode = localStorage.getItem('portal_admin_mode') === 'true';
             hasPortalSession = !!localStorage.getItem('portal_token') || pb.authStore.isValid;
+            if (!isPortalLogin && currentPath.startsWith('/portal')) {
+                const token = getPortalAuthToken();
+                if (token) validatePortalSession(API_BASE_URL, token);
+            }
         }
     });
 
@@ -132,3 +143,4 @@
 </div>
 
 <LandingAppointmentModal bind:this={appointmentModal} />
+<PortalAccessBlockedModal />

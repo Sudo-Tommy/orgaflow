@@ -1,13 +1,18 @@
 <script lang="ts">
     import type { Snippet } from 'svelte';
-    import { X } from 'lucide-svelte';
+    import { triggerHaptic } from '$lib/services/hapticFeedback';
 
     interface Props {
         title?: string;
         subtitle?: string;
-        maxWidth?: string; // e.g. 'max-w-2xl', 'max-w-4xl'
+        badge?: string;
+        icon?: string;
+        iconBgClass?: string;
+        gradientClass?: string;
+        maxWidth?: string; // e.g. 'max-w-lg', 'max-w-2xl', 'max-w-4xl'
         showCloseButton?: boolean;
         closeOnOutsideClick?: boolean;
+        isNested?: boolean;
         onclose?: () => void;
         header?: Snippet;
         children?: Snippet;
@@ -17,9 +22,14 @@
     let {
         title = '',
         subtitle = '',
-        maxWidth = 'max-w-2xl',
+        badge = '',
+        icon = '✨',
+        iconBgClass = 'bg-indigo-600 text-white shadow-indigo-500/20',
+        gradientClass = 'from-indigo-500/10 via-sky-500/5',
+        maxWidth = 'max-w-lg',
         showCloseButton = true,
         closeOnOutsideClick = true,
+        isNested = false,
         onclose,
         header,
         children,
@@ -28,34 +38,16 @@
 
     let dialog = $state<HTMLDialogElement | null>(null);
     let isOpen = $state(false);
-    let viewportHeight = $state('100dvh');
-
-    $effect(() => {
-        if (typeof window === 'undefined') return;
-
-        const handleViewportChange = () => {
-            if (window.visualViewport) {
-                viewportHeight = `${window.visualViewport.height}px`;
-            }
-        };
-
-        window.visualViewport?.addEventListener('resize', handleViewportChange);
-        window.visualViewport?.addEventListener('scroll', handleViewportChange);
-        handleViewportChange();
-
-        return () => {
-            window.visualViewport?.removeEventListener('resize', handleViewportChange);
-            window.visualViewport?.removeEventListener('scroll', handleViewportChange);
-        };
-    });
 
     export function open() {
         isOpen = true;
+        triggerHaptic('tap');
         dialog?.showModal();
     }
 
     export function close() {
         isOpen = false;
+        triggerHaptic('tap');
         dialog?.close();
         onclose?.();
     }
@@ -69,19 +61,14 @@
 
 <dialog
     bind:this={dialog}
-    class="p-0 bg-transparent backdrop:bg-slate-950/65 backdrop:backdrop-blur-md w-full {maxWidth} m-0 sm:m-auto fixed sm:relative inset-x-0 bottom-0 sm:bottom-auto rounded-t-3xl sm:rounded-3xl border-none shadow-2xl z-[9999] touch-pan-y"
+    class="zero-inner-scroll-modal p-0 bg-transparent backdrop:bg-neutral-900/60 backdrop:backdrop-blur-sm w-full {maxWidth} mx-auto my-auto rounded-3xl border-none shadow-2xl {isNested ? 'z-60' : 'z-50'} outline-none"
     onclick={handleBackdropClick}
+    oncancel={(e) => { e.preventDefault(); close(); }}
 >
-    <!-- Drag handle on mobile -->
-    <div class="w-12 h-1.5 bg-neutral-300 dark:bg-slate-700 rounded-full mx-auto my-2 sm:hidden shrink-0"></div>
-
-    <div
-        class="form-mobile-container sm:h-auto sm:min-h-0 sm:max-h-[92vh] bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl w-full flex flex-col relative overflow-hidden shadow-2xl border border-neutral-100 dark:border-slate-800"
-        style="height: {viewportHeight};"
-    >
-        <!-- Modal Header -->
+    <div class="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-neutral-100 dark:border-slate-800 w-full flex flex-col relative transition-colors">
+        <!-- Modal Header Bild-3-Design -->
         {#if header}
-            <div class="px-5 sm:px-8 py-4 sm:py-5 border-b border-neutral-200 dark:border-slate-800 shrink-0 sticky top-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md z-20 flex justify-between items-center">
+            <div class="p-4 sm:p-5 bg-gradient-to-r {gradientClass} to-transparent border-b border-neutral-100 dark:border-slate-800 flex items-start justify-between gap-3 shrink-0 rounded-t-3xl">
                 {@render header()}
                 {#if showCloseButton}
                     <button
@@ -89,19 +76,37 @@
                         aria-label="Schließen"
                         title="Schließen"
                         onclick={close}
-                        class="min-w-[44px] min-h-[44px] w-11 h-11 bg-neutral-100 dark:bg-slate-800 hover:bg-neutral-200 dark:hover:bg-slate-700 text-neutral-600 dark:text-slate-300 rounded-full flex items-center justify-center transition-colors shrink-0 ml-3"
+                        class="w-10 h-10 sm:w-9 sm:h-9 rounded-full bg-neutral-100 dark:bg-slate-800 hover:bg-neutral-200 dark:hover:bg-slate-700 text-neutral-500 dark:text-slate-300 flex items-center justify-center transition-colors text-sm shrink-0 cursor-pointer touch-manipulation active:scale-95"
                     >
-                        <X class="w-5 h-5" />
+                        ✕
                     </button>
                 {/if}
             </div>
         {:else if title}
-            <div class="px-5 sm:px-8 py-4 sm:py-5 border-b border-neutral-200 dark:border-slate-800 shrink-0 sticky top-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md z-20 flex justify-between items-center">
-                <div>
-                    <h2 class="text-lg sm:text-xl font-bold text-neutral-900 dark:text-white leading-tight">{title}</h2>
-                    {#if subtitle}
-                        <p class="text-xs text-neutral-500 dark:text-slate-400 font-medium mt-0.5">{subtitle}</p>
+            <div class="p-4 sm:p-5 bg-gradient-to-r {gradientClass} to-transparent border-b border-neutral-100 dark:border-slate-800 flex items-start justify-between gap-3 shrink-0 rounded-t-3xl">
+                <div class="flex items-center gap-3">
+                    {#if icon}
+                        <div class="w-10 h-10 rounded-2xl {iconBgClass} flex items-center justify-center shadow-lg text-base shrink-0">
+                            {icon}
+                        </div>
                     {/if}
+                    <div>
+                        <div class="flex items-center gap-2">
+                            {#if badge}
+                                <span class="text-[10px] font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-300 bg-indigo-100/80 dark:bg-indigo-950/60 px-2 py-0.5 rounded-md">
+                                    {badge}
+                                </span>
+                            {/if}
+                            {#if subtitle}
+                                <span class="text-[10px] font-semibold text-neutral-400 dark:text-slate-400 truncate max-w-[200px]">
+                                    {subtitle}
+                                </span>
+                            {/if}
+                        </div>
+                        <h3 class="text-base sm:text-lg font-bold text-neutral-900 dark:text-white mt-0.5 line-clamp-2">
+                            {title}
+                        </h3>
+                    </div>
                 </div>
                 {#if showCloseButton}
                     <button
@@ -109,24 +114,24 @@
                         aria-label="Schließen"
                         title="Schließen"
                         onclick={close}
-                        class="min-w-[44px] min-h-[44px] w-11 h-11 bg-neutral-100 dark:bg-slate-800 hover:bg-neutral-200 dark:hover:bg-slate-700 text-neutral-600 dark:text-slate-300 rounded-full flex items-center justify-center transition-colors shrink-0"
+                        class="w-10 h-10 sm:w-9 sm:h-9 rounded-full bg-neutral-100 dark:bg-slate-800 hover:bg-neutral-200 dark:hover:bg-slate-700 text-neutral-500 dark:text-slate-300 flex items-center justify-center transition-colors text-sm shrink-0 cursor-pointer touch-manipulation active:scale-95"
                     >
-                        <X class="w-5 h-5" />
+                        ✕
                     </button>
                 {/if}
             </div>
         {/if}
 
-        <!-- Scrollable Body Content -->
-        <div class="flex-1 overflow-y-auto custom-scrollbar p-5 sm:p-8">
+        <!-- Modal Body Content -->
+        <div class="p-4 sm:p-5 space-y-3.5 flex-1">
             {#if children}
                 {@render children()}
             {/if}
         </div>
 
-        <!-- Sticky Footer (stays above virtual keyboard) -->
+        <!-- Footer Bild-3-Design -->
         {#if footer}
-            <div class="border-t border-neutral-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md shrink-0 sticky bottom-0 z-20 pb-[max(env(safe-area-inset-bottom,0px),1rem)]">
+            <div class="p-3.5 sm:p-4 bg-neutral-50 dark:bg-slate-900/80 border-t border-neutral-100 dark:border-slate-800 flex items-center justify-between gap-3 shrink-0 rounded-b-3xl">
                 {@render footer()}
             </div>
         {/if}

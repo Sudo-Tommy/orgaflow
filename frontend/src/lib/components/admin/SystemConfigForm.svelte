@@ -1,7 +1,8 @@
 <script lang="ts">
     import { toastStore } from '$lib/services/toastService.svelte';
-    import { Shield, Settings, Check, ArrowLeft, RefreshCw, Save } from 'lucide-svelte';
+    import { Shield, Settings, Check, ArrowLeft, Save } from 'lucide-svelte';
     import StickyActionBar from '$lib/components/ui/StickyActionBar.svelte';
+    import { createKeyboardViewport } from '$lib/utils/viewportKeyboard.svelte';
 
     export interface SystemConfigData {
         instanceName: string;
@@ -18,7 +19,6 @@
         onCancel: () => void;
     }
 
-    // OrgaFlow Svelte 5 Runes standard
     let { data, onSave, onCancel }: Props = $props();
 
     // Double-Submission-Schutz
@@ -26,39 +26,14 @@
     let isSavingDraft = $state(false);
 
     // Viewport-Zustände für mobile Tastatur
-    let viewportHeight = $state(typeof window !== 'undefined' ? window.innerHeight : 800);
-    let keyboardHeight = $state(0);
-
-    // Reaktive Berechnung des zusätzlichen Paddings für den Scroll-Container
+    const keyboardViewport = createKeyboardViewport();
     let dynamicPaddingBottom = $derived(
-        `calc(5rem + ${keyboardHeight}px + env(safe-area-inset-bottom, 0px))`
+        `calc(5rem + ${keyboardViewport.keyboardHeight}px + env(safe-area-inset-bottom, 0px))`
     );
-
-    // Visual Viewport Listener via Svelte 5 $effect
-    $effect(() => {
-        if (typeof window === 'undefined' || !window.visualViewport) return;
-
-        const handleResize = () => {
-            const vv = window.visualViewport;
-            if (vv) {
-                // Ermittlung der Tastaturhöhe durch Differenz von innerHeight und visualViewport-Höhe
-                const heightDifference = window.innerHeight - vv.height;
-                keyboardHeight = heightDifference > 60 ? heightDifference : 0;
-            }
-        };
-
-        window.visualViewport.addEventListener('resize', handleResize);
-        window.visualViewport.addEventListener('scroll', handleResize);
-
-        return () => {
-            window.visualViewport?.removeEventListener('resize', handleResize);
-            window.visualViewport?.removeEventListener('scroll', handleResize);
-        };
-    });
 
     async function handleFormSubmit(e?: Event) {
         if (e) e.preventDefault();
-        if (isSubmitting) return; // Double-Submission-Schutz greift ein
+        if (isSubmitting) return;
         isSubmitting = true;
         try {
             await onSave(data);
@@ -87,13 +62,11 @@
 </script>
 
 <div class="flex flex-col min-h-screen bg-slate-50 relative">
-    <!-- Haupt-Scroll-Bereich mit dynamischem Bottom-Padding -->
     <main 
         class="flex-1 overflow-y-auto px-4 sm:px-6 lg:px-8 pt-6 transition-all duration-200"
         style="padding-bottom: {dynamicPaddingBottom};"
     >
         <div class="max-w-4xl mx-auto space-y-6">
-            <!-- Kopfbereich -->
             <div class="flex items-center justify-between gap-4">
                 <div>
                     <h1 class="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2.5">
@@ -106,7 +79,6 @@
                 </div>
             </div>
 
-            <!-- Eingabebereiche -->
             <form onsubmit={handleFormSubmit} class="space-y-6">
                 <!-- Basis-Instanz Daten -->
                 <div class="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-xs space-y-5">
@@ -143,7 +115,7 @@
                     </div>
                 </div>
 
-                <!-- Spezifikation für automatische Text-Optimierung (Regelwerk) -->
+                <!-- Regelwerk & Text-Optimierung -->
                 <div class="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
                     <div class="flex items-center justify-between border-b border-slate-100 pb-3">
                         <div class="flex items-center gap-2">
@@ -154,7 +126,6 @@
                     </div>
 
                     <div>
-                        <!-- Achtung: "Prompt-Generierung" wird kundenkonform als "Aktions-Entwurf" deklariert -->
                         <label for="sys_instruction" class="block text-xs font-semibold text-slate-700 mb-1.5">
                             Spezifikation für automatischen Aktions-Entwurf
                         </label>
@@ -171,7 +142,7 @@
                     </div>
                 </div>
 
-                <!-- Erweiterte Betriebseinstellungen -->
+                <!-- Betriebs- und Protokollparameter -->
                 <div class="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
                     <div class="flex items-center gap-2 border-b border-slate-100 pb-3">
                         <span class="text-base leading-none">⚙️</span>
@@ -208,11 +179,9 @@
         </div>
     </main>
 
-    <!-- Sticky Action Bar mit Safe-Area-Bottom Integration und dynamischem Tastatur-Offset -->
+    <!-- Sticky Action Bar mit Touch-Fläche min 44px -->
     <StickyActionBar class="shadow-lg">
         <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-3">
-            
-            <!-- Abbrechen Button (Touch-Fläche min 44px: h-11) -->
             <button 
                 type="button" 
                 onclick={onCancel}
@@ -224,7 +193,6 @@
             </button>
 
             <div class="flex flex-col sm:flex-row gap-2">
-                <!-- Vorschlag / Entwurf speichern (h-11) -->
                 <button 
                     type="button" 
                     onclick={handleSaveDraft}
@@ -235,7 +203,6 @@
                     <span>Entwurf speichern</span>
                 </button>
 
-                <!-- Speicher- & Ausführung (Double-Submission-geschützt, h-11) -->
                 <button 
                     type="button" 
                     onclick={handleFormSubmit}

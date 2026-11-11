@@ -2,45 +2,49 @@
  * improvementProposalService.svelte.ts
  *
  * Superadmin-Service zur Verwaltung einzelner Verbesserungsvorschläge (Proposals).
- * Ermöglicht das Erstellen, Status-Tracking via Buttons und die individuelle Verwertung
- * (z. B. Generierung maßgeschneiderter KI-Entwicklerprompts & Team-Briefings).
+ * Unterstützt Status-Tracking, Realtime-Sync und Gelesen-Status für Benachrichtigungen.
  */
 
 import { pb } from '$lib/services/pocketbase';
 import { toastStore } from '$lib/services/toastService.svelte';
 import type { ImprovementProposalRecord } from '$lib/types/orgaTypes';
+import {
+    loadCachedProposals,
+    saveCachedProposals,
+    loadReadProposalIds,
+    saveReadProposalIds
+} from './proposalStorageHelpers';
 
 class ImprovementProposalService {
     proposals = $state<ImprovementProposalRecord[]>([]);
+    readProposalIds = $state<string[]>([]);
     isLoading = $state(false);
     isSubscribed = false;
 
-    // Lokaler Cache Key für offline / Fallback
-    private readonly STORAGE_KEY = 'orgaflow_improvement_proposals_cache';
-
     constructor() {
-        this.loadLocalCache();
+        this.proposals = loadCachedProposals();
+        this.readProposalIds = loadReadProposalIds(this.proposals);
     }
 
-    private loadLocalCache() {
-        if (typeof window === 'undefined') return;
-        try {
-            const raw = localStorage.getItem(this.STORAGE_KEY);
-            if (raw) {
-                this.proposals = JSON.parse(raw);
-            }
-        } catch (e) {
-            console.warn('[ProposalService] Local cache load error:', e);
+    get unreadCount(): number {
+        return this.proposals.filter(p => !this.readProposalIds.includes(p.id)).length;
+    }
+
+    isProposalUnread(id: string): boolean {
+        return !this.readProposalIds.includes(id);
+    }
+
+    markAsRead(id: string) {
+        if (!this.readProposalIds.includes(id)) {
+            this.readProposalIds = [...this.readProposalIds, id];
+            saveReadProposalIds(this.readProposalIds);
         }
     }
 
-    private saveLocalCache() {
-        if (typeof window === 'undefined') return;
-        try {
-            localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.proposals));
-        } catch (e) {
-            console.warn('[ProposalService] Local cache save error:', e);
-        }
+    markAllAsRead() {
+        const allIds = this.proposals.map(p => p.id);
+        this.readProposalIds = Array.from(new Set([...this.readProposalIds, ...allIds]));
+        saveReadProposalIds(this.readProposalIds);
     }
 
     async init() {
@@ -51,19 +55,17 @@ class ImprovementProposalService {
     async loadProposals() {
         this.isLoading = true;
         try {
-            // 1. Primär: Direkte PocketBase-Collection
             try {
                 const list = await pb.collection('improvement_proposals').getFullList<ImprovementProposalRecord>({
                     sort: '-created',
                     requestKey: null
                 });
                 this.proposals = list;
-                this.saveLocalCache();
+                this.readProposalIds = loadReadProposalIds(this.proposals);
+                saveCachedProposals(this.proposals);
                 return;
             } catch (err: any) {
-                // Falls Collection noch nicht existiert (z.B. vor PB-Neustart), Fallback auf system_prompts mit metadata
                 if (err.status === 404) {
-                    console.info('[ProposalService] Collection improvement_proposals not yet initialized, using fallback storage.');
                     const fallbackList = await pb.collection('system_prompts').getFullList<any>({
                         filter: 'metadata.is_proposal = true',
                         sort: '-created',
@@ -89,7 +91,8 @@ class ImprovementProposalService {
                             created: p.created,
                             updated: p.updated
                         }));
-                        this.saveLocalCache();
+                        this.readProposalIds = loadReadProposalIds(this.proposals);
+                        saveCachedProposals(this.proposals);
                         return;
                     }
                 }
@@ -113,12 +116,8 @@ class ImprovementProposalService {
                 } else if (e.action === 'delete') {
                     this.proposals = this.proposals.filter(p => p.id !== e.record.id);
                 }
-                this.saveLocalCache();
-            }).then(() => {
-                this.isSubscribed = true;
-            }).catch(() => {
-                // Silent fallback
-            });
+                saveCachedProposals(this.proposals);
+            }).then(() => { this.isSubscribed = true; }).catch(() => {});
         } catch (err) {
             console.warn('[ProposalService] Subscribe error:', err);
         }
@@ -126,10 +125,7 @@ class ImprovementProposalService {
 
     async createProposal(data: Partial<ImprovementProposalRecord>): Promise<ImprovementProposalRecord> {
         const userModel = pb.authStore.model as any;
-        const defaultAuthor = userModel?.name_first 
-            ? `${userModel.name_first} ${userModel.name_last || ''}`.trim() 
-            : 'Superadmin';
-
+        const defaultAuthor = userModel?.name_first ? `${userModel.name_first} ${userModel.name_last || ''}`.trim() : 'Superadmin';
         const payload = {
             title: data.title?.trim() || 'Neuer Verbesserungsvorschlag',
             category: data.category || 'Core Engine & API',
@@ -147,12 +143,9 @@ class ImprovementProposalService {
         };
 
         let created: ImprovementProposalRecord;
-
         try {
             created = await pb.collection('improvement_proposals').create<ImprovementProposalRecord>(payload);
-        } catch (err: any) {
-            // Fallback: In system_prompts speichern
-            console.warn('[ProposalService] Fallback to system_prompts for create:', err.message);
+        } catch {
             const fallbackRecord = await pb.collection('system_prompts').create({
                 title: `💡 [Vorschlag] ${payload.title}`,
                 prompt_content: payload.description,
@@ -168,52 +161,32 @@ class ImprovementProposalService {
                     author_name: payload.author_name
                 }
             });
-
-            created = {
-                id: fallbackRecord.id,
-                collectionId: 'improvement_proposals',
-                collectionName: 'improvement_proposals',
-                ...payload,
-                created: fallbackRecord.created,
-                updated: fallbackRecord.updated
-            } as ImprovementProposalRecord;
+            created = { id: fallbackRecord.id, collectionId: 'improvement_proposals', collectionName: 'improvement_proposals', ...payload, created: fallbackRecord.created, updated: fallbackRecord.updated } as ImprovementProposalRecord;
         }
 
         this.proposals = [created, ...this.proposals.filter(p => p.id !== created.id)];
-        this.saveLocalCache();
-        toastStore.success(`Verbesserungsvorschlag "${created.title}" erfolgreich angelegt! 💡`);
+        saveCachedProposals(this.proposals);
+        toastStore.success(`Verbesserungsvorschlag "${created.title}" angelegt! 💡`);
         return created;
     }
 
     async updateProposal(id: string, updates: Partial<ImprovementProposalRecord>): Promise<ImprovementProposalRecord> {
         let updated: ImprovementProposalRecord;
-
         try {
             updated = await pb.collection('improvement_proposals').update<ImprovementProposalRecord>(id, updates);
-        } catch (err: any) {
-            // Fallback auf system_prompts
+        } catch {
             const existing = this.proposals.find(p => p.id === id);
             const merged = { ...existing, ...updates };
             await pb.collection('system_prompts').update(id, {
                 title: `💡 [Vorschlag] ${merged.title}`,
                 prompt_content: merged.description,
-                metadata: {
-                    is_proposal: true,
-                    category: merged.category,
-                    priority: merged.priority,
-                    proposal_status: merged.status,
-                    solution_concept: merged.solution_concept,
-                    tags: merged.tags,
-                    source_type: merged.source_type,
-                    author_name: merged.author_name
-                }
+                metadata: { is_proposal: true, category: merged.category, priority: merged.priority, proposal_status: merged.status, solution_concept: merged.solution_concept, tags: merged.tags, source_type: merged.source_type, author_name: merged.author_name }
             }).catch(() => {});
-
             updated = merged as ImprovementProposalRecord;
         }
 
         this.proposals = this.proposals.map(p => p.id === id ? updated : p);
-        this.saveLocalCache();
+        saveCachedProposals(this.proposals);
         toastStore.success(`Vorschlag "${updated.title}" aktualisiert! ✅`);
         return updated;
     }
@@ -221,22 +194,13 @@ class ImprovementProposalService {
     async updateProposalStatus(id: string, newStatus: 'idea' | 'planned' | 'in_progress' | 'implemented') {
         const item = this.proposals.find(p => p.id === id);
         if (!item || item.status === newStatus) return;
-
-        // Optimistic UI Update
         const oldStatus = item.status;
         this.proposals = this.proposals.map(p => p.id === id ? { ...p, status: newStatus } : p);
 
         try {
             await this.updateProposal(id, { status: newStatus });
-            const statusLabel = {
-                'idea': '💡 Idee',
-                'planned': '📋 Geplant',
-                'in_progress': '⚙️ In Arbeit',
-                'implemented': '✅ Umgesetzt'
-            }[newStatus];
-            toastStore.info(`Status auf "${statusLabel}" gesetzt.`);
+            this.markAsRead(id);
         } catch (err: any) {
-            // Rollback
             this.proposals = this.proposals.map(p => p.id === id ? { ...p, status: oldStatus } : p);
             toastStore.error(`Fehler beim Statuswechsel: ${err.message}`);
         }
@@ -245,17 +209,21 @@ class ImprovementProposalService {
     async deleteProposal(id: string) {
         const item = this.proposals.find(p => p.id === id);
         try {
-            try {
-                await pb.collection('improvement_proposals').delete(id);
-            } catch {
-                await pb.collection('system_prompts').delete(id).catch(() => {});
-            }
+            try { await pb.collection('improvement_proposals').delete(id); } catch { await pb.collection('system_prompts').delete(id).catch(() => {}); }
             this.proposals = this.proposals.filter(p => p.id !== id);
-            this.saveLocalCache();
+            saveCachedProposals(this.proposals);
             toastStore.info(`Vorschlag "${item?.title || 'Vorschlag'}" gelöscht. 🗑️`);
         } catch (err: any) {
             toastStore.error(`Fehler beim Löschen: ${err.message}`);
         }
+    }
+
+    create(data: Partial<ImprovementProposalRecord>) {
+        return this.createProposal(data);
+    }
+
+    update(id: string, updates: Partial<ImprovementProposalRecord>) {
+        return this.updateProposal(id, updates);
     }
 }
 

@@ -1,0 +1,5 @@
+---
+trigger: always_on
+---
+
+Alle Fenster Modale Dialoge und Overlays müssen einer strikten und eindeutigen Schichtenarchitektur folgen damit Überlappungsfehler und fehlerhafte Klickbereiche ausgeschlossen sind. Feste Leisten wie Kopfzeilen oder die mobile Navigation dürfen niemals über einem geöffneten Modal liegen sondern müssen sauber im Hintergrund verbleiben sobald ein Dialog aktiv ist. Bei mehrstufigen Abläufen muss jedes neu geöffnete Fenster zuverlässig über dem vorherigen liegen inklusive abgedunkelter Ebenen die nur das oberste Element bedienbar halten. Menüs Auswahllisten und Tooltips müssen innerhalb von Fenstern stets so priorisiert sein dass sie niemals von Containerkanten abgeschnitten oder verdeckt werden. Benachrichtigungen und Systemhinweise stehen grundsätzlich über allen Modalen im Vordergrund während der Hintergrund der Hauptseite bei aktiven Fenstern gegen ungewolltes Verschieben abgesichert wird.

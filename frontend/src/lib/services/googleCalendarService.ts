@@ -8,9 +8,9 @@ export interface GoogleCalendarStatus {
     calendarId: string;
     syncEnabled: boolean;
     lastSync: string | null;
+    appName?: string;
 }
 
-// Dynamische Base-URL: Lokal direkt an den Express-Microservice Port 3000, Live über Nginx Reverse Proxy
 const API_BASE = dev ? 'http://localhost:3000/api/google-calendar' : '/api/emails/google-calendar';
 
 function getHeaders() {
@@ -21,14 +21,15 @@ function getHeaders() {
 }
 
 export const googleCalendarService = {
-    /**
-     * Ruft den aktuellen Verbindungsstatus des angemeldeten Benutzers ab
-     */
     async getStatus(): Promise<GoogleCalendarStatus> {
+        if (!pb.authStore.isValid) {
+            return { connected: false, hasCredentials: false, googleEmail: '', calendarId: 'primary', syncEnabled: false, lastSync: null, appName: 'Seniorenassistenz OrgaFlow' };
+        }
         try {
-            const res = await fetch(`${API_BASE}/status`, {
+            const res = await fetch(`${API_BASE}/status?_t=${Date.now()}`, {
                 method: 'GET',
-                headers: getHeaders()
+                headers: getHeaders(),
+                cache: 'no-store'
             });
 
             if (!res.ok) {
@@ -45,18 +46,17 @@ export const googleCalendarService = {
                 googleEmail: '',
                 calendarId: 'primary',
                 syncEnabled: false,
-                lastSync: null
+                lastSync: null,
+                appName: 'Seniorenassistenz OrgaFlow'
             };
         }
     },
 
-    /**
-     * Fordert eine Google OAuth2 Auth-URL an
-     */
     async getAuthUrl(): Promise<string> {
-        const res = await fetch(`${API_BASE}/auth-url`, {
+        const res = await fetch(`${API_BASE}/auth-url?_t=${Date.now()}`, {
             method: 'GET',
-            headers: getHeaders()
+            headers: getHeaders(),
+            cache: 'no-store'
         });
 
         const data = await res.json();
@@ -67,9 +67,6 @@ export const googleCalendarService = {
         return data.url;
     },
 
-    /**
-     * Startet den Google OAuth Flow in einem zentrierten Popup-Fenster
-     */
     async openOAuthPopup(): Promise<{ success: boolean; email?: string }> {
         const authUrl = await this.getAuthUrl();
 
@@ -81,49 +78,44 @@ export const googleCalendarService = {
 
             const popup = window.open(
                 authUrl,
-                'GoogleKalenderVerknuepfung',
+                'SeniorenassistenzOrgaFlowKalenderAuth',
                 `width=${width},height=${height},left=${left},top=${top},status=no,toolbar=no,menubar=no`
             );
 
             if (!popup) {
-                // Fallback falls Popup-Blocker aktiv ist
                 window.location.href = authUrl;
                 return;
             }
 
+            let resolved = false;
+            const finish = (fn: () => void) => {
+                if (resolved) return;
+                resolved = true;
+                clearInterval(checkClosed);
+                window.removeEventListener('message', messageHandler);
+                fn();
+            };
+
             const messageHandler = (event: MessageEvent) => {
-                if (event.data?.type === 'GOOGLE_CALENDAR_CONNECTED') {
-                    window.removeEventListener('message', messageHandler);
-                    resolve({ success: true, email: event.data.email });
-                } else if (event.data?.type === 'GOOGLE_CALENDAR_ERROR') {
-                    window.removeEventListener('message', messageHandler);
-                    reject(new Error(event.data.error || 'Google-Verknüpfung fehlgeschlagen.'));
+                if (event.data?.type === 'GOOGLE_CALENDAR_CONNECTED' || event.data?.type === 'GOOGLE_DRIVE_CONNECTED') {
+                    finish(() => resolve({ success: true, email: event.data.email }));
+                } else if (event.data?.type === 'GOOGLE_CALENDAR_ERROR' || event.data?.type === 'GOOGLE_DRIVE_ERROR') {
+                    finish(() => reject(new Error(event.data.error || 'Google-Verknüpfung fehlgeschlagen.')));
                 }
             };
 
             window.addEventListener('message', messageHandler);
 
-            // Prüfen, ob das Fenster vom Nutzer manuell geschlossen wurde
             const checkClosed = setInterval(() => {
                 if (popup.closed) {
-                    clearInterval(checkClosed);
-                    window.removeEventListener('message', messageHandler);
-                    // Nochmal Status prüfen für den Fall, dass PostMessage geblockt war
                     this.getStatus().then(status => {
-                        if (status.connected) {
-                            resolve({ success: true, email: status.googleEmail });
-                        } else {
-                            resolve({ success: false });
-                        }
-                    }).catch(() => resolve({ success: false }));
+                        finish(() => resolve({ success: status.connected, email: status.googleEmail }));
+                    }).catch(() => finish(() => resolve({ success: false })));
                 }
-            }, 800);
+            }, 700);
         });
     },
 
-    /**
-     * Synchronisiert alle zukünftigen Termine auf einmal
-     */
     async syncAll(): Promise<{ synced: number; total: number }> {
         const res = await fetch(`${API_BASE}/sync-all`, {
             method: 'POST',
@@ -138,10 +130,8 @@ export const googleCalendarService = {
         return { synced: data.synced, total: data.total };
     },
 
-    /**
-     * Synchronisiert einen einzelnen Termin (Erstellen, Aktualisieren oder Löschen)
-     */
     async syncAppointment(appointmentId: string, action: 'upsert' | 'delete' = 'upsert', googleEventId?: string): Promise<any> {
+        if (!pb.authStore.isValid) return null;
         try {
             const res = await fetch(`${API_BASE}/sync-appointment`, {
                 method: 'POST',
@@ -153,17 +143,13 @@ export const googleCalendarService = {
                 })
             });
 
-            const data = await res.json();
-            return data;
+            return await res.json();
         } catch (err) {
             console.warn('[Google Calendar Service] Fehler beim Termin-Sync:', err);
             return null;
         }
     },
 
-    /**
-     * Trennt die Google-Verknüpfung
-     */
     async disconnect(): Promise<boolean> {
         const res = await fetch(`${API_BASE}/disconnect`, {
             method: 'POST',
@@ -178,14 +164,13 @@ export const googleCalendarService = {
         return true;
     },
 
-    /**
-     * Ruft externe Termine aus dem Google Kalender ab (Nur-Lese-Ansicht)
-     */
-    async getExternalEvents(timeMin?: string, timeMax?: string): Promise<any[]> {
+    async getExternalEvents(timeMin?: string, timeMax?: string, userId?: string): Promise<any[]> {
+        if (!pb.authStore.isValid) return [];
         try {
             const params = new URLSearchParams();
             if (timeMin) params.set('timeMin', timeMin);
             if (timeMax) params.set('timeMax', timeMax);
+            if (userId) params.set('userId', userId);
             const queryStr = params.toString() ? `?${params.toString()}` : '';
             const res = await fetch(`${API_BASE}/events${queryStr}`, {
                 method: 'GET',
@@ -201,9 +186,6 @@ export const googleCalendarService = {
         }
     },
 
-    /**
-     * Speichert Google API Credentials oder schaltet Sync ein/aus
-     */
     async saveConfig(config: { clientId?: string; clientSecret?: string; syncEnabled?: boolean }): Promise<boolean> {
         const res = await fetch(`${API_BASE}/config`, {
             method: 'POST',

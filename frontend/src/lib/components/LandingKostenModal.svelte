@@ -11,8 +11,8 @@
     }
 </script>
 
-<dialog bind:this={dialog} class="p-0 bg-transparent backdrop:bg-black/60 backdrop:backdrop-blur-sm w-full max-w-2xl mx-auto my-auto rounded-3xl" onclick={(e) => { if (e.target === dialog) close(); }}>
-    <div class="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-10 w-full max-h-[88vh] overflow-y-auto custom-scrollbar relative shadow-2xl dark:shadow-black/60 border border-transparent dark:border-slate-800 transition-colors">
+<dialog bind:this={dialog} class="zero-inner-scroll-modal p-0 bg-transparent backdrop:bg-black/60 backdrop:backdrop-blur-sm w-full max-w-xl mx-auto my-auto rounded-3xl" onclick={(e) => { if (e.target === dialog) close(); }}>
+    <div class="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-7 w-full relative shadow-2xl dark:shadow-black/60 border border-transparent dark:border-slate-800 transition-colors">
         <button aria-label="Schließen" onclick={close} class="absolute top-6 right-6 w-11 h-11 bg-neutral-100 dark:bg-slate-800 hover:bg-neutral-200 dark:hover:bg-slate-700 text-neutral-600 dark:text-slate-300 rounded-full flex items-center justify-center transition-colors min-h-[44px] min-w-[44px] cursor-pointer">
             <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
         </button>

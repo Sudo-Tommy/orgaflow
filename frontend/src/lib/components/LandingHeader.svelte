@@ -13,29 +13,12 @@
     // svelte-ignore non_reactive_update
     let leistungenModal: ReturnType<typeof LandingLeistungenModal>;
 
-    let isDarkMode = $state(false);
+    import { themeService } from "$lib/services/themeService.svelte";
 
-    onMount(() => {
-        isDarkMode = document.documentElement.classList.contains('dark') || document.documentElement.classList.contains('theme-negative');
-        
-        // Beobachtet Änderungen an der HTML-Klasse, falls die Automatik einspringt
-        const observer = new MutationObserver(() => {
-            isDarkMode = document.documentElement.classList.contains('dark') || document.documentElement.classList.contains('theme-negative');
-        });
-        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-        
-        return () => observer.disconnect();
-    });
+    let isDarkMode = $derived(themeService.isDark);
 
     function toggleTheme() {
-        const newTheme = isDarkMode ? 'light' : 'dark';
-        localStorage.setItem('theme_preference', newTheme);
-        if (newTheme === 'dark') {
-            document.documentElement.classList.add('dark', 'theme-negative');
-        } else {
-            document.documentElement.classList.remove('dark', 'theme-negative');
-        }
-        window.dispatchEvent(new Event('theme-changed'));
+        themeService.toggle();
     }
 </script>
 

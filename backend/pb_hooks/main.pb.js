@@ -12,7 +12,7 @@ routerAdd("GET", "/api/orgaflow/logs", (c) => {
 
     // 1. Sicherheit: Echte PB-Admins ODER OrgaFlow-Admins mit Rolle "superadmin" zulassen
     const isRealSuperuser = collName === "_superusers";
-    const isAppSuperadmin = collName === "users" && authRecord.getString("role") === "superadmin";
+    const isAppSuperadmin = collName === "users" && (authRecord.getString("role") === "superadmin" || authRecord.getString("role") === "developer" || authRecord.getString("role") === "owner");
 
     if (!isRealSuperuser && !isAppSuperadmin) {
         throw new ForbiddenError("Zugriff verweigert: Ihr Account hat nicht die 'superadmin' Rolle.");
@@ -80,7 +80,7 @@ routerAdd("POST", "/api/orgaflow/auth/kill-session", (c) => {
 
     const collName = typeof authRecord.collectionName === 'function' ? authRecord.collectionName() : authRecord.collection().name;
     const isRealSuperuser = collName === "_superusers";
-    const isAppAdmin = collName === "users" && (authRecord.getString("role") === "superadmin" || authRecord.getString("role") === "admin");
+    const isAppAdmin = collName === "users" && (authRecord.getString("role") === "superadmin" || authRecord.getString("role") === "developer" || authRecord.getString("role") === "owner" || authRecord.getString("role") === "admin");
 
     let targetUserId = "";
     try {
@@ -197,7 +197,7 @@ onRecordEnrich((e) => {
 
     if (authRecord) {
         const collName = typeof authRecord.collectionName === 'function' ? authRecord.collectionName() : (authRecord.collection ? authRecord.collection().name : "");
-        isSuperuser = collName === "_superusers" || authRecord.getString("role") === "superadmin";
+        isSuperuser = collName === "_superusers" || authRecord.getString("role") === "superadmin" || authRecord.getString("role") === "developer" || authRecord.getString("role") === "owner";
         const appUserId = rec.getString("user");
         isOwner = Boolean(appUserId && appUserId === authRecord.id);
     }
@@ -322,7 +322,7 @@ routerAdd("POST", "/api/orgaflow/employees/generate-token", (c) => {
     const collName = typeof authRecord.collectionName === 'function' ? authRecord.collectionName() : authRecord.collection().name;
     const isSuperuser = collName === "_superusers";
     const role = authRecord.getString("role");
-    const isAdmin = isSuperuser || role === "superadmin" || role === "owner" || role === "admin";
+    const isAdmin = isSuperuser || role === "superadmin" || role === "developer" || role === "owner" || role === "admin";
 
     if (!isAdmin) {
         throw new ForbiddenError("Zugriff verweigert: Nur Administratoren dürfen QR-Zugangs-Tokens generieren.");

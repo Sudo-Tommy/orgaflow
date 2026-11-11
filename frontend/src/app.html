@@ -1,12 +1,15 @@
 <!doctype html>
-<html lang="en">
+<html lang="de">
 	<head>
 		<meta charset="utf-8" />
-		<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, interactive-widget=resizes-content" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, interactive-widget=resizes-content, viewport-fit=cover" />
 		<meta name="text-scale" content="scale" />
-		<link rel="manifest" href="%sveltekit.assets%/manifest.json">
-		<link rel="icon" href="%sveltekit.assets%/favicon.png" type="image/png">
-		<link rel="apple-touch-icon" href="%sveltekit.assets%/favicon.png">
+		<meta name="application-name" content="Seniorenassistenz OrgaFlow" />
+		<meta name="apple-mobile-web-app-title" content="Seniorenassistenz OrgaFlow" />
+		<meta property="og:site_name" content="Seniorenassistenz OrgaFlow" />
+		<link rel="manifest" href="/manifest.json">
+		<link rel="icon" href="/favicon.png" type="image/png">
+		<link rel="apple-touch-icon" href="/favicon.png">
 		<meta name="apple-mobile-web-app-capable" content="yes">
 		<meta name="apple-mobile-web-app-status-bar-style" content="default">
 		<meta name="mobile-web-app-capable" content="yes">
@@ -15,10 +18,51 @@
 		<!-- Google Font: Inter (Hochgradig lesbar & modern) -->
 		<link rel="preconnect" href="https://fonts.googleapis.com">
 		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-		<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+		<!-- Sofortige Tag/Nacht-Erkennung zur Vermeidung von Flimmern auf Mobilgeräten -->
+		<script>
+			try {
+				const mode = localStorage.getItem('orga_theme_mode') || localStorage.getItem('theme_preference') || 'auto';
+				let isDark = false;
+				if (mode === 'dark') {
+					isDark = true;
+				} else if (mode === 'light') {
+					isDark = false;
+				} else {
+					const hour = new Date().getHours();
+					isDark = hour >= 19 || hour < 7;
+				}
+				if (isDark) {
+					document.documentElement.classList.add('dark', 'theme-negative');
+				} else {
+					document.documentElement.classList.remove('dark', 'theme-negative');
+				}
+				window.addEventListener('vite:preloadError', () => {
+					const reloadKey = 'orga_chunk_reload_timestamp';
+					const lastReload = Number(sessionStorage.getItem(reloadKey) || 0);
+					const now = Date.now();
+					if (!lastReload || now - lastReload > 10000) {
+						sessionStorage.setItem(reloadKey, String(now));
+						window.location.reload();
+					}
+				});
+				window.addEventListener('load', () => {
+					if ('serviceWorker' in navigator) {
+						if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+							navigator.serviceWorker.getRegistrations().then((regs) => {
+								for (const reg of regs) reg.unregister();
+							});
+						} else {
+							navigator.serviceWorker.register('/service-worker.js').catch(() => {
+								navigator.serviceWorker.register('/sw.js').catch(() => {});
+							});
+						}
+					}
+				});
+			} catch (e) {}
+		</script>
 		%sveltekit.head%
 	</head>
-	<body data-sveltekit-preload-data="hover">
+	<body data-sveltekit-preload-data="tap">
 		<div style="display: contents">%sveltekit.body%</div>
 	</body>
 </html>

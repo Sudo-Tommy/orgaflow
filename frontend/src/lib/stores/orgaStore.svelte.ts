@@ -5,12 +5,8 @@ import type {
     DriveRecordRecord, ExpenditureRecord, InsuranceRecord, InvoiceRecord, 
     InvoiceAdjustmentRecord, LetterboxRecord, LiveChatRecord, MailboxMessageRecord, 
     RetirementHomeRecord, NursingHomeRecord, TaskRecord, TimeRecordRecord, 
-    UpdateRecord, SystemPromptRecord 
-} from '$lib/types/orgaTypes';
-
-// Hier definieren wir unsere zentralen Daten-Töpfe.
-// Du kannst hier direkt Sortierungen (-created bedeutet absteigend) oder 
-// Expands (z.B. lade die Versicherungsdaten beim Klienten direkt mit) festlegen.
+    UpdateRecord, SystemPromptRecord, EmployeeClientRecord, EmployeeContactRecord 
+} from '$lib/types/pocketbase';
 
 export const orgaStore = {
     users: new OrgaLiveCollection<UserRecord>('users', { 
@@ -24,17 +20,15 @@ export const orgaStore = {
     }),
     
     appointments: new OrgaLiveCollection<AppointmentRecord>('appointments', { 
-        sort: '-appointment', // Neueste Termine zuerst
-        expand: 'user,assigned_to,client,appointment_at,drive_record,time_record,tasks,expenditures' // Strikter Expand für Klient, Mitarbeiter, Aufgaben etc.
+        sort: '-appointment',
+        expand: 'user,assigned_to,client,appointment_at,drive_record,time_record,tasks,expenditures,parent_invoice,billing_user'
     }),
     
     clients: new OrgaLiveCollection<ClientRecord>('clients', { 
         sort: 'name_last', 
-        expand: 'insurance,retirement_homes,nursing_homes,contacts,templates,caregiver,inheritor'
-        // WICHTIG: Entferne hier den harten Filter, der 'Verstorben' oder 'Inaktiv' ausschließt!
+        expand: 'insurance,retirement_homes,facility,contacts,templates,caregiver,inheritor,billing_user,assigned_employee'
     }),
 
-    
     company: new OrgaLiveCollection<CompanyRecord>('company', { 
         expand: 'users,clients'
     }),
@@ -49,8 +43,8 @@ export const orgaStore = {
     insurancies: new OrgaLiveCollection<InsuranceRecord>('insurancies', { sort: 'name' }),
 
     invoices: new OrgaLiveCollection<InvoiceRecord>('invoices', {
-        sort: '-issue_date', // Neueste Rechnungen zuerst
-        expand: 'user,client,appointments,company' // WIRKLICH ALLE Verknüpfungen
+        sort: '-issue_date',
+        expand: 'user,client,appointments,company'
     }),
 
     invoice_adjustments: new OrgaLiveCollection<InvoiceAdjustmentRecord>('invoice_adjustments', {
@@ -83,6 +77,6 @@ export const orgaStore = {
     time_records: new OrgaLiveCollection<TimeRecordRecord>('time_records', { sort: '-start' }),
     updates: new OrgaLiveCollection<UpdateRecord>('updates', { sort: '-date' }),
     system_prompts: new OrgaLiveCollection<SystemPromptRecord>('system_prompts', { sort: '-created' }),
-    employee_clients: new OrgaLiveCollection<any>('employee_clients', { expand: 'employee,client' }),
-    employee_contacts: new OrgaLiveCollection<any>('employee_contacts', { expand: 'employee,contact' })
+    employee_clients: new OrgaLiveCollection<EmployeeClientRecord>('employee_clients', { expand: 'employee,client' }),
+    employee_contacts: new OrgaLiveCollection<EmployeeContactRecord>('employee_contacts', { expand: 'employee,contact' })
 };

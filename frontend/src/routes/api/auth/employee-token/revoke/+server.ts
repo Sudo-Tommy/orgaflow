@@ -36,7 +36,7 @@ export const POST: RequestHandler = async ({ request }) => {
             }
         }
 
-        const isSuperadmin = callerRecord?.role === 'superadmin' || callerRecord?.role === 'owner' || callerRecord?.collectionName === '_superusers';
+        const isSuperadmin = callerRecord?.role === 'developer' || callerRecord?.role === 'superadmin' || callerRecord?.role === 'owner' || callerRecord?.collectionName === '_superusers';
         const isAdmin = isSuperadmin || callerRecord?.role === 'admin';
 
         if (!isAdmin) {

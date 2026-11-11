@@ -1,8 +1,13 @@
 /**
- * Zentraler Service für E-Mail-Firmendaten und HTML-Header/Footer.
- * Ersetzt die duplizierten ~30-Zeilen-Blöcke in allen E-Mail-Modals.
+ * Zentraler Service für E-Mail-Firmendaten und einheitliches OrgaFlow-HTML-Layout.
  */
-import { pb } from '$lib/pocketbase';
+import { pb } from '$lib/services/pocketbase';
+import { isHtmlMessage, formatMessageToHtml, formatTextWithQuotes, buildCollapsibleQuoteHtml } from './emailQuoteFormatter';
+
+export { isHtmlMessage, formatMessageToHtml, formatTextWithQuotes, buildCollapsibleQuoteHtml };
+
+export const DEFAULT_EMAIL_ACCENT = '#4f46e5';
+export const DEFAULT_EMAIL_TITLE = '#312e81';
 
 export interface EmailCompanyData {
     compName: string;
@@ -19,33 +24,26 @@ export interface EmailUserData {
     userPhone: string;
 }
 
-/**
- * Löst die Firmendaten des aktuellen Users dynamisch auf.
- * Fallback-Defaults nur wenn kein Company-Eintrag gefunden wird.
- */
 export function resolveCompanyData(orgaStore: any, userOverride?: any): EmailCompanyData {
     const user = userOverride || pb.authStore.model;
-
     let compName = 'Ihre Seniorenassistenz';
-    let compStreet = '';
-    let compCity = '';
+    let compStreet = 'Dreyhauptstraße 2';
+    let compCity = '06108 Halle (Saale)';
     let compWeb = 'www.ihre-seniorenassistenz.com';
     let compLogo = '';
     let companyId: string | null = null;
 
     if (user && user.company) {
         companyId = Array.isArray(user.company) ? user.company[0] : user.company;
-        const comp = orgaStore.company?.data?.find((c: any) => c.id === companyId);
+        const comp = orgaStore?.company?.data?.find((c: any) => c.id === companyId);
         if (comp) {
             compName = comp.name || compName;
-            compStreet = `${comp.street || ''} ${comp.housenr || ''}`.trim();
-            compCity = `${comp.zip || ''} ${comp.city || ''}`.trim();
+            compStreet = `${comp.street || ''} ${comp.housenr || ''}`.trim() || compStreet;
+            compCity = `${comp.zip || ''} ${comp.city || ''}`.trim() || compCity;
             compWeb = comp.website || compWeb;
             if (comp.logo) {
                 const logoFilename = Array.isArray(comp.logo) ? comp.logo[0] : comp.logo;
-                const rawUrl = (pb.files as any).getUrl
-                    ? (pb.files as any).getUrl(comp, logoFilename)
-                    : (pb.files as any).getURL(comp, logoFilename);
+                const rawUrl = pb.files.getURL(comp, logoFilename);
                 try {
                     const parsedUrl = new URL(rawUrl, 'https://ihre-seniorenassistenz.com');
                     if (parsedUrl.hostname === 'localhost' || parsedUrl.hostname === '127.0.0.1') {
@@ -54,21 +52,15 @@ export function resolveCompanyData(orgaStore: any, userOverride?: any): EmailCom
                         parsedUrl.port = '';
                     }
                     compLogo = parsedUrl.toString();
-                } catch (e) {
+                } catch {
                     compLogo = rawUrl;
                 }
             }
         }
     }
-
     return { compName, compStreet, compCity, compWeb, compLogo, companyId };
 }
 
-/**
- * Löst die User-Kontaktdaten für die E-Mail-Signatur auf.
- * senderEmail: Optional – wenn eine Gmail-Adresse als Absender aktiv ist,
- * wird diese statt der PB-Account-E-Mail im Footer angezeigt.
- */
 export function resolveUserData(userOverride?: any, fallbackUser?: any, senderEmail?: string): EmailUserData {
     const user = userOverride || pb.authStore.model;
     let userName = 'Ihre Seniorenassistenz';
@@ -77,15 +69,11 @@ export function resolveUserData(userOverride?: any, fallbackUser?: any, senderEm
     } else if (fallbackUser && (fallbackUser.name_first || fallbackUser.name_last)) {
         userName = `${fallbackUser.name_first || ''} ${fallbackUser.name_last || ''}`.trim();
     }
-    // Wenn eine Gmail-Absenderadresse bekannt ist, diese im Footer verwenden
     const userEmail = senderEmail || user?.email || fallbackUser?.email || 'info@ihre-seniorenassistenz.com';
-    const userPhone = user?.handy || user?.tel || fallbackUser?.handy || fallbackUser?.tel || '';
+    const userPhone = user?.handy || user?.tel || fallbackUser?.handy || fallbackUser?.tel || '0151 57515432';
     return { userName, userEmail, userPhone };
 }
 
-/**
- * Baut den Text-Signaturblock.
- */
 export function buildTextSignature(userData: EmailUserData, compData: EmailCompanyData): string {
     const parts = [userData.userName, compData.compName];
     if (compData.compStreet) parts.push(compData.compStreet);
@@ -96,17 +84,13 @@ export function buildTextSignature(userData: EmailUserData, compData: EmailCompa
     return `\n\n--\n${parts.join('\n')}`;
 }
 
-/**
- * Baut den HTML-Header (oberer Banner-Bereich).
- * accentColor erlaubt verschiedene Farbschemata pro Modal.
- */
 export function buildEmailHeader(
     compData: EmailCompanyData,
-    accentColor: string = '#c66a4d',
-    titleColor: string = '#954028'
+    accentColor: string = DEFAULT_EMAIL_ACCENT,
+    titleColor: string = DEFAULT_EMAIL_TITLE
 ): string {
     return `
-        <div style="background-color: #fdf8f6; padding: 30px; border-bottom: 3px solid ${accentColor};">
+        <div style="background-color: #faf5ff; padding: 30px; border-bottom: 3px solid ${accentColor};">
             <table width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                     <td valign="middle">
@@ -119,20 +103,17 @@ export function buildEmailHeader(
         </div>`;
 }
 
-/**
- * Baut den HTML-Footer (Signatur-Bereich).
- */
 export function buildEmailFooter(
     userData: EmailUserData,
     compData: EmailCompanyData,
-    accentColor: string = '#c66a4d'
+    accentColor: string = DEFAULT_EMAIL_ACCENT
 ): string {
     const addressLines = [compData.compStreet, compData.compCity].filter(Boolean).join('<br>');
     const webUrl = compData.compWeb.startsWith('http') ? compData.compWeb : 'https://' + compData.compWeb;
     const webDisplay = compData.compWeb.replace(/^https?:\/\//, '');
 
     return `
-        <div style="background-color: #f8fafc; padding: 30px; border-top: 1px solid #e5e7eb;">
+        <div style="background-color: #f8fafc; padding: 30px; border-top: 1px solid #e2e8f0;">
             <table width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size: 14px; color: #4b5563;">
                 <tr>
                     <td valign="top" style="padding-bottom: 20px;">
@@ -161,13 +142,56 @@ export function buildEmailFooter(
         </div>`;
 }
 
-/**
- * Portal-Link CTA-Button (ersetzt Plaintext-Links in der E-Mail).
- */
 export function getPortalButtonRegex(): RegExp {
-    return /(?:<br>|\s)*(?:👉\s*)?(?:&lt;|<)?\s*https?:\/\/(?:www\.)?ihre-seniorenassistenz\.com\/portal\/?\s*(?:&gt;|>)?/gi;
+    return /(?:<br>|\s)*(?:👉\s*)?(?:&lt;|<)?\s*(?<!href=["'])https?:\/\/(?:www\.)?ihre-seniorenassistenz\.com\/portal\/?(?:\?[^\s<>"']*)?\s*(?:&gt;|>)?/gi;
 }
 
-export function getPortalButtonHtml(accentColor: string = '#c66a4d'): string {
-    return `<br><table role="presentation" border="0" cellpadding="0" cellspacing="0" style="margin: 15px 0;"><tr><td align="center" bgcolor="${accentColor}" style="border-radius: 8px;"><a href="https://www.ihre-seniorenassistenz.com/portal" style="display: inline-block; padding: 12px 24px; color: #ffffff; text-decoration: none; font-weight: bold; font-family: Arial, sans-serif; font-size: 15px;">Zum Klienten-Portal</a></td></tr></table><br>`;
+export function getPortalButtonHtml(accentColor: string = DEFAULT_EMAIL_ACCENT): string {
+    return `<table role="presentation" border="0" cellpadding="0" cellspacing="0" style="margin: 20px 0 10px 0;"><tr><td align="center" bgcolor="${accentColor}" style="border-radius: 8px;"><a href="https://www.ihre-seniorenassistenz.com/portal" target="_blank" style="display: inline-block; padding: 12px 24px; color: #ffffff; text-decoration: none; font-weight: bold; font-family: 'Segoe UI', Arial, sans-serif; font-size: 15px; border-radius: 8px;">Zum Klienten-Portal</a></td></tr></table>`;
+}
+
+export function wrapOrgaFlowEmailHtml(params: {
+    bodyContent: string;
+    userData: EmailUserData;
+    compData: EmailCompanyData;
+    accentColor?: string;
+    titleColor?: string;
+    extraBlocksHtml?: string;
+    quoteHtml?: string;
+}): string {
+    const raw = (params.bodyContent || '').trim();
+    if (!raw && !params.quoteHtml) return '';
+
+    // Bereits vollständig mit OrgaFlow-Briefbogen umhüllt? Keine Doppelung erzeugen!
+    if (raw.includes('Alltagshilfe • Betreuung • Organisation') && raw.includes('Ihre Ansprechperson') && raw.includes('background-color: #faf5ff')) {
+        return raw;
+    }
+
+    const accent = params.accentColor || DEFAULT_EMAIL_ACCENT;
+    const title = params.titleColor || DEFAULT_EMAIL_TITLE;
+    const isAlreadyHtml = isHtmlMessage(raw);
+    let formatted = formatMessageToHtml(raw, params.quoteHtml);
+
+    if (!isAlreadyHtml && !formatted.includes('<a ')) {
+        formatted = formatted.replace(getPortalButtonRegex(), getPortalButtonHtml(accent));
+    }
+
+    let portalBtn = '';
+    if (!formatted.includes('ihre-seniorenassistenz.com/portal') && !formatted.includes('Zum Klienten-Portal')) {
+        portalBtn = getPortalButtonHtml(accent);
+    }
+
+    const extra = params.extraBlocksHtml || '';
+
+    return `
+        <div style="font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif; color: #374151; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05); background-color: #ffffff;">
+            ${buildEmailHeader(params.compData, accent, title)}
+            <div style="padding: 35px 30px; font-size: 15px; line-height: 1.7; color: #1f2937; background-color: #ffffff;">
+                ${formatted}
+                ${extra}
+                ${portalBtn}
+            </div>
+            ${buildEmailFooter(params.userData, params.compData, accent)}
+        </div>
+    `.trim();
 }

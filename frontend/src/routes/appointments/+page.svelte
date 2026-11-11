@@ -20,10 +20,10 @@
     );
 
     let scopedAppointments = $derived(
-        (orgaStore.appointments?.data || []).filter((a: any) => rbacService.isRecordInScope(a))
+        (orgaStore.appointments?.data || []).filter((a: any) => rbacService.isRecordInScope(a, 'appointment'))
     );
     let scopedClients = $derived(
-        (orgaStore.clients?.data || []).filter((c: any) => rbacService.isRecordInScope(c))
+        (orgaStore.clients?.data || []).filter((c: any) => rbacService.isRecordInScope(c, 'client'))
     );
 
     onMount(() => {
@@ -46,7 +46,7 @@
     </div>
     <button
         onclick={() => handleNewAppointment()}
-        class="orga-button-primary w-full sm:w-auto justify-center py-3 sm:py-2.5 mt-4 sm:mt-0 cursor-pointer"
+        class="orga-button-primary hidden sm:inline-flex w-auto justify-center py-2.5 cursor-pointer"
     >
         <svg
             class="w-5 h-5 shrink-0"
@@ -65,16 +65,16 @@
 </div>
 
 {#if pendingRequests > 0}
-    <div class="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs animate-enter">
+    <div class="mb-6 p-4 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/70 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs animate-enter">
         <div class="flex items-center gap-3 min-w-0">
-            <div class="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center text-xl shrink-0">
+            <div class="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 flex items-center justify-center text-xl shrink-0">
                 📬
             </div>
             <div class="min-w-0">
-                <p class="text-sm font-bold text-amber-950 truncate">
+                <p class="text-sm font-bold text-amber-950 dark:text-amber-200 truncate">
                     {pendingRequests} offene Terminanfrage{pendingRequests > 1 ? 'n' : ''}
                 </p>
-                <p class="text-xs text-amber-700 mt-0.5">
+                <p class="text-xs text-amber-700 dark:text-amber-300/80 mt-0.5">
                     Neue Anfragen von der Website warten auf Prüfung und Zuweisung.
                 </p>
             </div>

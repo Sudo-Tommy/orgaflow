@@ -6,27 +6,18 @@ import {
     syncWriteOffToAccounting 
 } from '$lib/services/invoiceAccountingService';
 import type { InvoiceRecord, InvoiceAdjustmentActionType, InvoiceStatus } from '$lib/types/orgaTypes';
-
-export interface SettlePaymentParams {
-    invoice: InvoiceRecord;
-    receivedAmount: number;
-    paymentDate: string; // ISO date string
-    referenceNr?: string;
-    notes?: string;
-}
-
-export interface SettleDisputeParams extends SettlePaymentParams {
-    differenceAmount: number;
-}
-
-export interface SettleBillClientParams extends SettlePaymentParams {
-    differenceAmount: number;
-}
-
-export interface SettleWriteOffParams extends SettlePaymentParams {
-    differenceAmount: number;
-    reason: string;
-}
+import { 
+    extractRelationArray,
+    type SettlePaymentParams,
+    type SettleDisputeParams,
+    type SettleBillClientParams,
+    type SettleWriteOffParams
+} from '$lib/services/invoiceSettlementHelpers';
+import {
+    fetchInvoiceAppointments,
+    computeFifoAllocation,
+    applyAppointmentUpdates
+} from '$lib/services/invoiceSettlementPartialHelper';
 
 /**
  * Service to execute the 2-step settlement workflow for invoices
@@ -49,16 +40,9 @@ export const invoiceSettlementService = {
             paid_at: paymentDate
         };
 
-        // 1. Update Invoice in PocketBase
         await pb.collection('invoices').update(invoiceId, payload);
-
-        // 2. Log Adjustment in invoice_adjustments
         await this.logAdjustment(invoiceId, 'full_payment', totalGross, 0, referenceNr, notes);
-
-        // 3. Accounting sync
         await syncSettlementPaymentToAccounting(invoice, totalGross, paymentDate);
-
-        // 4. Update local Store
         this.updateLocalInvoiceStore(invoiceId, payload);
 
         toastStore.success(`Rechnung ${invoice.invoice_nr || ''} als vollständig bezahlt verbucht.`);
@@ -79,13 +63,9 @@ export const invoiceSettlementService = {
             paid_at: paymentDate
         };
 
-        // 1. Update Invoice
         await pb.collection('invoices').update(invoiceId, payload);
-
-        // 2. Log Adjustment
         await this.logAdjustment(invoiceId, 'dispute', receivedAmount, differenceAmount, referenceNr, notes);
 
-        // 3. Create 14-day task for dispute resolution
         const dueDate = new Date();
         dueDate.setDate(dueDate.getDate() + 14);
 
@@ -116,88 +96,63 @@ export const invoiceSettlementService = {
             console.error("Fehler beim Erstellen der Fristaufgabe:", err);
         }
 
-        // 4. Sync received revenue to accounting
         if (receivedAmount > 0) {
             await syncSettlementPaymentToAccounting(invoice, receivedAmount, paymentDate);
         }
 
-        // 5. Update local Store
         this.updateLocalInvoiceStore(invoiceId, payload);
-
         toastStore.success(`Teilzahlung verbucht. Mahnstopp für Rechnung ${invoice.invoice_nr || ''} aktiviert.`);
     },
 
     /**
-     * 3. Schritt 2: Option 2 – Privat an Klienten weiterberechnen
+     * 3. Schritt 2: Option 2 – Privat an Klienten weiterberechnen (FIFO-Hinterlegung am Termin)
      */
-    async settleBillClientPrivat(params: SettleBillClientParams): Promise<{ newInvoiceId: string }> {
+    async settleBillClientPrivat(params: SettleBillClientParams): Promise<{ newInvoiceId: string; clientId: string }> {
         const { invoice, receivedAmount, differenceAmount, paymentDate, referenceNr, notes } = params;
         const invoiceId = invoice.id;
+        const totalGross = Number(invoice.brutto) || (receivedAmount + differenceAmount);
 
-        // 1. Ursprüngliche Kassenrechnung abschließen
+        // 1. Zugehörige Termine laden & FIFO Aufteilung berechnen
+        const apps = await fetchInvoiceAppointments(invoice);
+        const updates = computeFifoAllocation(apps, totalGross, receivedAmount, invoice);
+
+        // 2. Termine in PocketBase und Store mit remaining_amount & parent_invoice aktualisieren
+        if (updates.length > 0) {
+            await applyAppointmentUpdates(updates, invoice);
+        }
+
+        // 3. Ursprüngliche Kassenrechnung abschließen
         const originalPayload: Partial<InvoiceRecord> = {
             status: 'Abgeschlossen' as InvoiceStatus,
             paid_amount: receivedAmount,
             remaining_amount: 0,
             dispute_hold: false,
-            paid_at: paymentDate
+            paid_at: paymentDate,
+            notes: [
+                invoice.notes,
+                `Kassenkürzung: ${differenceAmount.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })} per FIFO an Termine übertragen.`,
+                referenceNr ? `Bescheid-Az.: ${referenceNr}` : '',
+                notes ? `Vermerk: ${notes}` : ''
+            ].filter(Boolean).join('\n')
         };
         await pb.collection('invoices').update(invoiceId, originalPayload);
 
-        // 2. Log Adjustment
+        // 4. Log Adjustment
         await this.logAdjustment(invoiceId, 'bill_client_privat', receivedAmount, differenceAmount, referenceNr, notes);
 
-        // 3. Neue Privatrechnung im Entwurf anlegen
-        const clientId = Array.isArray(invoice.client) 
-            ? invoice.client[0] 
-            : (typeof invoice.client === 'string' ? invoice.client : invoice.expand?.client?.id || '');
-
-        const parentNr = invoice.invoice_nr || 'Kasse';
-        const newInvoiceNr = `${parentNr}-P`;
-
-        const dueDate = new Date();
-        dueDate.setDate(dueDate.getDate() + 14);
-
-        const newInvoicePayload: any = {
-            status: 'Entwurf',
-            parent_invoice: invoiceId,
-            client: clientId || null,
-            user: invoice.user || pb.authStore.model?.id,
-            company: invoice.company || null,
-            invoice_nr: newInvoiceNr,
-            issue_date: new Date().toISOString(),
-            due_date: dueDate.toISOString(),
-            brutto: differenceAmount,
-            netto: differenceAmount,
-            tax_sum: 0,
-            tax_rate: '0',
-            notes: `Weiterberechnung Kassenkürzung zu Rechnung ${parentNr}.${referenceNr ? ` Aktenzeichen: ${referenceNr}.` : ''}${notes ? ` Vermerk: ${notes}` : ''}`,
-            table_positions: [
-                {
-                    title: `Kassenkürzung / Eigenanteil zu Rechnung ${parentNr}`,
-                    description: `Differenzbetrag / Nicht anerkannte Leistung aus Rechnung ${parentNr}${referenceNr ? ` (Az. ${referenceNr})` : ''}`,
-                    quantity: 1,
-                    price: differenceAmount,
-                    total: differenceAmount
-                }
-            ]
-        };
-
-        const createdRecord = await pb.collection('invoices').create(newInvoicePayload);
-
-        // 4. Accounting sync für Kassenrechnung
+        // 5. Accounting sync für erhaltenen Teilbetrag
         if (receivedAmount > 0) {
             await syncSettlementPaymentToAccounting(invoice, receivedAmount, paymentDate);
         }
 
-        // 5. Update local Store
+        // 6. Update local Store
         this.updateLocalInvoiceStore(invoiceId, originalPayload);
-        if (orgaStore.invoices) {
-            orgaStore.invoices.data.unshift(createdRecord as any);
-        }
 
-        toastStore.success(`Ursprungsrechnung abgeschlossen. Neue Privatrechnung ${newInvoiceNr} im Entwurf erstellt.`);
-        return { newInvoiceId: createdRecord.id };
+        const clientArr = extractRelationArray(invoice.client, invoice.expand?.client);
+        const firstClientId = clientArr[0] || '';
+
+        toastStore.success(`Kassenrechnung abgeschlossen. Restbetrag (${differenceAmount.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}) steht als offene Teilforderung für die nächste Privatrechnung bereit.`);
+        return { newInvoiceId: '', clientId: firstClientId };
     },
 
     /**
@@ -218,25 +173,18 @@ export const invoiceSettlementService = {
             paid_at: paymentDate
         };
 
-        // 1. Update Invoice
         await pb.collection('invoices').update(invoiceId, payload);
-
-        // 2. Log Adjustment
         await this.logAdjustment(invoiceId, 'write_off', receivedAmount, differenceAmount, referenceNr, finalReason);
 
-        // 3. Sync received revenue to accounting
         if (receivedAmount > 0) {
             await syncSettlementPaymentToAccounting(invoice, receivedAmount, paymentDate);
         }
 
-        // 4. Sync write-off correction expense to accounting
         if (differenceAmount > 0) {
             await syncWriteOffToAccounting(invoice, differenceAmount, finalReason, paymentDate);
         }
 
-        // 5. Update local Store
         this.updateLocalInvoiceStore(invoiceId, payload);
-
         toastStore.success(`Rechnung abgeschlossen. Differenz (${differenceAmount.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}) wurde als Verlust ausgebucht.`);
     },
 

@@ -1,5 +1,6 @@
 <script lang="ts">
     import type { Snippet } from 'svelte';
+    import { triggerHaptic } from '$lib/services/hapticFeedback';
 
     interface Props {
         isSubmitting?: boolean;
@@ -28,6 +29,7 @@
     }: Props = $props();
 
     function handleCancel() {
+        triggerHaptic('tap');
         if (oncancel) {
             oncancel();
         } else if (typeof history !== 'undefined') {
@@ -37,7 +39,7 @@
 </script>
 
 <div
-    class="border-t border-slate-200 bg-white/95 backdrop-blur-md p-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] dark:border-slate-800 dark:bg-slate-950/95 z-10 transition-all {sticky ? 'sticky bottom-0' : ''}"
+    class="border-t border-slate-200 bg-white/95 backdrop-blur-md p-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] landscape:p-2.5 landscape:pb-[calc(env(safe-area-inset-bottom)+0.35rem)] dark:border-slate-800 dark:bg-slate-950/95 z-10 transition-all {sticky ? 'sticky bottom-0' : ''}"
 >
     <div class="flex items-center justify-between gap-3 max-w-5xl mx-auto">
         <div>
@@ -61,7 +63,7 @@
                 form={formId}
                 class="h-11 px-6 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-600/20 transition-all text-sm font-semibold flex items-center justify-center gap-2 min-w-[130px] active:scale-95 touch-manipulation cursor-pointer disabled:opacity-50 disabled:pointer-events-none"
                 disabled={isSubmitting || disabled}
-                onclick={(e) => onsubmit?.(e)}
+                onclick={(e) => { triggerHaptic('success'); onsubmit?.(e); }}
             >
                 {#if isSubmitting}
                     <svg

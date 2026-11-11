@@ -21,6 +21,10 @@ export interface NotifyRequestPayload {
     date?: string;
     time?: string;
     companyName?: string;
+    /** 🍯 Anti-Spam: Honeypot-Feld. Gesetzt = Bot, Server verwirft still. */
+    honeypot?: string;
+    /** ⏱️ Anti-Spam: HMAC-gesicherter Zeitstempel-Token für die Time-Trap-Validierung. */
+    formToken?: string;
 }
 
 export interface NotificationResponse {

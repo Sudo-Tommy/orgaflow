@@ -23,19 +23,21 @@ export const handle: Handle = async ({ event, resolve }) => {
     const path = event.url.pathname;
     const user = event.locals.user;
 
-    // Route-Guarding auf Basis von Pfadsegmenten und Rollen
-    if (path.startsWith('/owner') && user?.role !== 'owner') {
-        throw redirect(303, '/login');
+    // Route-Guarding auf Basis von Pfadsegmenten und Rollen (Developer & Superadmin haben Vollzugriff)
+    const isFullAdmin = user?.role === 'developer' || user?.role === 'superadmin' || user?.role === 'owner' || event.locals.pb.authStore.isSuperuser;
+
+    if (path.startsWith('/owner') && !isFullAdmin) {
+        throw redirect(303, '/portal?mode=employee');
     }
     
     if (path.startsWith('/admin')) {
-        if (!user || (user.role !== 'admin' && user.role !== 'owner')) {
-            throw redirect(303, '/login');
+        if (!user || (!isFullAdmin && user.role !== 'admin')) {
+            throw redirect(303, '/portal?mode=employee');
         }
     }
 
     if (path.startsWith('/caregiver') && !user) {
-        throw redirect(303, '/login');
+        throw redirect(303, '/portal?mode=employee');
     }
 
     // Sicherheits-Header mitsenden

@@ -3,10 +3,15 @@
     import { landingCmsStore } from "$lib/services/landingCmsStore.svelte";
 
     const defaultServices = getServices();
+
+    let headline = $derived(landingCmsStore.content.services?.headline || "Ihre persönliche Task-Force für den Alltag");
+    let subtitle = $derived(landingCmsStore.content.services?.subtitle || "Egal ob Formular-Dschungel, Großeinkauf oder einfach nur jemand, der zuhört. Wir passen uns voll und ganz Ihren Wünschen an.");
+
     let services = $derived.by(() => {
-        const cms = landingCmsStore.content.services;
-        if (Array.isArray(cms) && cms.length > 0) {
-            return cms.map((s, idx) => ({
+        const raw = landingCmsStore.content.services;
+        const items = Array.isArray(raw) ? raw : (raw?.items || []);
+        if (items.length > 0) {
+            return items.map((s, idx) => ({
                 iconPath: defaultServices[idx % defaultServices.length]?.iconPath || "M12 6v6m0 0v6m0-6h6m-6 0H6",
                 icon: s.icon,
                 title: s.title,
@@ -22,8 +27,8 @@
 
 <div id="leistungen" class="w-full max-w-6xl mx-auto px-4 py-20 transition-colors">
     <div class="text-center mb-16">
-        <h2 class="text-3xl md:text-4xl font-bold text-neutral-900 dark:text-white mb-4">Ihre persönliche Task-Force für den Alltag</h2>
-        <p class="text-lg text-neutral-500 dark:text-slate-400 max-w-2xl mx-auto">Egal ob Formular-Dschungel, Großeinkauf oder einfach nur jemand, der zuhört. Wir passen uns voll und ganz Ihren Wünschen an.</p>
+        <h2 class="text-3xl md:text-4xl font-bold text-neutral-900 dark:text-white mb-4">{headline}</h2>
+        <p class="text-lg text-neutral-500 dark:text-slate-400 max-w-2xl mx-auto">{subtitle}</p>
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-8 text-left">

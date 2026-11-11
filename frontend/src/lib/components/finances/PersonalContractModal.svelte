@@ -1,7 +1,8 @@
 <script lang="ts">
     import { toastStore } from '$lib/services/toastService.svelte';
     import { pb } from '$lib/services/pocketbase';
-  import { confirmStore } from '$lib/services/confirmService.svelte';
+    import { confirmStore } from '$lib/services/confirmService.svelte';
+    import { autoGrow } from '$lib/actions/autoGrow';
 
     let { onSave, onUpdate } = $props<{
         onSave: (payload: FormData) => Promise<void>;
@@ -22,7 +23,6 @@
     let initialDataHash = $state("");
     let documentFile = $state<File | null>(null);
 
-    // KI-Scanner
     let isScanningDoc = $state(false);
     let docFileInput: HTMLInputElement;
 
@@ -94,7 +94,6 @@
             });
 
             documentFile = compressedFile;
-
             const base64 = await new Promise<string>((resolve, reject) => {
                 const reader = new FileReader();
                 reader.onload = () => resolve((reader.result as string).split(',')[1]);
@@ -159,14 +158,14 @@
     }
 </script>
 
-<dialog bind:this={dialog} class="p-0 bg-transparent backdrop:bg-slate-950/65 backdrop:backdrop-blur-md w-[calc(100%-1.5rem)] sm:w-full max-w-md mx-auto my-auto rounded-2xl sm:rounded-3xl shadow-2xl" onclick={(e) => { if (e.target === dialog) attemptClose(); }}>
-    <div class="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-2xl sm:rounded-3xl p-4 sm:p-6 md:p-8 w-full max-h-[90vh] overflow-y-auto custom-scrollbar relative shadow-2xl">
-        <button aria-label="Schließen" title="Schließen" onclick={attemptClose} class="absolute top-3.5 right-3.5 sm:top-5 sm:right-5 w-10 h-10 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-full flex items-center justify-center transition-colors z-10">✕</button>
+<dialog bind:this={dialog} class="zero-inner-scroll-modal p-0 bg-transparent backdrop:bg-slate-950/65 backdrop:backdrop-blur-md w-[calc(100%-1.5rem)] sm:w-full max-w-md mx-auto my-6 sm:my-10 rounded-2xl sm:rounded-3xl shadow-2xl" onclick={(e) => { if (e.target === dialog) attemptClose(); }}>
+    <div class="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-2xl sm:rounded-3xl p-4 sm:p-6 md:p-8 w-full relative shadow-2xl">
+        <button aria-label="Schließen" title="Schließen" onclick={attemptClose} class="absolute top-3.5 right-3.5 sm:top-5 sm:right-5 w-10 h-10 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-full flex items-center justify-center transition-colors z-10 cursor-pointer">✕</button>
         
         <div class="flex items-center justify-between mb-5 sm:mb-6 pr-12">
             <h2 class="text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100">{editId ? 'Vertrag bearbeiten' : 'Neuer Vertrag'}</h2>
             <input type="file" accept="image/*,application/pdf" capture="environment" class="hidden" bind:this={docFileInput} onchange={handleDocScan} />
-            <button type="button" onclick={() => docFileInput.click()} disabled={isScanningDoc || isLoading} class="text-xs font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800 px-3 py-1.5 rounded-xl flex items-center justify-center gap-1.5 transition-colors shadow-sm disabled:opacity-50 shrink-0 min-h-[36px]">
+            <button type="button" onclick={() => docFileInput.click()} disabled={isScanningDoc || isLoading} class="text-xs font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800 px-3 py-1.5 rounded-xl flex items-center justify-center gap-1.5 transition-colors shadow-sm disabled:opacity-50 shrink-0 min-h-[36px] cursor-pointer">
                 {#if isScanningDoc}
                     <div class="w-3 h-3 border-2 border-indigo-200 border-t-indigo-700 dark:border-t-indigo-300 rounded-full animate-spin"></div> Scannt...
                 {:else}
@@ -193,7 +192,7 @@
             </div>
             
             <div><label for="contract-next-date" class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Nächste Fälligkeit</label><input id="contract-next-date" type="date" bind:value={next_due_date} class="orga-input-clear min-h-[42px]" disabled={isScanningDoc || isLoading} /></div>
-            <div><label for="contract-notes" class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Notizen</label><textarea id="contract-notes" bind:value={notes} rows="2" class="orga-input-clear resize-y" disabled={isScanningDoc || isLoading}></textarea></div>
+            <div><label for="contract-notes" class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Notizen</label><textarea use:autoGrow id="contract-notes" bind:value={notes} rows="2" class="auto-grow orga-input-clear resize-none overflow-hidden min-h-20" disabled={isScanningDoc || isLoading}></textarea></div>
             
             {#if !isScanningDoc}
                 <div>

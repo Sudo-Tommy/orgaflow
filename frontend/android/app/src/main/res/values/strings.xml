@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Seniorenassistenz</string>
+    <string name="title_activity_main">Seniorenassistenz</string>
+    <string name="package_name">de.seniorenassistenz.orgaflow</string>
+    <string name="custom_url_scheme">de.seniorenassistenz.orgaflow</string>
+</resources>

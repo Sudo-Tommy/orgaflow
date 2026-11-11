@@ -1,7 +1,9 @@
 import { pb } from '$lib/services/pocketbase';
 import { dev } from '$app/environment';
+import { orgaStore } from '$lib/stores/orgaStore.svelte';
+import { resolveCompanyData, resolveUserData, wrapOrgaFlowEmailHtml, buildTextSignature } from '$lib/services/emailCompanyService';
+import { upsertSentMailboxRecord, base64ToFile } from '$lib/services/emailSenderHelper';
 
-// Dynamische URL: Lokal direkt an den Port 3000, Live via relativer URL an den Nginx-Proxy
 export const MICROSERVICE_URL = dev ? 'http://127.0.0.1:3000/api/emails' : '/api/emails';
 
 export interface SendEmailPayload {
@@ -11,7 +13,9 @@ export interface SendEmailPayload {
     subject: string;
     text?: string;
     html?: string;
-    attachments?: Array<{ filename: string; content: string; encoding: string }>;
+    attachments?: Array<{ filename: string; content: string; encoding: string; contentType?: string }>;
+    provider?: 'ionos' | 'google' | 'smtp' | 'gmail';
+    fromName?: string;
 }
 
 export interface EmailMessage {
@@ -26,10 +30,6 @@ export interface EmailMessage {
     is_read?: boolean;
 }
 
-/**
- * Ruft die neuesten E-Mails aus dem Posteingang über den Microservice ab.
- * Ausgestattet mit hartem 5.000 ms Timeout via AbortController gegen UI-Freezes.
- */
 export async function fetchInbox(externalSignal?: AbortSignal): Promise<EmailMessage[]> {
     if (!pb.authStore.isValid) {
         throw new Error('Nicht autorisiert: Bitte loggen Sie sich ein.');
@@ -60,37 +60,20 @@ export async function fetchInbox(externalSignal?: AbortSignal): Promise<EmailMes
 
         const contentType = response.headers.get("content-type");
         if (!contentType || !contentType.includes("application/json")) {
-            const text = await response.text();
-            const snippet = text.substring(0, 150).replace(/\n/g, ' ');
-            console.warn(`[emailService] Microservice lieferte HTML statt JSON: ${snippet}`);
             return [];
         }
 
         const result = await response.json();
-
-        if (!response.ok || !result.success) {
-            console.warn(`[emailService] Inbox Abruf: ${result.error || response.statusText}`);
-            return [];
-        }
-
+        if (!response.ok || !result.success) return [];
         return result.data || [];
-    } catch (err: any) {
+    } catch {
         clearTimeout(timeoutId);
-        if (err.name === 'AbortError' || err.message?.includes('aborted')) {
-            console.warn('[emailService] Inbox Abruf nach 5.000 ms abgebrochen (UI-Freeze Schutz).');
-            return [];
-        }
-        console.warn('[emailService] Microservice nicht erreichbar oder Netzwerkfehler:', err.message);
         return [];
     }
 }
 
-/**
- * Markiert eine E-Mail als gelesen mit 5.000 ms Timeout-Schutz.
- */
-export async function markEmailAsRead(uid: string): Promise<boolean> {
-    if (!pb.authStore.isValid) return false;
-
+export async function markEmailAsRead(uid: string, isRead: boolean = true): Promise<boolean> {
+    if (!pb.authStore.isValid || !uid) return false;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
 
@@ -101,39 +84,87 @@ export async function markEmailAsRead(uid: string): Promise<boolean> {
                 'Authorization': `Bearer ${pb.authStore.token}`,
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ uid }),
+            body: JSON.stringify({ uid, is_read: isRead }),
             signal: controller.signal
         });
-
         clearTimeout(timeoutId);
         const result = await response.json();
         return result?.success || false;
-    } catch (err: any) {
+    } catch {
         clearTimeout(timeoutId);
-        console.error("Fehler beim Markieren als gelesen:", err.message);
         return false;
     }
 }
 
-/**
- * Sendet eine E-Mail über den Microservice mit 10.000 ms Timeout.
- */
-export async function sendEmail(payload: SendEmailPayload): Promise<{ messageId: string }> {
+export async function deleteEmailFromImap(uid: string): Promise<boolean> {
+    if (!pb.authStore.isValid || !uid) return false;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+    try {
+        const response = await fetch(`${MICROSERVICE_URL}/delete`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${pb.authStore.token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ uid }),
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        const result = await response.json();
+        return result?.success || false;
+    } catch {
+        clearTimeout(timeoutId);
+        return false;
+    }
+}
+
+export async function sendEmail(payload: SendEmailPayload): Promise<{ messageId: string; provider?: string; from?: string }> {
     if (!pb.authStore.isValid) {
         throw new Error('Nicht autorisiert: Bitte loggen Sie sich ein.');
     }
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
 
     try {
+        const compData = resolveCompanyData(orgaStore);
+        const userData = resolveUserData();
+
+        let html = payload.html;
+        if (!html && payload.text) {
+            html = wrapOrgaFlowEmailHtml({
+                bodyContent: payload.text,
+                userData,
+                compData
+            });
+        } else if (html && !html.includes('Alltagshilfe • Betreuung • Organisation')) {
+            html = wrapOrgaFlowEmailHtml({
+                bodyContent: html,
+                userData,
+                compData
+            });
+        }
+
+        const finalText = payload.text || `${userData.userName}\n${compData.compName}${buildTextSignature(userData, compData)}`;
+        const resolvedFromName = payload.fromName || compData?.compName || 'Ihre Seniorenassistenz';
+
+        const fullPayload = {
+            ...payload,
+            text: finalText,
+            html,
+            provider: payload.provider || 'ionos',
+            fromName: resolvedFromName
+        };
+
         const response = await fetch(`${MICROSERVICE_URL}/send`, {
             method: 'POST',
             headers: {
                 'Authorization': pb.authStore.token ? `Bearer ${pb.authStore.token}` : '',
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(payload),
+            body: JSON.stringify(fullPayload),
             signal: controller.signal
         });
 
@@ -143,20 +174,44 @@ export async function sendEmail(payload: SendEmailPayload): Promise<{ messageId:
         if (!contentType || !contentType.includes("application/json")) {
             const text = await response.text();
             const snippet = text.substring(0, 150).replace(/\n/g, ' ');
-            throw new Error(`Server-Fehler beim Senden (HTML statt JSON). Antwort des Servers: '${snippet}...'`);
+            throw new Error(`Server-Fehler beim Senden: '${snippet}...'`);
         }
 
         const result = await response.json();
-
         if (!response.ok || !result.success) {
             throw new Error(result.error || 'Fehler beim Senden der E-Mail.');
         }
 
-        return { messageId: result.messageId };
+        const finalMsgId = result.messageId || `sent-${payload.provider || 'ionos'}-${Date.now()}`;
+        const fromAddress = result.from || `"${resolvedFromName}" <${userData.userEmail}>`;
+        let fullTo = payload.to;
+        if (payload.cc) fullTo += `, CC: ${payload.cc}`;
+        if (payload.bcc) fullTo += `, BCC: ${payload.bcc}`;
+
+        let fileObjects: File[] | undefined;
+        if (payload.attachments && payload.attachments.length > 0) {
+            try {
+                fileObjects = payload.attachments.map(a =>
+                    base64ToFile(a.content, a.filename, a.contentType || 'application/pdf')
+                );
+            } catch {}
+        }
+
+        await upsertSentMailboxRecord({
+            messageId: finalMsgId,
+            subject: payload.subject,
+            fromAddress,
+            toAddress: fullTo,
+            bodyText: finalText,
+            bodyHtml: html || '',
+            attachments: fileObjects
+        }).catch(() => {});
+
+        return { messageId: finalMsgId, provider: result.provider, from: fromAddress };
     } catch (err: any) {
         clearTimeout(timeoutId);
         if (err.name === 'AbortError' || err.message?.includes('aborted')) {
-            throw new Error('E-Mail-Versand dauerte länger als 10 Sekunden (Timeout abgebrochen).');
+            throw new Error('E-Mail-Versand dauerte zu lange (Zeitüberschreitung).');
         }
         throw err;
     }

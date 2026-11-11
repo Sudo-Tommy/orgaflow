@@ -74,7 +74,7 @@ routerAdd("POST", "/api/orgaflow/system-prompts/generate", (c) => {
 
     const collName = typeof authRecord.collectionName === 'function' ? authRecord.collectionName() : authRecord.collection().name;
     const isRealSuperuser = collName === "_superusers";
-    const isOwnerOrSuperadmin = collName === "users" && (authRecord.getString("role") === "superadmin" || authRecord.getString("role") === "owner");
+    const isOwnerOrSuperadmin = collName === "users" && (authRecord.getString("role") === "superadmin" || authRecord.getString("role") === "developer" || authRecord.getString("role") === "owner");
 
     if (!isRealSuperuser && !isOwnerOrSuperadmin) {
         throw new ForbiddenError("Zugriff verweigert: Nur für Inhaber und Superadmins (HRBAC).");

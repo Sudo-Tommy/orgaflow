@@ -4,6 +4,7 @@
     import { toastStore } from "$lib/services/toastService.svelte";
     import { X, Calendar, Clock, MapPin, User, CheckCircle2, ListTodo, FileText } from "lucide-svelte";
     import { sanitizeReportText } from "$lib/utils/reportSanitizer";
+    import { autoGrow } from "$lib/actions/autoGrow";
 
     let { appointment, onClose, isContactMode = false, isAdminMode = false } = $props<{
         appointment: any | null;
@@ -11,6 +12,16 @@
         isContactMode?: boolean;
         isAdminMode?: boolean;
     }>();
+
+    let dialog = $state<HTMLDialogElement | null>(null);
+
+    $effect(() => {
+        if (appointment) {
+            dialog?.showModal();
+        } else {
+            dialog?.close();
+        }
+    });
 
     let client = $derived((isContactMode || isAdminMode) ? appointment?.expand?.client?.[0] : null);
     let user = $derived(appointment?.expand?.user);
@@ -31,7 +42,7 @@
         try {
             const payload = { status: 'pending', text: changeText.trim(), created: new Date().toISOString() };
             await pb.collection('appointments').update(appointment.id, { requestet_changes: payload });
-            appointment.requestet_changes = payload; // Lokales UI-Update
+            appointment.requestet_changes = payload;
             toastStore.success("Änderungswunsch erfolgreich übermittelt.");
             isRequestingChange = false;
         } catch (e) {
@@ -51,21 +62,22 @@
 </script>
 
 {#if appointment}
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center sm:p-4 transition-all" onclick={onClose} transition:fade={{duration: 200}}>
-        <!-- Mobile: Bottom-Sheet (rounded-t), Desktop: Modal im Zentrum (rounded) -->
-        <div class="w-full sm:max-w-2xl bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border border-neutral-100 dark:border-slate-800 rounded-t-3xl sm:rounded-3xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden" onclick={e => e.stopPropagation()} in:fly={{ y: 100, duration: 300, opacity: 0 }} out:fly={{ y: 100, duration: 250, opacity: 0 }}>
-            
+    <dialog
+        bind:this={dialog}
+        class="zero-inner-scroll-modal fixed inset-0 m-auto w-full max-w-2xl bg-transparent p-3 sm:p-4 border-none outline-none backdrop:bg-slate-950/60 backdrop:backdrop-blur-sm animate-enter z-50 overflow-visible"
+        onclick={(e) => { if (e.target === dialog) onClose(); }}
+        oncancel={(e) => { e.preventDefault(); onClose(); }}
+    >
+        <div class="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border border-neutral-100 dark:border-slate-800 rounded-3xl flex flex-col shadow-2xl my-auto sm:my-8 overflow-hidden">
             <!-- Header -->
-            <div class="px-6 py-4 border-b border-neutral-100 dark:border-slate-800 flex items-center justify-between sticky top-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md z-10 shrink-0">
+            <div class="px-6 py-4 border-b border-neutral-100 dark:border-slate-800 flex items-center justify-between sticky top-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md z-10 shrink-0 rounded-t-3xl">
                 <h2 class="text-xl font-black text-neutral-900 dark:text-white truncate pr-4">Termindetails</h2>
                 <button aria-label="Schließen" onclick={onClose} class="w-11 h-11 min-w-[44px] min-h-[44px] bg-neutral-100 dark:bg-slate-800 hover:bg-neutral-200 dark:hover:bg-slate-700 text-neutral-600 dark:text-slate-300 rounded-full flex items-center justify-center transition-colors active:scale-95 focus-visible:ring-2 focus-visible:ring-brand-500 outline-none cursor-pointer">
                     <X class="w-5 h-5" />
                 </button>
             </div>
             
-            <div class="overflow-y-auto custom-scrollbar p-5 sm:p-8 bg-neutral-50/50 dark:bg-slate-950/50 flex-1">
+            <div class="p-5 sm:p-8 bg-neutral-50/50 dark:bg-slate-950/50 flex-1">
                 <!-- Top Card: Datum, Zeit & Ort -->
                 <div class="bg-white dark:bg-slate-800/80 p-6 rounded-3xl border border-neutral-100 dark:border-slate-700/60 shadow-sm mb-6 transition-all hover:shadow-md">
                     <div class="flex items-start gap-4">
@@ -158,7 +170,7 @@
                         {:else if isRequestingChange}
                             <div class="bg-white dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-2xl p-4 shadow-sm animate-enter">
                                 <h4 class="text-sm font-bold text-neutral-900 dark:text-white mb-2">Termin ändern oder absagen</h4>
-                                <textarea bind:value={changeText} class="orga-input-clear w-full text-sm min-h-24 resize-y mb-3 dark:bg-slate-900 dark:text-slate-100 dark:border-slate-700" placeholder="Bitte beschreiben Sie kurz {userType === 'client' ? 'Ihren' : 'den'} Änderungswunsch (z.B. neues Datum oder Grund für die Absage)..." disabled={isSubmittingChange}></textarea>
+                                <textarea use:autoGrow bind:value={changeText} class="auto-grow orga-input-clear w-full text-sm min-h-24 mb-3 dark:bg-slate-900 dark:text-slate-100 dark:border-slate-700 resize-none overflow-hidden" placeholder="Bitte beschreiben Sie kurz {userType === 'client' ? 'Ihren' : 'den'} Änderungswunsch (z.B. neues Datum oder Grund für die Absage)..." disabled={isSubmittingChange}></textarea>
                                 <div class="flex justify-end gap-2">
                                     <button onclick={() => isRequestingChange = false} class="px-4 py-2.5 min-h-[44px] text-xs font-bold text-neutral-600 dark:text-slate-300 bg-neutral-100 dark:bg-slate-700 hover:bg-neutral-200 dark:hover:bg-slate-600 rounded-xl transition-colors cursor-pointer" disabled={isSubmittingChange}>Abbrechen</button>
                                     <button onclick={submitChangeRequest} class="px-5 py-2.5 min-h-[44px] text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-600/20 rounded-xl transition-colors flex items-center gap-2 cursor-pointer" disabled={isSubmittingChange || !changeText.trim()}>
@@ -173,5 +185,5 @@
                 {/if}
             </div>
         </div>
-    </div>
+    </dialog>
 {/if}

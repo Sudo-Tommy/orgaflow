@@ -4,6 +4,7 @@
     import { submitFeedback, type FeedbackInput } from "$lib/services/feedback.service";
     import { X, Star, Send } from "lucide-svelte";
     import { pb } from "$lib/services/pocketbase";
+    import { autoGrow } from "$lib/actions/autoGrow";
 
     let dialog: HTMLDialogElement;
     let isLoading = $state(false);
@@ -117,8 +118,8 @@
     }
 </script>
 
-<dialog bind:this={dialog} class="p-0 bg-transparent backdrop:bg-slate-950/65 backdrop:backdrop-blur-md w-full max-w-lg mx-auto my-auto rounded-3xl" onclick={(e) => { if (e.target === dialog) close(); }}>
-    <div class="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-3xl p-6 md:p-8 w-full max-h-[90vh] overflow-y-auto custom-scrollbar relative shadow-2xl">
+<dialog bind:this={dialog} class="zero-inner-scroll-modal p-0 bg-transparent backdrop:bg-slate-950/65 backdrop:backdrop-blur-md w-full max-w-lg mx-auto my-6 sm:my-10 rounded-3xl" onclick={(e) => { if (e.target === dialog) close(); }}>
+    <div class="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-3xl p-6 md:p-8 w-full relative shadow-2xl">
         <button aria-label="Schließen" onclick={close} class="absolute top-5 right-5 w-10 h-10 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-full flex items-center justify-center transition-colors active:scale-95 focus-visible:ring-2 focus-visible:ring-slate-500 focus-visible:outline-none z-10">
             <X class="w-5 h-5" />
         </button>
@@ -158,7 +159,7 @@
                 <div transition:slide={{ duration: 300 }} class="space-y-5 pt-4 border-t border-slate-100 dark:border-slate-800">
                     <div>
                         <label for="feedback-msg" class="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5">Was können wir verbessern oder was lief besonders gut?</label>
-                        <textarea id="feedback-msg" bind:value={message} class="orga-input-clear w-full min-h-32 resize-y custom-scrollbar text-sm" placeholder="Ihre ehrliche Meinung ist uns wichtig..." maxlength="1000" disabled={isLoading}></textarea>
+                        <textarea use:autoGrow id="feedback-msg" bind:value={message} class="auto-grow orga-input-clear w-full min-h-24 resize-none overflow-hidden text-sm" placeholder="Ihre ehrliche Meinung ist uns wichtig..." maxlength="1000" disabled={isLoading}></textarea>
                         <div class="text-[10px] text-slate-400 dark:text-slate-500 text-right mt-1">{message.length}/1000</div>
                     </div>
 

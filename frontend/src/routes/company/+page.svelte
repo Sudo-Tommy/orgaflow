@@ -36,7 +36,7 @@
         // Sortiere alphabetisch nach Stadt für eine deterministische Reihenfolge
         all = [...all].sort((a, b) => (a.city || '').localeCompare(b.city || ''));
         
-        if (pb.authStore.isSuperuser || user?.role === 'superadmin') return all;
+        if (pb.authStore.isSuperuser || user?.role === 'superadmin' || user?.role === 'developer' || rbacService.isOwner) return all;
         if (!user?.company) return [];
         
         let rawComp = user.company;
@@ -55,7 +55,7 @@
             
             if (rawComp && rawComp.length > 0) {
                 initialId = Array.isArray(rawComp) ? rawComp[0] : rawComp;
-            } else if (user?.role === 'superadmin' || pb.authStore.isSuperuser) {
+            } else if (user?.role === 'superadmin' || user?.role === 'developer' || rbacService.isOwner || pb.authStore.isSuperuser) {
                 initialId = availableCompanies[0].id;
             }
             

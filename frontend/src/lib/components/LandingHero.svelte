@@ -32,7 +32,7 @@
             {hero.title || "Zuhause wohlfühlen. Selbstbestimmt bleiben."}
         </h1>
         <p class="text-xl md:text-2xl text-neutral-600 dark:text-slate-300 max-w-3xl mb-12 leading-relaxed">
-            {hero.subtitle || "Wir unterstützen Sie im Formular-Dschungel, begleiten Sie zum Arzt und schaffen Ordnung im Alltag. Persönlich, verlässlich und liebevoll. Damit Sie das Leben wieder genießen und Ihre Liebsten entspannt aufatmen können."}
+            {hero.subtitle || "Wir unterstützen Sie im Formular-Dschungel, begleiten Sie zum Arzt und schaffen Ordnung im Alltag. Persönlich, verlässlich und liebevoll."}
         </p>
         
         <div class="flex flex-col sm:flex-row gap-4 justify-center">
@@ -45,29 +45,25 @@
             <a href="/portal" class="orga-button-ghost w-full sm:w-auto min-h-[44px] bg-indigo-50 dark:bg-indigo-950/60 border-2 border-indigo-200 dark:border-indigo-800 text-indigo-800 dark:text-indigo-300 shadow-xs hover:bg-indigo-100 dark:hover:bg-indigo-900/40 flex items-center justify-center gap-2 cursor-pointer">🔐 Zum Portal</a>
         </div>
         
-        <!-- Wichtige Info: Vertragsfreiheit -->
+        <!-- Wichtige Info: Vertrauens-Vorteile -->
         <div class="mt-8 flex flex-wrap items-center justify-center gap-4 sm:gap-8 text-sm sm:text-base font-bold text-neutral-700 dark:text-slate-300">
-            <div class="flex items-center gap-2">
-                <span class="text-emerald-500 text-xl leading-none">✓</span> Keine Vertragsbindung
-            </div>
-            <div class="flex items-center gap-2">
-                <span class="text-emerald-500 text-xl leading-none">✓</span> Arbeit nach Auftrag
-            </div>
-            <div class="flex items-center gap-2">
-                <span class="text-emerald-500 text-xl leading-none">✓</span> Einzelabrechnung möglich
-            </div>
+            {#each (hero.trust_points || ["Keine Vertragsbindung", "Arbeit nach Auftrag", "Einzelabrechnung möglich"]) as point}
+                <div class="flex items-center gap-2">
+                    <span class="text-emerald-500 text-xl leading-none">✓</span> {point}
+                </div>
+            {/each}
         </div>
     </div>
     
     <!-- Eyecatcher: Kostenübernahme -->
     <div id="kosten" class="relative z-10 mt-12 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border border-amber-200/80 dark:border-amber-800/60 rounded-3xl p-5 md:p-6 max-w-3xl mx-auto shadow-xl shadow-amber-900/5 dark:shadow-none flex flex-col sm:flex-row items-center gap-5 text-left transition-all hover:shadow-2xl hover:border-brand-300 dark:hover:border-amber-600 hover:-translate-y-1 cursor-pointer group" onclick={() => kostenModal?.open()} role="button" tabindex="0" onkeydown={(e) => e.key === 'Enter' && kostenModal?.open()}>
-        <div class="w-14 h-14 bg-gradient-to-br from-amber-100 to-amber-200 dark:from-amber-900/60 dark:to-amber-800/40 text-amber-700 dark:text-amber-300 rounded-full flex items-center justify-center text-3xl shrink-0 shadow-inner group-hover:scale-110 transition-transform duration-300 border border-amber-200 dark:border-amber-700/60">💡</div>
+        <div class="w-14 h-14 bg-gradient-to-br from-amber-100 to-amber-200 dark:from-amber-900/60 dark:to-amber-800/40 text-amber-700 dark:text-amber-300 rounded-full flex items-center justify-center text-3xl shrink-0 shadow-inner group-hover:scale-110 transition-transform duration-300 border border-amber-200 dark:border-amber-700/60">{hero.eyecatcher_badge || "💡"}</div>
         <div class="flex-1 text-center sm:text-left">
-            <h3 class="font-black text-brand-900 dark:text-amber-300 text-lg sm:text-xl mb-1.5">Verlässliche Hilfe, die Ihnen zusteht: Die Pflegekasse zahlt!</h3>
-            <p class="text-sm sm:text-base text-neutral-700 dark:text-slate-300 font-medium leading-relaxed">Ob monatlicher <strong class="text-brand-900 dark:text-amber-300 font-bold">Entlastungsbetrag (131 € ab Pflegegrad 1)</strong> oder <strong class="text-teal-700 dark:text-teal-300 font-bold">Verhinderungspflege (§ 39 SGB XI)</strong>: Als anerkannter Dienstleister rechnen wir direkt mit Ihrer Pflegekasse ab – meist <strong class="text-brand-700 dark:text-amber-400 font-black">ohne einen einzigen Cent Zuzahlung</strong>.</p>
+            <h3 class="font-black text-brand-900 dark:text-amber-300 text-lg sm:text-xl mb-1.5">{hero.eyecatcher_title || "Verlässliche Hilfe, die Ihnen zusteht: Die Pflegekasse zahlt!"}</h3>
+            <p class="text-sm sm:text-base text-neutral-700 dark:text-slate-300 font-medium leading-relaxed">{hero.eyecatcher_text || "Ob monatlicher Entlastungsbetrag (131 € ab Pflegegrad 1) oder Verhinderungspflege (§ 39 SGB XI): Als anerkannter Dienstleister rechnen wir direkt mit Ihrer Pflegekasse ab – meist ohne einen einzigen Cent Zuzahlung."}</p>
         </div>
         <button class="shrink-0 w-full sm:w-auto mt-4 sm:mt-0 px-6 py-3 min-h-[44px] bg-white dark:bg-slate-800 border-2 border-brand-200 dark:border-amber-700/60 text-brand-800 dark:text-amber-300 font-bold rounded-xl shadow-xs text-sm flex items-center justify-center gap-2 group-hover:bg-brand-50 dark:group-hover:bg-slate-700 transition-colors pointer-events-none">
-            Anspruch prüfen <span class="text-lg group-hover:translate-x-1 transition-transform">→</span>
+            {hero.eyecatcher_button || "Anspruch prüfen"} <span class="text-lg group-hover:translate-x-1 transition-transform">→</span>
         </button>
     </div>
 </div>

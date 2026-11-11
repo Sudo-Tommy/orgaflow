@@ -1,118 +1,195 @@
 <script lang="ts">
-    import { ChevronLeft, ChevronRight } from "lucide-svelte";
+    import { ChevronLeft, ChevronRight, Plus } from "lucide-svelte";
+    import {
+        getAppsForDate,
+        computeCalendarDays,
+        computeWeekDays
+    } from "./calendar/portalCalendarHelpers";
+    import PortalCalendarMonthView from "./calendar/PortalCalendarMonthView.svelte";
+    import PortalCalendarWeekView from "./calendar/PortalCalendarWeekView.svelte";
+    import PortalCalendarDayAgenda from "./calendar/PortalCalendarDayAgenda.svelte";
 
-    let { visibleAppointments, onSelectAppointment } = $props<{
+    let { 
+        visibleAppointments = [], 
+        onSelectAppointment,
+        onRequestAppointment
+    } = $props<{
         visibleAppointments: any[];
         onSelectAppointment: (app: any) => void;
+        onRequestAppointment?: (date?: Date) => void;
     }>();
 
     let currentDate = $state(new Date());
-    const weekdays = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
+    let selectedDate = $state<Date>(new Date());
+    let viewMode = $state<'month' | 'week'>('month');
 
-    function isSameDay(d1: Date, d2: Date) {
-        return d1.getDate() === d2.getDate() && d1.getMonth() === d2.getMonth() && d1.getFullYear() === d2.getFullYear();
-    }
-
-    function getAppsForDate(date: Date): any[] {
-        return visibleAppointments.filter((app: any) => {
-            if (!app.appointment) return false;
-            if (app.is_private === true || app.is_visible === false) return false;
-            return isSameDay(new Date(app.appointment), date);
-        }).sort((a: any, b: any) => new Date(a.appointment).getTime() - new Date(b.appointment).getTime());
+    function getApps(date: Date): any[] {
+        return getAppsForDate(visibleAppointments, date);
     }
 
     let calendarDays = $derived.by(() => {
-        const y = currentDate.getFullYear();
-        const m = currentDate.getMonth();
-        const days = [];
-
-        const firstDay = new Date(y, m, 1);
-        let startDay = firstDay.getDay() || 7; 
-        startDay -= 1; 
-
-        const prevMonthLastDay = new Date(y, m, 0).getDate();
-        for (let i = startDay - 1; i >= 0; i--) {
-            const d = new Date(y, m - 1, prevMonthLastDay - i);
-            days.push({ date: d, isCurrentMonth: false, apps: getAppsForDate(d) });
-        }
-        const lastDay = new Date(y, m + 1, 0).getDate();
-        for (let i = 1; i <= lastDay; i++) {
-            const d = new Date(y, m, i);
-            days.push({ date: d, isCurrentMonth: true, apps: getAppsForDate(d) });
-        }
-        const remaining = 42 - days.length; 
-        for (let i = 1; i <= remaining; i++) {
-            const d = new Date(y, m + 1, i);
-            days.push({ date: d, isCurrentMonth: false, apps: getAppsForDate(d) });
-        }
-        return days;
+        return computeCalendarDays(currentDate, getApps);
     });
 
-    function nextMonth() { currentDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1); }
-    function prevMonth() { currentDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1); }
-    function today() { currentDate = new Date(); }
+    let weekDays = $derived.by(() => {
+        return computeWeekDays(selectedDate, currentDate, getApps);
+    });
 
-    let monthName = $derived(currentDate.toLocaleString('de-DE', { month: 'long' }));
-    let year = $derived(currentDate.getFullYear());
+    let selectedDayAppointments = $derived.by(() => {
+        if (!selectedDate) return [];
+        return getApps(selectedDate);
+    });
+
+    function nextPeriod() {
+        if (viewMode === 'month') {
+            currentDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1);
+        } else {
+            const nextW = new Date(selectedDate || currentDate);
+            nextW.setDate(nextW.getDate() + 7);
+            selectedDate = nextW;
+            currentDate = nextW;
+        }
+    }
+
+    function prevPeriod() {
+        if (viewMode === 'month') {
+            currentDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1);
+        } else {
+            const prevW = new Date(selectedDate || currentDate);
+            prevW.setDate(prevW.getDate() - 7);
+            selectedDate = prevW;
+            currentDate = prevW;
+        }
+    }
+
+    function today() {
+        const now = new Date();
+        currentDate = now;
+        selectedDate = now;
+    }
+
+    function handleSelectDay(date: Date) {
+        selectedDate = date;
+        if (date.getMonth() !== currentDate.getMonth()) {
+            currentDate = new Date(date.getFullYear(), date.getMonth(), 1);
+        }
+    }
+
+    let monthName = $derived(
+        (viewMode === 'month' ? currentDate : (selectedDate || currentDate)).toLocaleString('de-DE', { month: 'long' })
+    );
+    let year = $derived(
+        (viewMode === 'month' ? currentDate : (selectedDate || currentDate)).getFullYear()
+    );
 </script>
 
-<div class="bg-white dark:bg-slate-900 p-4 sm:p-8 rounded-3xl border border-neutral-100 dark:border-slate-800 shadow-xl overflow-hidden">
+<div class="orga-card-white overflow-hidden rounded-2xl sm:rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-sm bg-white dark:bg-slate-900 flex flex-col">
     <!-- Kalender Toolbar -->
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-        <h3 class="text-lg font-black text-neutral-900 dark:text-white hidden sm:block">Kalenderübersicht</h3>
-        <div class="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">
-            <button onclick={today} class="px-5 min-h-[44px] text-sm font-bold text-neutral-600 dark:text-slate-200 bg-neutral-50 dark:bg-slate-800 hover:bg-neutral-100 dark:hover:bg-slate-700 rounded-2xl transition-colors shrink-0 border border-neutral-200 dark:border-slate-700 shadow-sm active:scale-95 focus-visible:ring-2 focus-visible:ring-brand-500 outline-none cursor-pointer">Heute</button>
-            <div class="flex items-center bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-2xl p-1 shadow-sm shrink-0">
-                <button onclick={prevMonth} class="w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center text-neutral-500 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-white dark:hover:bg-slate-700 rounded-xl transition-colors shadow-sm focus-visible:ring-2 focus-visible:ring-brand-500 outline-none cursor-pointer" aria-label="Vorheriger Monat">
-                    <ChevronLeft class="w-5 h-5" />
+    <div class="p-3 sm:p-4 border-b border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+        <!-- Titel & Icon -->
+        <div class="flex items-center gap-2.5">
+            <div class="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-100 dark:border-indigo-800 flex items-center justify-center text-indigo-600 dark:text-indigo-400 font-bold text-base shadow-2xs">
+                🗓️
+            </div>
+            <div>
+                <h2 class="text-base sm:text-lg font-bold text-slate-900 dark:text-white leading-tight">Kalenderübersicht</h2>
+                <p class="text-xs text-slate-500 dark:text-slate-400 hidden sm:block">Alle geplanten Termine auf einen Blick</p>
+            </div>
+        </div>
+
+        <!-- Navigation & Aktionen -->
+        <div class="flex items-center justify-between md:justify-end gap-2 flex-wrap sm:flex-nowrap">
+            <!-- Monat Navigation Pill -->
+            <div class="flex items-center bg-slate-100 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80 rounded-xl p-0.5 shadow-2xs shrink-0">
+                <button
+                    type="button"
+                    onclick={prevPeriod}
+                    class="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-white dark:hover:bg-slate-700 transition-colors cursor-pointer active:scale-95 touch-manipulation min-h-[44px] min-w-[44px]"
+                    aria-label="Vorheriger Zeitraum"
+                    title="Zurück"
+                >
+                    <ChevronLeft class="w-4.5 h-4.5" />
                 </button>
-                <span class="w-32 text-center font-black text-neutral-800 dark:text-slate-100 text-sm tracking-wide">{monthName} {year}</span>
-                <button onclick={nextMonth} class="w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center text-neutral-500 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-white dark:hover:bg-slate-700 rounded-xl transition-colors shadow-sm focus-visible:ring-2 focus-visible:ring-brand-500 outline-none cursor-pointer" aria-label="Nächster Monat">
-                    <ChevronRight class="w-5 h-5" />
+
+                <span class="w-28 sm:w-32 text-center font-bold text-slate-800 dark:text-slate-100 text-xs sm:text-sm truncate select-none px-1">
+                    {monthName} {year}
+                </span>
+
+                <button
+                    type="button"
+                    onclick={nextPeriod}
+                    class="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-white dark:hover:bg-slate-700 transition-colors cursor-pointer active:scale-95 touch-manipulation min-h-[44px] min-w-[44px]"
+                    aria-label="Nächster Zeitraum"
+                    title="Vor"
+                >
+                    <ChevronRight class="w-4.5 h-4.5" />
                 </button>
             </div>
+
+            <!-- Heute Button -->
+            <button
+                type="button"
+                onclick={today}
+                class="inline-flex h-9 px-3 items-center justify-center text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 border border-slate-200/90 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/60 rounded-xl shadow-2xs transition-colors shrink-0 cursor-pointer active:scale-95 min-h-[44px] touch-manipulation"
+                title="Zum heutigen Tag springen"
+            >
+                Heute
+            </button>
+
+            <!-- Ansichtsumschalter (Monat / Woche) -->
+            <div class="flex bg-slate-100 dark:bg-slate-800/80 p-0.5 rounded-xl border border-slate-200/80 dark:border-slate-700/80 shadow-inner shrink-0">
+                <button
+                    type="button"
+                    onclick={() => viewMode = 'month'}
+                    class="h-8 px-2.5 sm:px-3 text-xs font-bold rounded-lg transition-all cursor-pointer min-h-[44px] touch-manipulation flex items-center justify-center {viewMode === 'month' ? 'bg-white dark:bg-slate-700 shadow-xs text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'}"
+                >
+                    Monat
+                </button>
+                <button
+                    type="button"
+                    onclick={() => viewMode = 'week'}
+                    class="h-8 px-2.5 sm:px-3 text-xs font-bold rounded-lg transition-all cursor-pointer min-h-[44px] touch-manipulation flex items-center justify-center {viewMode === 'week' ? 'bg-white dark:bg-slate-700 shadow-xs text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'}"
+                >
+                    Woche
+                </button>
+            </div>
+
+            {#if onRequestAppointment}
+                <button
+                    type="button"
+                    onclick={() => onRequestAppointment(selectedDate)}
+                    class="hidden sm:inline-flex h-9 px-3 items-center gap-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-xs transition-colors shrink-0 cursor-pointer active:scale-95 min-h-[44px] touch-manipulation"
+                    title="Neuen Termin anfragen"
+                >
+                    <Plus class="w-4 h-4" />
+                    <span>Termin anfragen</span>
+                </button>
+            {/if}
         </div>
     </div>
 
-    <!-- Wochentage -->
-    <div class="grid grid-cols-7 gap-1 sm:gap-2 mb-2 text-center">
-        {#each weekdays as day}
-            <span class="text-xs font-black uppercase tracking-wider text-neutral-400 dark:text-slate-400 py-1">{day}</span>
-        {/each}
-    </div>
+    <!-- Kalender-Ansicht: Monat oder Woche -->
+    {#if viewMode === 'month'}
+        <PortalCalendarMonthView
+            {calendarDays}
+            {selectedDate}
+            onSelectDay={handleSelectDay}
+            {onSelectAppointment}
+        />
+    {:else}
+        <PortalCalendarWeekView
+            {weekDays}
+            {selectedDate}
+            onSelectDay={handleSelectDay}
+            {onSelectAppointment}
+        />
+    {/if}
 
-    <!-- Tage Grid -->
-    <div class="grid grid-cols-7 gap-1 sm:gap-2 auto-rows-fr">
-        {#each calendarDays as day}
-            <div class="min-h-20 sm:min-h-28 p-1 sm:p-2.5 rounded-2xl border transition-colors flex flex-col {day.isCurrentMonth ? 'bg-white dark:bg-slate-800/80 border-neutral-100 dark:border-slate-700/60 hover:border-neutral-200 dark:hover:border-slate-600 shadow-xs' : 'bg-neutral-50/50 dark:bg-slate-950/40 border-transparent opacity-35'}">
-                <div class="flex justify-between items-center mb-1">
-                    <span class="text-xs sm:text-sm font-black {isSameDay(day.date, new Date()) ? 'w-6 h-6 sm:w-7 sm:h-7 bg-brand-600 text-white rounded-full flex items-center justify-center shadow-md shadow-brand-600/30' : 'text-neutral-700 dark:text-slate-200'}">
-                        {day.date.getDate()}
-                    </span>
-                </div>
-                
-                <!-- Termin Chips (Nur Desktop) -->
-                <div class="flex-col gap-1.5 flex-1 min-h-0 overflow-y-auto custom-scrollbar hidden md:flex">
-                    {#each day.apps as app}
-                        <button type="button" onclick={() => onSelectAppointment(app)} class="w-full text-left px-2.5 py-2 rounded-xl border shadow-sm hover:shadow-md transition-all hover:-translate-y-0.5 active:scale-95 focus-visible:ring-2 focus-visible:ring-brand-500 outline-none bg-indigo-50 dark:bg-indigo-950/60 border-indigo-100 dark:border-indigo-800/50 text-indigo-800 dark:text-indigo-200 cursor-pointer" title={app.description}>
-                            <div class="flex items-center gap-1.5 mb-1">
-                                <span class="font-black text-[10px]">{new Date(app.appointment).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</span>
-                            </div>
-                            <div class="text-[10px] font-semibold truncate leading-tight opacity-90">{app.description || 'Termin'}</div>
-                        </button>
-                    {/each}
-                </div>
-                
-                <!-- Mobile Dots (Nur Mobile) -->
-                <div class="flex md:hidden flex-wrap gap-1.5 justify-center mt-auto pb-1">
-                    {#each day.apps.slice(0, 4) as app}
-                        <button type="button" onclick={() => onSelectAppointment(app)} class="w-3.5 h-3.5 rounded-full shadow-sm transition-transform active:scale-150 bg-indigo-500 cursor-pointer" title={app.description}></button>
-                    {/each}
-                    {#if day.apps.length > 4}
-                        <span class="text-[9px] font-black text-neutral-400 dark:text-slate-400 pt-px">+{day.apps.length - 4}</span>
-                    {/if}
-                </div>
-            </div>
-        {/each}
-    </div>
+    <!-- Ausgewählte Tagesansicht / Agenda -->
+    <PortalCalendarDayAgenda
+        {selectedDate}
+        {selectedDayAppointments}
+        {onSelectAppointment}
+        {onRequestAppointment}
+    />
 </div>

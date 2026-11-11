@@ -1,4 +1,5 @@
 import { pb } from "$lib/services/pocketbase";
+import { orgaStore } from "$lib/stores/orgaStore.svelte";
 
 export function useProfileService() {
     let isLoading = $state(false);
@@ -14,7 +15,8 @@ export function useProfileService() {
         name_first: "",
         name_last: "",
         email: "",
-        phone: ""
+        tel: "",
+        handy: ""
     });
 
     let passwordData = $state({
@@ -44,18 +46,19 @@ export function useProfileService() {
                 name_first: record.name_first || "",
                 name_last: record.name_last || "",
                 email: record.email || "",
-                phone: record.phone || ""
+                tel: record.tel || record.phone || "",
+                handy: record.handy || ""
             };
             if (record.avatar) {
                 existingAvatarUrl = pb.files.getURL(record, record.avatar);
             } else {
                 existingAvatarUrl = "";
             }
-        if (record.sign) {
+            if (record.sign) {
                 existingSignUrl = pb.files.getURL(record, record.sign);
-        } else {
-            existingSignUrl = "";
-        }
+            } else {
+                existingSignUrl = "";
+            }
             isLoaded = true;
         }
     }
@@ -69,8 +72,8 @@ export function useProfileService() {
         try {
             const pbFormData = new FormData();
             
-            pbFormData.append("name_first", formData.name_first);
-            pbFormData.append("name_last", formData.name_last);
+            pbFormData.append("name_first", formData.name_first || "");
+            pbFormData.append("name_last", formData.name_last || "");
             
             if (formData.username && formData.username !== pb.authStore.model?.username) {
                 pbFormData.append("username", formData.username);
@@ -80,8 +83,10 @@ export function useProfileService() {
                 pbFormData.append("email", formData.email);
             }
             
-            if (formData.phone !== undefined) {
-                pbFormData.append("phone", formData.phone);
+            // PocketBase users Collection verwendet 'tel' und 'handy'
+            if (collection === 'users') {
+                pbFormData.append("tel", formData.tel || "");
+                pbFormData.append("handy", formData.handy || "");
             }
 
             if (avatarFile) {
@@ -90,22 +95,31 @@ export function useProfileService() {
                 pbFormData.append("avatar", "");
             }
         
-        if (signFile) {
-            pbFormData.append("sign", signFile);
-        } else if (deleteSign) {
-            pbFormData.append("sign", "");
-        }
+            if (signFile) {
+                pbFormData.append("sign", signFile);
+            } else if (deleteSign) {
+                pbFormData.append("sign", "");
+            }
 
-            await pb.collection(collection).update(id, pbFormData);
+            const updated = await pb.collection(collection).update(id, pbFormData);
             
+            // authStore und Live-Store sofort mit dem neuen Modell synchronisieren
+            if (pb.authStore.model && pb.authStore.model.id === id) {
+                pb.authStore.save(pb.authStore.token, updated);
+            }
+            if (collection === 'users' && orgaStore.users) {
+                orgaStore.users.optimisticUpdate(id, updated as any);
+            }
+            recordData = updated;
+
             // Refresh UI Daten nach Speichern
-            existingAvatarUrl = pb.authStore.model?.avatar ? pb.files.getURL(pb.authStore.model, pb.authStore.model.avatar) : "";
+            existingAvatarUrl = updated.avatar ? pb.files.getURL(updated, updated.avatar) : "";
             avatarFile = null;
             deleteAvatar = false;
         
-            existingSignUrl = pb.authStore.model?.sign ? pb.files.getURL(pb.authStore.model, pb.authStore.model.sign) : "";
-        signFile = null;
-        deleteSign = false;
+            existingSignUrl = updated.sign ? pb.files.getURL(updated, updated.sign) : "";
+            signFile = null;
+            deleteSign = false;
 
             successMsg = "Profil erfolgreich gespeichert!";
             setTimeout(() => successMsg = "", 3000);

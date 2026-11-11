@@ -2,13 +2,14 @@
     import { page } from '$app/stores';
     import { isSubmitting } from '$lib/states/ui.svelte';
     import { pb } from '$lib/services/pocketbase';
+    import { rbacService } from '$lib/services/rbacService.svelte';
 
     // Svelte 5 Props-Destrukturierung
     let { children } = $props();
 
     // Abgeleitete reaktive Werte über Runen
     const currentUser = $derived($page.data.user || pb.authStore.model);
-    const isOwner = $derived(currentUser?.role === 'owner' || currentUser?.role === 'superadmin');
+    const isOwner = $derived(currentUser?.role === 'owner' || currentUser?.role === 'superadmin' || currentUser?.role === 'developer' || rbacService.isOwner);
     const isAdmin = $derived(currentUser?.role === 'admin');
     const isClient = $derived(currentUser?.role === 'client' || currentUser?.role === 'guest');
 

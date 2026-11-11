@@ -1,4 +1,5 @@
 import { pb } from '$lib/services/pocketbase';
+import { rbacService } from '$lib/services/rbacService.svelte';
 
 export function useChat() {
     // Svelte 5 Runes für reaktiven Zustand
@@ -102,8 +103,8 @@ export function useChat() {
     let visibleMessages = $derived.by(() => {
         const currentUser = pb.authStore.record || pb.authStore.model;
         const currentId = currentUser?.id;
-        const isAdmin = pb.authStore.isSuperuser || currentUser?.role === 'superadmin' || currentUser?.role === 'admin';
-        const isSuper = pb.authStore.isSuperuser || currentUser?.role === 'superadmin';
+        const isAdmin = pb.authStore.isSuperuser || currentUser?.role === 'superadmin' || currentUser?.role === 'developer' || currentUser?.role === 'admin' || rbacService.isAdmin;
+        const isSuper = pb.authStore.isSuperuser || currentUser?.role === 'superadmin' || currentUser?.role === 'developer' || rbacService.isOwner;
 
         return messages.filter(m => {
         const senderId = Array.isArray(m.user) ? m.user[0] : m.user;
@@ -125,7 +126,7 @@ export function useChat() {
         get messages() { return visibleMessages; },
         get users() { return users; },
         get currentUserId() { return (pb.authStore.record || pb.authStore.model)?.id; },
-        get isAdmin() { const u = pb.authStore.record || pb.authStore.model; return pb.authStore.isSuperuser || u?.role === 'superadmin' || u?.role === 'admin'; },
+        get isAdmin() { const u = pb.authStore.record || pb.authStore.model; return pb.authStore.isSuperuser || u?.role === 'superadmin' || u?.role === 'developer' || u?.role === 'admin' || rbacService.isAdmin; },
         init,
         cleanup,
         sendMessage,

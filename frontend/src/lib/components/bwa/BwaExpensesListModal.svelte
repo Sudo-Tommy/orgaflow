@@ -7,22 +7,22 @@
     export function close() { dialog?.close(); }
 </script>
 
-<dialog bind:this={dialog} class="p-2 sm:p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-[96vw] max-w-5xl mx-auto my-auto rounded-3xl print:hidden" onclick={(e) => { if (e.target === dialog) close(); }}>
-    <div class="bg-white rounded-3xl p-4 sm:p-6 md:p-8 w-full max-h-[92vh] flex flex-col relative shadow-2xl overflow-hidden">
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between mb-4 sm:mb-6 shrink-0 pr-10 gap-3">
-            <h2 class="text-base sm:text-xl md:text-2xl font-bold text-neutral-900 flex items-center gap-2.5">
-                <span class="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center shadow-inner text-base sm:text-xl shrink-0">🧾</span> 
+<dialog bind:this={dialog} class="zero-inner-scroll-modal p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-full max-w-3xl mx-auto my-auto rounded-3xl print:hidden" onclick={(e) => { if (e.target === dialog) close(); }}>
+    <div class="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-4 sm:p-6 w-full flex flex-col relative shadow-2xl">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between mb-4 sm:mb-6 shrink-0 pr-12 gap-3">
+            <h2 class="text-base sm:text-xl md:text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2.5">
+                <span class="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-100 dark:border-rose-900/40 flex items-center justify-center shadow-inner text-base sm:text-xl shrink-0">🧾</span> 
                 Betriebsausgaben
             </h2>
-            <button onclick={() => { close(); onNewExpense(); }} class="orga-button-primary py-2 px-4 text-xs sm:text-sm flex items-center justify-center gap-2 shadow-rose-600/20 bg-rose-600 hover:bg-rose-700 text-white shrink-0 self-start sm:self-auto">
+            <button onclick={() => { close(); onNewExpense(); }} class="orga-button-primary min-h-[44px] py-2 px-4 text-xs sm:text-sm flex items-center justify-center gap-2 shadow-rose-600/20 bg-rose-600 hover:bg-rose-700 text-white shrink-0 self-start sm:self-auto">
                 + Ausgabe erfassen
             </button>
         </div>
-        <button aria-label="Schließen" onclick={close} class="absolute top-4 sm:top-6 right-4 sm:right-6 w-9 h-9 sm:w-10 sm:h-10 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-colors">
+        <button aria-label="Schließen" onclick={close} class="absolute top-4 sm:top-6 right-4 sm:right-6 w-10 h-10 min-h-[44px] min-w-[44px] bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-full flex items-center justify-center transition-colors">
             <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
         </button>
         
-        <div class="flex-1 overflow-y-auto overflow-x-auto custom-scrollbar orga-table-container touch-pan-x">
+        <div class="w-full overflow-x-auto custom-scrollbar orga-table-container touch-pan-x">
             <table class="w-full text-left border-collapse min-w-[600px] tabular-nums text-sm">
                 <thead class="bg-slate-100/95 dark:bg-slate-800/95 border-b border-slate-200 dark:border-slate-700 sticky top-0 z-10 text-xs uppercase tracking-wider"><tr><th class="p-3.5 sm:p-4 font-bold text-slate-800 dark:text-slate-100">Datum</th><th class="p-3.5 sm:p-4 font-bold text-slate-800 dark:text-slate-100">Kategorie</th><th class="p-3.5 sm:p-4 font-bold text-slate-800 dark:text-slate-100">Geschäft / Zweck</th><th class="p-3.5 sm:p-4 font-bold text-slate-800 dark:text-slate-100 text-right">Betrag (Brutto)</th><th class="p-3.5 sm:p-4 font-bold text-slate-800 dark:text-slate-100 text-center">Beleg</th><th class="p-3.5 sm:p-4 font-bold text-slate-800 dark:text-slate-100 text-right w-20"></th></tr></thead>
                 <tbody class="divide-y divide-slate-100 dark:divide-slate-800/80 bg-white dark:bg-slate-900">

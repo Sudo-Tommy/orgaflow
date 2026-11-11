@@ -1,0 +1,151 @@
+# Detailliertes Fehlerprotokoll für die Fehlerbehebung aktivieren
+error_log  logs/error.log debug;
+worker_processes  1;
+
+events {
+    worker_connections  1024;
+}
+
+http {
+    include       mime.types;
+    default_type  application/octet-stream;
+    sendfile        on;
+    keepalive_timeout  65;
+    client_max_body_size 100M;
+
+    # 1. Weiterleitung von HTTP (80) auf HTTPS (443)
+    server {
+        listen       80;
+        server_name  localhost ihre-seniorenassistenz.com www.ihre-seniorenassistenz.com;
+		
+		# Ausnahme für Let's Encrypt http-01 challenge
+		# Diese Regel fängt die Anfrage ab, bevor eine Umleitung stattfindet.
+		location /.well-known/acme-challenge/ {
+			root S:/nginx-1.30.0/html;
+			allow all;
+		}
+		
+		# Alle anderen Anfragen auf HTTPS umleiten
+		return 301 https://$host$request_uri;
+    }
+
+    # 2. Der sichere HTTPS Server
+    server {
+        listen       443 ssl;
+        server_name  ihre-seniorenassistenz.com www.ihre-seniorenassistenz.com;
+
+        # Pfade zu den von wacs.exe generierten Zertifikaten
+        # Der Dateiname enthält die erste Domain aus der Liste (ihre-seniorenassistenz.com)
+        ssl_certificate      S:/nginx-1.30.0/conf/ssl/ihre-seniorenassistenz.com-chain.pem;
+        ssl_certificate_key  S:/nginx-1.30.0/conf/ssl/ihre-seniorenassistenz.com-key.pem;
+
+        # --- SECURITY & PERFORMANCE OPTIMIERUNGEN ---
+        ssl_protocols TLSv1.2 TLSv1.3; # Veraltete Protokolle deaktivieren
+        ssl_prefer_server_ciphers on;
+        ssl_ciphers 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384';
+        ssl_session_cache shared:SSL:10m;
+        ssl_session_timeout 10m;
+
+        # 1. E-Mail Microservice (Höchste Priorität durch ^~)
+        location ^~ /api/emails/ {
+            proxy_pass http://127.0.0.1:3000/api/emails/;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection 'upgrade';
+            proxy_set_header Host $host;
+            proxy_cache_bypass $http_upgrade;
+            proxy_buffering off;
+            proxy_read_timeout 120s;
+            client_max_body_size 100M;
+        }
+
+        # 1b. Google Calendar & Drive OAuth Callback + direkte API Calls
+        location ^~ /api/google-calendar/ {
+            proxy_pass http://127.0.0.1:3000/api/google-calendar/;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection 'upgrade';
+            proxy_set_header Host $host;
+            proxy_cache_bypass $http_upgrade;
+            client_max_body_size 10M;
+        }
+
+        location ^~ /api/google-drive/ {
+            proxy_pass http://127.0.0.1:3000/api/google-drive/;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection 'upgrade';
+            proxy_set_header Host $host;
+            proxy_cache_bypass $http_upgrade;
+            client_max_body_size 100M;
+        }
+
+        # 1c. Auth Endpunkte fuer Microservice
+        location ^~ /api/auth/ {
+            proxy_pass http://127.0.0.1:3000/api/auth/;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection 'upgrade';
+            proxy_set_header Host $host;
+            proxy_cache_bypass $http_upgrade;
+            client_max_body_size 10M;
+        }
+
+        # 1d. KI- und Support-Endpunkte fuer Microservice
+        location ^~ /api/ai/ {
+            proxy_pass http://127.0.0.1:3000/api/ai/;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection 'upgrade';
+            proxy_set_header Host $host;
+            proxy_cache_bypass $http_upgrade;
+            proxy_buffering off;
+            proxy_read_timeout 120s;
+            proxy_send_timeout 120s;
+            client_max_body_size 50M;
+        }
+
+        # 1e. PocketBase Realtime (Server-Sent Events SSE) - Verhindert ERR_INCOMPLETE_CHUNKED_ENCODING
+        location ^~ /api/realtime {
+            proxy_pass http://127.0.0.1:8090;
+            proxy_http_version 1.1;
+            proxy_set_header Connection '';
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+
+            # Server-Sent Events (SSE) spezifische Parameter:
+            proxy_buffering off;
+            proxy_cache off;
+            proxy_read_timeout 86400s;
+            proxy_send_timeout 86400s;
+            chunked_transfer_encoding on;
+        }
+
+        # 2. SvelteKit Server-Endpunkte (PDF Generierung)
+        location ^~ /api/generate-pdf {
+            proxy_pass http://127.0.0.1:5173; # Port, auf dem Ihr SvelteKit Node-Server läuft (z.B. 5173, 4173 oder 3000)
+            proxy_http_version 1.1;
+            proxy_set_header Host 127.0.0.1:5173;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        }
+
+        # 3. PocketBase Backend & Frontend (Der Rest)
+        location / {
+            proxy_pass http://127.0.0.1:8090;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection 'upgrade';
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_cache_bypass $http_upgrade;
+            proxy_read_timeout 300s;
+            proxy_send_timeout 300s;
+            client_max_body_size 100M;
+        }
+    }
+}

@@ -1,38 +1,37 @@
 <script lang="ts">
+    import { caregiverPortal } from '$lib/services/caregiverPortalService.svelte';
     import { orgaStore } from '$lib/stores/orgaStore.svelte';
-    import { pb } from '$lib/services/pocketbase';
+    import { rbacService } from '$lib/services/rbacService.svelte';
     import { toastStore } from '$lib/services/toastService.svelte';
     import { 
-        Users, Search, MapPin, Phone, Navigation, Heart, 
-        AlertCircle, FileText, ChevronRight, Calendar
+        Users, Search, MapPin, Phone, Navigation, 
+        FileText, Calendar, ChevronRight
     } from 'lucide-svelte';
     import type { ClientRecord } from '$lib/types/orgaTypes';
-
-    let { 
-        onSelectClientAppointments 
-    }: { 
-        onSelectClientAppointments?: (clientId: string) => void;
-    } = $props();
+    import CaregiverClientDetailModal from './CaregiverClientDetailModal.svelte';
 
     let searchQuery = $state('');
+    let detailModal = $state<ReturnType<typeof CaregiverClientDetailModal>>();
 
-    const currentUser = $derived(pb.authStore.model);
-    const currentUserId = $derived(currentUser?.id);
+    const currentUserId = $derived(caregiverPortal.currentUserId || rbacService.currentUser?.id);
+    const assignedIds = $derived(caregiverPortal.assignedClientIds);
 
-    // Alle Klienten, die dem Mitarbeiter zugewiesen sind
-    let myClients = $derived.by(() => {
+    // Alle Klienten des Mitarbeiters, alphabetisch nach Nachname sortiert
+    const myClients = $derived.by(() => {
         if (!currentUserId) return [];
         const clients = orgaStore.clients.data || [];
-        const assignedIds = Array.isArray(currentUser?.assigned_clients) ? currentUser.assigned_clients : [];
-        
-        return clients.filter(c => 
-            c.caregiver === currentUserId || 
-            assignedIds.includes(c.id) ||
-            (Array.isArray(c.caregiver) && c.caregiver.includes(currentUserId))
-        );
+        return clients
+            .filter(c => 
+                rbacService.isDirectlyAssignedClient(c) ||
+                c.caregiver === currentUserId || 
+                c.assigned_employee === currentUserId ||
+                assignedIds.has(c.id) ||
+                (Array.isArray(c.caregiver) && c.caregiver.includes(currentUserId))
+            )
+            .sort((a, b) => (a.name_last || '').localeCompare(b.name_last || '', 'de', { sensitivity: 'base' }));
     });
 
-    let filteredClients = $derived.by(() => {
+    const filteredClients = $derived.by(() => {
         if (!searchQuery.trim()) return myClients;
         const q = searchQuery.toLowerCase().trim();
         return myClients.filter(c => 
@@ -53,14 +52,13 @@
         }).length;
     }
 
-    function openMapsNavigation(client: ClientRecord) {
-        const address = `${client.street || ''} ${client.housenr || ''}, ${client.zip || ''} ${client.city || ''}`.trim();
-        if (!address) {
-            toastStore.warning('Keine Adresse für diesen Klienten hinterlegt.');
+    function openMaps(client: ClientRecord) {
+        const addr = caregiverPortal.getClientAddress(client);
+        if (!addr) {
+            toastStore.warning('Keine Adresse für Navigation hinterlegt.');
             return;
         }
-        const url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}`;
-        window.open(url, '_blank');
+        window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(addr)}`, '_blank');
     }
 
     function callClient(phone?: string) {
@@ -70,53 +68,53 @@
         }
         window.location.href = `tel:${phone.replace(/\s+/g, '')}`;
     }
+
+    function filterAppointmentsForClient(clientId: string) {
+        caregiverPortal.selectedClientId = clientId;
+        caregiverPortal.activeTab = 'appointments';
+    }
 </script>
 
-<div class="space-y-4 pb-20">
-    
-    <!-- Suchleiste -->
+<div class="space-y-4 pb-24">
     <div class="relative">
-        <label for="search-my-clients" class="sr-only">Meine Klienten suchen</label>
+        <label for="search-clients-input" class="sr-only">Klienten suchen</label>
         <Search class="w-4 h-4 absolute left-3.5 top-3.5 text-slate-400" />
         <input 
-            id="search-my-clients"
+            id="search-clients-input"
             type="text" 
             bind:value={searchQuery}
-            placeholder="Klienten nach Name, Ort oder Notiz suchen..." 
-            class="w-full min-h-12 pl-10 pr-4 py-2.5 text-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xs focus:outline-hidden focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-white"
+            placeholder="Klienten nach Name, Ort oder Besonderheit suchen..." 
+            class="w-full min-h-12 pl-10 pr-4 py-2.5 text-xs sm:text-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xs text-slate-900 dark:text-white"
         />
     </div>
 
-    <!-- Klienten-Liste -->
     {#if orgaStore.clients?.isLoading}
-        <div class="text-center py-16 text-slate-400 font-medium animate-pulse">Lade Klienten-Daten...</div>
+        <div class="text-center py-16 text-slate-400 font-medium animate-pulse">Lade Klienten...</div>
     {:else if filteredClients.length === 0}
         <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-8 text-center shadow-xs">
             <div class="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mx-auto mb-3">
                 <Users class="w-6 h-6" />
             </div>
-            <h3 class="text-base font-bold text-slate-900 dark:text-white">Keine zugewiesenen Klienten</h3>
+            <h3 class="text-base font-bold text-slate-900 dark:text-white">Keine Klienten gefunden</h3>
             <p class="text-xs sm:text-sm text-slate-500 mt-1 max-w-sm mx-auto">
                 {#if searchQuery}
                     Keine Klienten gefunden, die auf "{searchQuery}" passen.
                 {:else}
-                    Ihnen wurden von der Betriebsleitung noch keine Klienten zugewiesen.
+                    Ihnen wurden aktuell keine Klienten zugeteilt.
                 {/if}
             </p>
         </div>
     {:else}
-        <div class="space-y-4">
+        <div class="space-y-3">
             {#each filteredClients as client (client.id)}
-                {@const fullAddress = `${client.street || ''} ${client.housenr || ''}, ${client.zip || ''} ${client.city || ''}`.trim()}
+                {@const fullAddress = caregiverPortal.getClientAddress(client)}
                 {@const phone = client.phone || client.handy}
                 {@const upcomingCount = getUpcomingAppointmentsCount(client.id)}
 
-                <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 shadow-xs transition-all hover:border-indigo-300 dark:hover:border-indigo-700 space-y-4">
-                    
-                    <!-- Card Header -->
+                <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-4 sm:p-5 shadow-xs transition-all hover:border-indigo-300 dark:hover:border-indigo-700 space-y-3.5">
                     <div class="flex items-start justify-between gap-3">
                         <div class="flex items-center gap-3 min-w-0">
-                            <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-teal-500 text-white font-black text-lg flex items-center justify-center shadow-xs shrink-0">
+                            <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-teal-500 text-white font-black text-lg flex items-center justify-center shrink-0">
                                 {client.name_last ? client.name_last[0] : 'K'}
                             </div>
                             <div class="min-w-0">
@@ -129,82 +127,69 @@
                             </div>
                         </div>
 
-                        <div class="flex items-center gap-1.5 shrink-0">
-                            {#if client.level_of_care}
-                                <span class="text-xs font-black px-2.5 py-1 rounded-xl bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-                                    PG {client.level_of_care}
-                                </span>
-                            {/if}
-                        </div>
-                    </div>
-
-                    <!-- Anschrift -->
-                    {#if fullAddress}
-                        <div class="flex items-start gap-2 text-xs text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/40 p-3 rounded-2xl border border-slate-100 dark:border-slate-800">
-                            <MapPin class="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" />
-                            <span class="font-medium">{fullAddress}</span>
-                        </div>
-                    {/if}
-
-                    <!-- Notizen / Besonderheiten -->
-                    {#if client.notes}
-                        <div class="text-xs text-slate-600 dark:text-slate-400 bg-amber-50/50 dark:bg-amber-950/20 p-3 rounded-2xl border border-amber-200/50 dark:border-amber-900/30">
-                            <strong class="text-amber-800 dark:text-amber-300 block mb-0.5">Betreuungshinweise & Besonderheiten:</strong>
-                            <p class="line-clamp-3">{client.notes}</p>
-                        </div>
-                    {/if}
-
-                    <!-- Termin-Status für diesen Klienten -->
-                    <div class="flex items-center justify-between p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-                        <div class="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
-                            <Calendar class="w-4 h-4 text-indigo-500" />
-                            <span>
-                                {#if upcomingCount > 0}
-                                    <strong class="text-indigo-600 dark:text-indigo-400">{upcomingCount}</strong> anstehende(r) Einsatz/Einsätze
-                                {:else}
-                                    Keine offenen Termine
-                                {/if}
+                        {#if client.level_of_care}
+                            <span class="text-xs font-black px-2.5 py-1 rounded-xl bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800 shrink-0">
+                                PG {client.level_of_care}
                             </span>
-                        </div>
-
-                        {#if onSelectClientAppointments}
-                            <button
-                                type="button"
-                                onclick={() => onSelectClientAppointments?.(client.id)}
-                                class="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 flex items-center gap-1 p-1 hover:underline cursor-pointer"
-                            >
-                                <span>Einsätze anzeigen</span>
-                                <ChevronRight class="w-3.5 h-3.5" />
-                            </button>
                         {/if}
                     </div>
 
-                    <!-- Ergonomische Außendienst-Aktionen (Mindestens 44x44 px) -->
-                    <div class="grid grid-cols-2 gap-3 pt-1 border-t border-slate-100 dark:border-slate-800">
+                    {#if fullAddress}
+                        <div class="flex items-start gap-2 text-xs text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/40 p-2.5 rounded-xl">
+                            <MapPin class="w-3.5 h-3.5 text-indigo-500 shrink-0 mt-0.5" />
+                            <span class="truncate">{fullAddress}</span>
+                        </div>
+                    {/if}
+
+                    <div class="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 text-xs">
+                        <span class="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                            <Calendar class="w-3.5 h-3.5 text-indigo-500" />
+                            <span>{upcomingCount > 0 ? `${upcomingCount} offene(r) Einsatz/Einsätze` : 'Keine offenen Einsätze'}</span>
+                        </span>
                         <button
                             type="button"
-                            onclick={() => openMapsNavigation(client)}
-                            disabled={!fullAddress}
-                            class="min-h-12 px-4 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] text-white text-xs sm:text-sm font-bold transition-all shadow-xs flex items-center justify-center gap-2 disabled:opacity-40"
+                            onclick={() => filterAppointmentsForClient(client.id)}
+                            class="font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
                         >
-                            <Navigation class="w-4 h-4" />
-                            <span>Route / Maps</span>
+                            <span>Einsätze</span>
+                            <ChevronRight class="w-3 h-3" />
+                        </button>
+                    </div>
+
+                    <div class="grid grid-cols-3 gap-2 pt-1 border-t border-slate-100 dark:border-slate-800">
+                        <button
+                            type="button"
+                            onclick={() => openMaps(client)}
+                            disabled={!fullAddress}
+                            class="min-h-11 px-2.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all flex items-center justify-center gap-1.5 disabled:opacity-40 cursor-pointer shadow-xs"
+                        >
+                            <Navigation class="w-3.5 h-3.5" />
+                            <span>Route</span>
                         </button>
 
                         <button
                             type="button"
                             onclick={() => callClient(phone)}
                             disabled={!phone}
-                            class="min-h-12 px-4 py-3 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-[0.98] text-slate-800 dark:text-slate-100 text-xs sm:text-sm font-bold transition-all border border-slate-200 dark:border-slate-700 flex items-center justify-center gap-2 disabled:opacity-40"
+                            class="min-h-11 px-2.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-800 dark:text-slate-200 text-xs font-bold transition-all border border-slate-200 dark:border-slate-700 flex items-center justify-center gap-1.5 disabled:opacity-40 cursor-pointer"
                         >
-                            <Phone class="w-4 h-4 text-emerald-500" />
+                            <Phone class="w-3.5 h-3.5 text-emerald-500" />
                             <span>Anrufen</span>
                         </button>
-                    </div>
 
+                        <button
+                            type="button"
+                            onclick={() => detailModal?.open(client)}
+                            class="min-h-11 px-2.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-indigo-600 dark:text-indigo-400 text-xs font-bold transition-all border border-slate-200 dark:border-slate-700 flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                            <FileText class="w-3.5 h-3.5" />
+                            <span>Akte</span>
+                        </button>
+                    </div>
                 </div>
             {/each}
         </div>
     {/if}
-
 </div>
+
+<CaregiverClientDetailModal bind:this={detailModal} />

@@ -3,26 +3,40 @@
     import { X, UserCircle } from "lucide-svelte";
     import { onMount } from "svelte";
     import { pb } from "$lib/services/pocketbase";
+    import NewNursingHomeModal from "./NewNursingHomeModal.svelte";
 
     let { onSave } = $props<{ onSave?: () => void }>();
 
     let dialog: HTMLDialogElement | undefined = $state();
+    let newHomeModal: ReturnType<typeof NewNursingHomeModal> | undefined = $state();
     let isLoading = $state(false);
     let errorMsg = $state("");
     let insurances = $state<any[]>([]);
+    let homes = $state<any[]>([]);
 
     let currentClientId = $state("");
     let formData = $state({
         name_first: "", name_last: "", email: "", phone: "", handy: "",
         street: "", housenr: "", zip: "", city: "",
         birthdate: "", level_of_care: "0", insurance_nr: "",
-        insurance: "", other_insurance_name: ""
+        insurance: "", other_insurance_name: "",
+        retirement_homes: ""
     });
 
+    async function loadOptions() {
+        try {
+            const [insRes, homesRes] = await Promise.all([
+                pb.collection('insurancies').getFullList({ sort: 'name', requestKey: null }).catch(() => []),
+                pb.collection('retirement_homes').getFullList({ sort: 'name', requestKey: null })
+                    .catch(() => pb.collection('nursing_homes').getFullList({ sort: 'name', requestKey: null }).catch(() => []))
+            ]);
+            insurances = insRes;
+            homes = homesRes;
+        } catch {}
+    }
+
     onMount(() => {
-        pb.collection('insurancies').getFullList({ sort: 'name', requestKey: null })
-            .then(res => { insurances = res; })
-            .catch(() => {});
+        loadOptions();
     });
 
     export function open(client: any) {
@@ -30,6 +44,9 @@
         currentClientId = client.id;
         let insId = client.insurance;
         if (Array.isArray(insId)) insId = insId[0];
+
+        let homeId = client.retirement_homes || client.nursing_home;
+        if (Array.isArray(homeId)) homeId = homeId[0];
 
         formData = {
             name_first: client.name_first || "",
@@ -45,8 +62,10 @@
             level_of_care: client.level_of_care || "0",
             insurance_nr: client.insurance_nr || "",
             insurance: insId || "",
-            other_insurance_name: ""
+            other_insurance_name: "",
+            retirement_homes: homeId || ""
         };
+        loadOptions();
         dialog?.showModal();
     }
 
@@ -82,16 +101,16 @@
     }
 </script>
 
-<dialog bind:this={dialog} class="p-0 bg-transparent backdrop:bg-slate-950/60 backdrop:backdrop-blur-sm w-full max-w-2xl m-0 sm:m-auto max-h-none sm:max-h-fit rounded-none sm:rounded-3xl" onclick={(e) => { if (e.target === dialog) close(); }}>
-    <div class="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border border-neutral-100 dark:border-slate-800 sm:rounded-3xl w-full h-dvh sm:h-auto sm:max-h-[90dvh] flex flex-col relative overflow-hidden shadow-2xl">
-        <div class="px-6 md:px-8 py-5 border-b border-neutral-100 dark:border-slate-800 shrink-0 sticky top-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md z-20 flex justify-between items-center">
+<dialog bind:this={dialog} class="zero-inner-scroll-modal p-0 bg-transparent backdrop:bg-slate-950/60 backdrop:backdrop-blur-sm w-full max-w-2xl mx-auto my-6 sm:my-10 rounded-3xl" onclick={(e) => { if (e.target === dialog) close(); }}>
+    <div class="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border border-neutral-100 dark:border-slate-800 rounded-3xl w-full flex flex-col relative shadow-2xl">
+        <div class="px-6 md:px-8 py-5 border-b border-neutral-100 dark:border-slate-800 shrink-0 sticky top-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md z-20 flex justify-between items-center rounded-t-3xl">
             <h2 class="text-xl sm:text-2xl font-bold text-neutral-900 dark:text-white flex items-center gap-2"><UserCircle class="w-6 h-6 text-brand-600 dark:text-brand-400" /> Klienten-Akte bearbeiten</h2>
             <button aria-label="Schließen" onclick={close} class="w-11 h-11 min-w-[44px] min-h-[44px] bg-neutral-100 dark:bg-slate-800 hover:bg-neutral-200 dark:hover:bg-slate-700 text-neutral-600 dark:text-slate-300 rounded-full flex items-center justify-center transition-colors cursor-pointer">
                 <X class="w-5 h-5" />
             </button>
         </div>
         
-        <div class="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-8 bg-neutral-50/50 dark:bg-slate-950/50">
+        <div class="flex-1 p-6 md:p-8 bg-neutral-50/50 dark:bg-slate-950/50">
             {#if errorMsg}<div class="bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 p-4 rounded-xl mb-6 text-sm font-medium border border-rose-100 dark:border-rose-900/60 animate-enter">{errorMsg}</div>{/if}
             
             <form id="portalClientEditForm" onsubmit={(e) => { e.preventDefault(); saveClient(); }} class="space-y-5 pb-2">
@@ -151,6 +170,28 @@
                         </div>
                     {/if}
                 </div>
+
+                <div class="pt-4 border-t border-neutral-100 dark:border-slate-800">
+                    <label for="ce-home" class="block text-sm font-semibold text-neutral-700 dark:text-slate-300 mb-1.5">Wohnsituation / Pflegeheim</label>
+                    <select
+                        id="ce-home"
+                        bind:value={formData.retirement_homes}
+                        onchange={(e) => {
+                            if (e.currentTarget.value === '__new_home__') {
+                                formData.retirement_homes = '';
+                                newHomeModal?.open();
+                            }
+                        }}
+                        class="orga-input-clear py-2.5 text-sm bg-white dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100 cursor-pointer min-h-[44px]"
+                        disabled={isLoading}
+                    >
+                        <option value="">Ambulant / Eigenes Zuhause</option>
+                        <option value="__new_home__" class="font-bold text-teal-600 dark:text-teal-400">+ Neues Pflegeheim anlegen</option>
+                        {#each homes as home}
+                            <option value={home.id}>{home.name}</option>
+                        {/each}
+                    </select>
+                </div>
             </form>
         </div>
         <div class="p-4 sm:p-6 border-t border-neutral-100 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md shrink-0 sticky bottom-0 z-20 pb-[max(env(safe-area-inset-bottom,0px),1rem)]">
@@ -161,3 +202,11 @@
         </div>
     </div>
 </dialog>
+
+<NewNursingHomeModal 
+    bind:this={newHomeModal} 
+    onCreated={(home) => { 
+        homes = [home, ...homes]; 
+        formData.retirement_homes = home.id; 
+    }} 
+/>

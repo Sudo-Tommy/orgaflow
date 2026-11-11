@@ -1,9 +1,16 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { GoogleGenAI, Type } from '@google/genai';
+import { GoogleGenAI } from '@google/genai';
 import crypto from 'crypto';
 import PocketBase from 'pocketbase';
 import { env } from '$env/dynamic/private';
+import {
+    buildCacheOptimizedPrompt,
+    getAvailableFrontendModels,
+    recordFrontendModelRequest,
+    markFrontendModelFailure
+} from '$lib/utils/tokenSaverEngine';
+import { getSchemaForFormat } from './marketingAiSchemas';
 
 const PB_URL = process.env.POCKETBASE_URL || 'http://127.0.0.1:8090';
 
@@ -20,103 +27,6 @@ async function getAdminPb() {
         }
     }
     return pb;
-}
-
-function getSchemaForFormat(format: string) {
-    if (format === 'poster' || format === 'flyer') {
-        return {
-            type: Type.OBJECT,
-            properties: {
-                headline: { type: Type.STRING },
-                subheadline: { type: Type.STRING },
-                bulletpoints: {
-                    type: Type.ARRAY,
-                    items: { type: Type.STRING }
-                },
-                highlight_box: { type: Type.STRING },
-                cta: { type: Type.STRING },
-                contacts: { type: Type.STRING }
-            },
-            required: ['headline', 'subheadline', 'bulletpoints', 'highlight_box', 'cta', 'contacts']
-        };
-    }
-
-    if (format === 'social_sheet') {
-        return {
-            type: Type.ARRAY,
-            items: {
-                type: Type.OBJECT,
-                properties: {
-                    platform: { type: Type.STRING },
-                    hook: { type: Type.STRING },
-                    text: { type: Type.STRING },
-                    cta: { type: Type.STRING },
-                    hashtags: { type: Type.STRING }
-                },
-                required: ['platform', 'hook', 'text', 'cta', 'hashtags']
-            }
-        };
-    }
-
-    if (format === 'insert') {
-        return {
-            type: Type.OBJECT,
-            properties: {
-                title: { type: Type.STRING },
-                subtitle: { type: Type.STRING },
-                benefits: {
-                    type: Type.ARRAY,
-                    items: { type: Type.STRING }
-                },
-                footer: { type: Type.STRING }
-            },
-            required: ['title', 'subtitle', 'benefits', 'footer']
-        };
-    }
-
-    if (format === 'factsheet') {
-        return {
-            type: Type.OBJECT,
-            properties: {
-                title: { type: Type.STRING },
-                section1_title: { type: Type.STRING },
-                section1_text: { type: Type.STRING },
-                section2_title: { type: Type.STRING },
-                section2_items: {
-                    type: Type.ARRAY,
-                    items: { type: Type.STRING }
-                },
-                section3_title: { type: Type.STRING },
-                section3_text: { type: Type.STRING }
-            },
-            required: ['title', 'section1_title', 'section1_text', 'section2_title', 'section2_items', 'section3_title', 'section3_text']
-        };
-    }
-
-    if (format === 'voucher') {
-        return {
-            type: Type.OBJECT,
-            properties: {
-                title: { type: Type.STRING },
-                value: { type: Type.STRING },
-                description: { type: Type.STRING },
-                code: { type: Type.STRING },
-                validity: { type: Type.STRING }
-            },
-            required: ['title', 'value', 'description', 'code', 'validity']
-        };
-    }
-
-    // Default object fallback
-    return {
-        type: Type.OBJECT,
-        properties: {
-            title: { type: Type.STRING },
-            body: { type: Type.STRING },
-            cta: { type: Type.STRING }
-        },
-        required: ['title', 'body', 'cta']
-    };
 }
 
 export const POST: RequestHandler = async ({ request }) => {
@@ -150,7 +60,7 @@ export const POST: RequestHandler = async ({ request }) => {
             } catch {}
         }
 
-        // 3. Gemini API Client initialisieren
+        // 3. Gemini API Client mit Rate-Limit-Guard
         const apiKey = process.env.GEMINI_API_KEY || env.GEMINI_API_KEY;
         if (!apiKey) {
             throw error(500, 'GEMINI_API_KEY ist serverseitig nicht konfiguriert.');
@@ -159,28 +69,29 @@ export const POST: RequestHandler = async ({ request }) => {
         const ai = new GoogleGenAI({ apiKey });
         const schema = getSchemaForFormat(format);
 
-        const systemInstruction = `Du bist ein hochqualifizierter deutscher Werbetexter und Marketing-Spezialist für die Seniorenassistenz Jenzsch (Standorte: Halle Saale und Lutherstadt Wittenberg).
-Deine Texte sind einfühlsam, seriös, vertrauensbildend und rechtlich präzise (z.B. Erwähnung des Entlastungsbetrags § 45b SGB XI mit 131 €/Monat, Verhinderungspflege § 39 SGB XI, keine starre Vertragsbindung).
-Zielgruppe: ${target_audience}.
+        const staticSystem = `Du bist ein hochqualifizierter deutscher Werbetexter und Marketing-Spezialist für die Seniorenassistenz Jenzsch (Standorte: Halle Saale und Lutherstadt Wittenberg).
+Deine Texte sind einfühlsam, seriös, vertrauensbildend und rechtlich präzise (§ 45b SGB XI: 131 €/Monat Entlastungsbetrag, § 39 SGB XI Verhinderungspflege, keine starre Vertragsbindung).
+Antworte ausschließlich mit dem geforderten JSON-Schema. Kein Vorgeplänkel.`;
+
+        const dynamicTask = `Zielgruppe: ${target_audience}.
 Format: ${format}.
 Zusatzkontext: ${context || 'Kein Zusatzkontext'}.
+${prompt_override || `Generiere optimierte, hochattraktive Marketing-Inhalte für das Format "${format}" für die Zielgruppe "${target_audience}".`}`;
 
-Erstelle für das gewünschte Werbemittel-Format professionelle Inhalte. Antworte ausschließlich mit dem geforderten JSON-Schema.`;
-
-        const userPrompt = prompt_override || `Generiere optimierte, hochattraktive Marketing-Inhalte für das Werbemittel-Format "${format}" für die Zielgruppe "${target_audience}".`;
-
-        const candidateModels = ['gemini-2.5-flash', 'gemini-3.5-flash'];
+        const { systemPart, userPart } = buildCacheOptimizedPrompt(staticSystem, dynamicTask, { skipEnvelope: true });
+        const candidateModels = getAvailableFrontendModels();
         let resultJson: any = null;
         let usedModel = '';
         let lastError: any = null;
 
         for (const modelName of candidateModels) {
             try {
+                recordFrontendModelRequest(modelName);
                 const response = await ai.models.generateContent({
                     model: modelName,
-                    contents: userPrompt,
+                    contents: userPart,
                     config: {
-                        systemInstruction,
+                        systemInstruction: systemPart,
                         responseMimeType: 'application/json',
                         responseSchema: schema,
                         temperature: 0.3
@@ -193,20 +104,20 @@ Erstelle für das gewünschte Werbemittel-Format professionelle Inhalte. Antwort
                     break;
                 }
             } catch (err: any) {
+                markFrontendModelFailure(modelName, err);
                 lastError = err;
                 console.warn(`[AI Marketing] Modell ${modelName} fehlgeschlagen:`, err?.message || err);
             }
         }
 
         if (!resultJson) {
-            throw error(500, `Gemini API Fehler: ${lastError?.message || 'Keine Antwort generiert'}`);
+            throw error(500, `Marketing-Generierung fehlgeschlagen: ${lastError?.message || 'Keine Antwort generiert'}`);
         }
 
-        // 4. In PocketBase marketing_assets cachen/speichern
+        // 4. In PocketBase speichern
         const title = `Marketing-Vorlage (${format.toUpperCase()} - ${target_audience})`;
         let savedRecord = null;
         try {
-            // Prüfe, ob es bereits einen Eintrag für dieses Format gibt
             let existing = null;
             try {
                 existing = await pbAdmin.collection('marketing_assets').getFirstListItem(

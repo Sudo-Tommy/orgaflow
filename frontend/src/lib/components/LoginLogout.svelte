@@ -1,12 +1,9 @@
 <script lang="ts">
 	import { pb } from '$lib/services/pocketbase';
-	import Login from '$lib/components/Login.svelte';
-	import { loginUser } from '$lib/services/login';
+	import { goto } from '$app/navigation';
 
 	let { subtle = false, iconOnly = false } = $props<{ subtle?: boolean, iconOnly?: boolean }>();
 
-	// svelte-ignore non_reactive_update
-	let loginDialog: HTMLDialogElement;
 	// svelte-ignore non_reactive_update
 	let logoutDialog: HTMLDialogElement;
 
@@ -18,7 +15,6 @@
 		return record ? `${record.name_first || ''} ${record.name_last || ''}`.trim() : '';
 	}
 	let userName = $state(getFullName(pb.authStore.model));
-	let showLoginModal = $state(false);
 	let showLogoutModal = $state(false);
 
 	// Synchronisiere den State mit PocketBase
@@ -32,15 +28,6 @@
 		return unsubscribe;
 	});
 
-	// Modal-Steuerung
-	$effect(() => {
-		if (showLoginModal) {
-			loginDialog?.showModal();
-		} else {
-			loginDialog?.close();
-		}
-	});
-
 	$effect(() => {
 		if (showLogoutModal) {
 			logoutDialog?.showModal();
@@ -49,27 +36,16 @@
 		}
 	});
 
-	export async function handleLogin(email: string, pass: string) {
-		const result = await loginUser(email, pass);
-		if (result.success) {
-			showLoginModal = false;
-			// Erfolgreich eingeloggt, Modal schließen
-		} else {
-			// Fehler wird in der Login-Komponente angezeigt
-		}
-	}
-
 	export function handleLogout() {
 		// Beendet alle laufenden Realtime-Verbindungen, BEVOR der AuthStore geleert wird!
-		// Verhindert den PocketBase 403 "authorization don't match" und "unexpected EOF" Fehler beim Logout.
 		pb.realtime.unsubscribe();
 		pb.authStore.clear();
 		showLogoutModal = false;
-		// Der Layout-Guard leitet automatisch zu /login
+		goto('/portal');
 	}
 
 	export function openLoginModal() {
-		showLoginModal = true;
+		goto('/portal?mode=employee');
 	}
 
 	export function openLogoutModal() {
@@ -77,7 +53,6 @@
 	}
 
 	export function closeModals() {
-		showLoginModal = false;
 		showLogoutModal = false;
 	}
 </script>
@@ -107,26 +82,14 @@
 	{/if}
 {/if}
 
-<!-- Login Modal -->
-<dialog bind:this={loginDialog} class="p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-full max-w-md mx-auto my-auto rounded-3xl" onclick={(e) => { if (e.target === loginDialog) closeModals(); }}>
-	<div class="bg-white rounded-3xl p-6 md:p-8 w-full relative">
-		<button aria-label="Schließen" title="Schließen" onclick={closeModals} class="absolute top-5 right-5 w-10 h-10 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-colors">
-			<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-		</button>
-		<div class="mt-2">
-			<Login handleLogin={handleLogin} isLoading={false} errorMsg="" />
-		</div>
-	</div>
-</dialog>
-
 <!-- Logout Modal -->
 <dialog bind:this={logoutDialog} class="p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-full max-w-sm mx-auto my-auto rounded-3xl" onclick={(e) => { if (e.target === logoutDialog) closeModals(); }}>
-	<div class="bg-white rounded-3xl p-6 md:p-8 w-full relative">
-			<h2 class="text-2xl font-bold text-neutral-900 mb-4">Abmelden</h2>
-			<p class="mb-6">Sind Sie sicher, dass Sie sich abmelden möchten?</p>
-			<div class="flex gap-4 justify-end">
-				<button onclick={closeModals} class="orga-button-ghost">Abbrechen</button>
-				<button onclick={handleLogout} class="orga-button-primary">Abmelden</button>
-			</div>
+	<div class="bg-white dark:bg-slate-900 rounded-3xl p-6 md:p-8 w-full relative border border-neutral-200 dark:border-slate-800 shadow-xl">
+		<h2 class="text-2xl font-bold text-neutral-900 dark:text-white mb-4">Abmelden</h2>
+		<p class="mb-6 text-neutral-600 dark:text-slate-300">Sind Sie sicher, dass Sie sich abmelden möchten?</p>
+		<div class="flex gap-4 justify-end">
+			<button onclick={closeModals} class="orga-button-ghost">Abbrechen</button>
+			<button onclick={handleLogout} class="orga-button-primary">Abmelden</button>
+		</div>
 	</div>
-</dialog>
+</dialog>

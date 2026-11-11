@@ -104,10 +104,10 @@
             <dialog 
                 bind:this={sigDialog}
                 onclose={() => isSignatureFullscreen = false}
-                class="{isSignatureFullscreen ? 'm-0 p-2 sm:p-4 md:p-8 w-full h-full max-w-none max-h-none bg-neutral-900/95 flex flex-col items-center justify-center touch-none backdrop-blur-md border-none z-9999 backdrop:bg-transparent' : 'block relative w-full p-0 m-0 bg-white border-2 border-dashed border-neutral-200 rounded-xl overflow-hidden touch-none'}"
+                class="{isSignatureFullscreen ? 'zero-inner-scroll-modal m-auto p-3 sm:p-5 w-full max-w-3xl bg-neutral-900/95 rounded-3xl flex flex-col items-center justify-center touch-none backdrop-blur-md border border-slate-800 shadow-2xl z-9999 backdrop:bg-slate-950/80' : 'block relative w-full p-0 m-0 bg-white border-2 border-dashed border-neutral-200 rounded-xl overflow-hidden touch-none'}"
             >
                 {#if isSignatureFullscreen}
-                    <div class="w-full max-w-4xl bg-white rounded-t-3xl flex items-center justify-between p-4 sm:p-5 md:p-6 border-b border-neutral-200 shrink-0">
+                    <div class="w-full max-w-3xl bg-white rounded-t-2xl flex items-center justify-between p-3.5 sm:p-4 border-b border-neutral-200 shrink-0">
                         <h3 class="font-bold text-lg sm:text-xl md:text-2xl text-neutral-900 flex items-center gap-2 sm:gap-3">
                             <span class="w-8 h-8 sm:w-10 sm:h-10 bg-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center shadow-inner text-sm sm:text-base">✍️</span> 
                             Bitte unterschreiben
@@ -118,12 +118,13 @@
                         </div>
                     </div>
                 {/if}
-                <div class="{isSignatureFullscreen ? 'w-full max-w-4xl bg-neutral-50 rounded-b-3xl p-3 sm:p-6 md:p-8 flex items-center justify-center relative shadow-2xl' : 'w-full relative'}">
+                <div class="{isSignatureFullscreen ? 'w-full max-w-3xl bg-neutral-50 rounded-b-2xl p-3 sm:p-5 flex items-center justify-center relative shadow-2xl' : 'w-full relative'}">
                     <div class="relative w-full aspect-3/1 {isSignatureFullscreen ? 'bg-white border-4 border-dashed border-neutral-300 rounded-2xl shadow-inner' : ''}">
                         <canvas 
                             bind:this={canvas} 
                             width="1200" height="400" 
                             class="w-full h-full cursor-crosshair touch-none {isSignatureFullscreen ? 'rounded-2xl' : ''}"
+                            style="touch-action: none;"
                             onmousedown={startDrawing} onmousemove={draw} onmouseup={stopDrawing} onmouseleave={stopDrawing}
                             ontouchstart={startDrawing} ontouchmove={draw} ontouchend={stopDrawing}
                         ></canvas>

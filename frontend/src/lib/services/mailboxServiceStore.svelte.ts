@@ -1,12 +1,6 @@
 import { pb } from './pocketbase';
+import { rbacService } from './rbacService.svelte';
 import type { RecordModel } from 'pocketbase';
-
-/**
- * Mailbox Folders Service
- * 
- * Manages mailbox folder structure and metadata.
- * Tracks unread counts, sync status, and folder hierarchy.
- */
 
 export interface MailboxFolder extends RecordModel {
   user: string;
@@ -27,10 +21,11 @@ export interface MailboxFolderInput {
 }
 
 export function createMailboxService() {
-  let folders = $state<MailboxFolder[]>([]); // FIX: $state is recognized here
-  let isLoading = $state(false); // FIX: $state is recognized here
-  let error = $state<string | null>(null); // FIX: $state is recognized here
+  let folders = $state<MailboxFolder[]>([]);
+  let isLoading = $state(false);
+  let error = $state<string | null>(null);
   let selectedFolderPath = $state<string>('INBOX');
+  let activeUser = $state<string>('all');
 
   const selectedFolder = $derived.by(() => {
     return folders.find((f: MailboxFolder) => f.folder_path === selectedFolderPath) || folders[0];
@@ -41,59 +36,64 @@ export function createMailboxService() {
   });
 
   return {
-    get folders() {
-      return folders;
-    },
-    get isLoading() {
-      return isLoading;
-    },
-    get error() {
-      return error;
-    },
-    get selectedFolder() {
-      return selectedFolder;
-    },
-    get totalUnread() {
-      return totalUnread;
-    },
-    get selectedFolderPath() {
-      return selectedFolderPath;
-    },
-    set selectedFolderPath(path: string) {
-      selectedFolderPath = path;
-    },
+    get folders() { return folders; },
+    get isLoading() { return isLoading; },
+    get error() { return error; },
+    get selectedFolder() { return selectedFolder; },
+    get totalUnread() { return totalUnread; },
+    get selectedFolderPath() { return selectedFolderPath; },
+    set selectedFolderPath(path: string) { selectedFolderPath = path; },
+    get activeUser() { return activeUser; },
 
-    // Fetch all folders for current user
     async loadFolders(selectedUserEmail?: string): Promise<MailboxFolder[]> {
       isLoading = true;
-      error = null; // FIX: Clear error on load
+      error = null;
       try {
         const authData = pb.authStore.model;
-        if (!authData?.id) {
-          throw new Error('User not authenticated');
+        if (!authData?.id) throw new Error('User not authenticated');
+
+        if (selectedUserEmail !== undefined) {
+          activeUser = selectedUserEmail;
+        }
+        const target = activeUser;
+        let userFilter = "";
+        const isSuperAdmin = pb.authStore.isSuperuser || authData?.role === 'superadmin' || authData?.role === 'developer' || rbacService.isOwner;
+
+        if (target === "all" && isSuperAdmin) {
+          userFilter = "";
+        } else if (target && target !== "all") {
+          if (target.includes('@')) {
+            let targetUserId = "";
+            try {
+              const uRec = await pb.collection('users').getFirstListItem(`email = "${target}"`, { requestKey: null }).catch(() => null);
+              if (uRec?.id) targetUserId = uRec.id;
+            } catch {}
+            if (targetUserId) {
+              userFilter = ` && (user = "${targetUserId}" || from_address ~ "${target}" || to_address ~ "${target}")`;
+            } else {
+              userFilter = ` && (from_address ~ "${target}" || to_address ~ "${target}")`;
+            }
+          } else {
+            userFilter = ` && user = "${target}"`;
+          }
+        } else {
+          userFilter = ` && user = "${authData.id}"`;
         }
 
-      // Identischer Nutzer-Filter für die Live-Berechnung der Ordner-Zähler
-      let userFilter = "";
-      if (selectedUserEmail && selectedUserEmail !== "all") { // FIX: No change needed
-          userFilter = ` && user = "${authData.id}"`; // FIX: Filter by user ID, not email address
-      } // FIX: No change needed
-      
-      // Wir rufen die ungelesenen Mails für den Badge live ab
-      const unreadInbox = await pb.collection('mailbox_messages').getList(1, 1, {
-          filter: `folder = "INBOX" && is_read = false${userFilter}`,
-          requestKey: null
-      });
-      const totalInbox = await pb.collection('mailbox_messages').getList(1, 1, { filter: `folder = "INBOX"${userFilter}`, requestKey: null });
-      const totalSent = await pb.collection('mailbox_messages').getList(1, 1, { filter: `folder = "Sent"${userFilter}`, requestKey: null });
-      const totalTrash = await pb.collection('mailbox_messages').getList(1, 1, { filter: `folder = "Trash"${userFilter}`, requestKey: null });
+        const [unreadInbox, totalInbox, totalSent, totalStarred, totalTrash] = await Promise.all([
+          pb.collection('mailbox_messages').getList(1, 1, { filter: `folder = "INBOX" && is_read = false${userFilter}`, requestKey: null }),
+          pb.collection('mailbox_messages').getList(1, 1, { filter: `folder = "INBOX"${userFilter}`, requestKey: null }),
+          pb.collection('mailbox_messages').getList(1, 1, { filter: `folder = "Sent"${userFilter}`, requestKey: null }),
+          pb.collection('mailbox_messages').getList(1, 1, { filter: `is_starred = true${userFilter}`, requestKey: null }).catch(() => ({ totalItems: 0 })),
+          pb.collection('mailbox_messages').getList(1, 1, { filter: `folder = "Trash"${userFilter}`, requestKey: null })
+        ]);
 
-      // Standard-Ordnerstruktur erzwingen
-      folders = [
+        folders = [
           { id: 'inbox', folder_name: 'Posteingang', folder_path: 'INBOX', unread_count: unreadInbox.totalItems, total_count: totalInbox.totalItems } as MailboxFolder,
           { id: 'sent', folder_name: 'Gesendet', folder_path: 'Sent', unread_count: 0, total_count: totalSent.totalItems } as MailboxFolder,
+          { id: 'starred', folder_name: 'Markiert', folder_path: 'STARRED', unread_count: 0, total_count: totalStarred.totalItems } as MailboxFolder,
           { id: 'trash', folder_name: 'Papierkorb', folder_path: 'Trash', unread_count: 0, total_count: totalTrash.totalItems } as MailboxFolder,
-      ];
+        ];
         return folders;
       } catch (err) {
         error = err instanceof Error ? err.message : 'Failed to load folders';
@@ -104,108 +104,12 @@ export function createMailboxService() {
       }
     },
 
-    // Create a new folder
-    async createFolder(input: MailboxFolderInput): Promise<MailboxFolder> {
-      isLoading = true;
-      error = null;
-      try {
-        const authData = pb.authStore.model;
-        if (!authData?.id) {
-          throw new Error('User not authenticated');
-        }
-
-        const formData = new FormData();
-        formData.append('user', authData.id);
-        formData.append('folder_name', input.folder_name);
-        formData.append('folder_path', input.folder_path);
-        formData.append('unread_count', (input.unread_count || 0).toString());
-        formData.append('total_count', (input.total_count || 0).toString());
-
-        const folder = await pb.collection('mailboxFolders').create<MailboxFolder>(formData);
-        folders.push(folder);
-        return folder;
-      } catch (err) {
-        error = err instanceof Error ? err.message : 'Failed to create folder';
-        console.error('[Mailbox] Create error:', error);
-        throw err;
-      } finally {
-        isLoading = false;
-      }
-    },
-
-    // Update folder metadata (unread count, total count)
-    async updateFolder(folderId: string, updates: Partial<MailboxFolderInput>): Promise<MailboxFolder> {
-      isLoading = true;
-      error = null;
-      try {
-        const formData = new FormData();
-        if (updates.folder_name !== undefined) {
-          formData.append('folder_name', updates.folder_name);
-        }
-        if (updates.unread_count !== undefined) {
-          formData.append('unread_count', updates.unread_count.toString());
-        }
-        if (updates.total_count !== undefined) {
-          formData.append('total_count', updates.total_count.toString());
-        }
-
-        const updated = await pb.collection('mailboxFolders').update<MailboxFolder>(
-          folderId,
-          formData
-        );
-
-        // Update in local state
-        const index = folders.findIndex((f: MailboxFolder) => f.id === folderId);
-        if (index !== -1) {
-          folders[index] = updated;
-        }
-
-        return updated;
-      } catch (err) {
-        error = err instanceof Error ? err.message : 'Failed to update folder';
-        console.error('[Mailbox] Update error:', error);
-        throw err;
-      } finally {
-        isLoading = false;
-      }
-    },
-
-    // Delete a folder
-    async deleteFolder(folderId: string): Promise<void> {
-      isLoading = true;
-      error = null;
-      try {
-        await pb.collection('mailboxFolders').delete(folderId);
-        folders = folders.filter((f: MailboxFolder) => f.id !== folderId);
-      } catch (err) {
-        error = err instanceof Error ? err.message : 'Failed to delete folder';
-        console.error('[Mailbox] Delete error:', error);
-        throw err;
-      } finally {
-        isLoading = false;
-      }
-    },
-
-    // Fetch folders via API (triggers backend sync)
     async syncFolders(): Promise<MailboxFolder[]> {
-      isLoading = true;
-      error = null;
-      try {
-        // Aktuell gibt es noch keine echte IMAP-Ordner Sync API im Microservice
-        // Lade einfach die aktuellen Stände aus der Datenbank
-        return await this.loadFolders();
-      } catch (err) {
-        error = err instanceof Error ? err.message : 'Failed to sync folders';
-        console.error('[Mailbox] Sync error:', error);
-        throw err;
-      } finally {
-        isLoading = false;
-      }
+      return await this.loadFolders();
     }
   };
 }
 
-// Singleton instance
 let mailboxService: ReturnType<typeof createMailboxService>;
 
 export function getMailboxService() {

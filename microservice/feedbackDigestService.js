@@ -8,10 +8,10 @@
  */
 
 import PocketBase from 'pocketbase';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { buildCacheOptimizedPrompt, callGeminiWithFallback } from './tokenSaverEngine.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -60,7 +60,7 @@ export async function generateWeeklyFeedbackDigest(options = {}) {
 
     console.log(`[Feedback Digest] Starte Analyse für Zeitraum ${isoPeriodStart} bis ${now.toISOString()} (Quellen: Feedback, Vorschläge: ${includeProposals}, Chat: ${includeChat}, Inquiries: ${includeInquiries}, Terminanfragen: ${includeAppointmentRequests})...`);
 
-    // 1. Datenquellen sammeln
+    // 1. Datenquellen sammeln (Strikt: Nur OFFENE, unbearbeitete Vorgänge berücksichtigen!)
     let feedbackItems = [];
     let proposalItems = [];
     let chatItems = [];
@@ -68,77 +68,83 @@ export async function generateWeeklyFeedbackDigest(options = {}) {
     let appointmentRequestItems = [];
     let systemMailItems = [];
 
-    // 1.1 Collection 'feedbacks'
+    // 1.1 Collection 'feedbacks' (Nur Status 'Neu', 'In Bearbeitung', 'Gelesen' – KEIN 'Gelöst' oder 'Archiviert')
     try {
-        feedbackItems = await pbAdmin.collection('feedbacks').getFullList({
-            filter: `created >= "${isoPeriodStart}"`,
+        const rawFbs = await pbAdmin.collection('feedbacks').getFullList({
+            filter: `created >= "${isoPeriodStart}" && status != "Gelöst" && status != "Archiviert" && status != "Archieviert"`,
             sort: '-created',
             requestKey: null
         });
-        if (feedbackItems.length === 0) {
-            feedbackItems = await pbAdmin.collection('feedbacks').getList(1, 15, {
-                sort: '-created',
-                requestKey: null
-            }).then(r => r.items).catch(() => []);
-        }
+        feedbackItems = rawFbs.filter(f => {
+            const st = (f.status || '').toLowerCase().trim();
+            return st !== 'gelöst' && !st.includes('archiv');
+        });
     } catch (e) {
         console.warn("[Feedback Digest] 'feedbacks' Abfrage:", e.message);
     }
 
-    // 1.2 Verbesserungsvorschläge (improvement_proposals)
+    // 1.2 Verbesserungsvorschläge (improvement_proposals: Nur 'idea', 'planned', 'in_progress')
     if (includeProposals) {
         try {
-            proposalItems = await pbAdmin.collection('improvement_proposals').getFullList({
+            const rawProposals = await pbAdmin.collection('improvement_proposals').getFullList({
                 filter: `status != 'implemented' && status != 'archived'`,
                 sort: '-id',
                 requestKey: null
             });
-            if (proposalItems.length === 0) {
-                proposalItems = await pbAdmin.collection('improvement_proposals').getList(1, 15, {
-                    sort: '-id',
-                    requestKey: null
-                }).then(r => r.items).catch(() => []);
-            }
+            proposalItems = rawProposals.filter(p => p.status !== 'implemented' && p.status !== 'archived');
         } catch (e) {
             console.warn("[Feedback Digest] 'improvement_proposals' Abfrage:", e.message);
         }
     }
 
-    // 1.3 Helpdesk / Live-Chat Logs (insb. Bug Reports)
+    // 1.3 Helpdesk / Live-Chat Logs (Nur ungelöste Nachrichten, KEIN 'Gelöst' oder 'Archiviert')
     if (includeChat) {
         try {
-            chatItems = await pbAdmin.collection('live_chat').getList(1, 40, {
+            const rawChats = await pbAdmin.collection('live_chat').getList(1, 50, {
                 filter: `created >= "${isoPeriodStart}"`,
                 sort: '-created',
                 expand: 'user',
                 requestKey: null
             }).then(r => r.items).catch(() => []);
+
+            chatItems = rawChats.filter(c => {
+                const st = (c.status || '').toLowerCase().trim();
+                const isResolved = st === 'gelöst' || st.includes('archiv') || st === 'erledigt';
+                return !isResolved;
+            });
         } catch (e) {
             console.warn("[Feedback Digest] 'live_chat' Abfrage:", e.message);
         }
     }
 
-    // 1.4 Kundenanfragen / Inquiries
+    // 1.4 Kundenanfragen / Inquiries (Nur 'new' oder 'in_progress', KEIN 'converted' oder 'rejected')
     if (includeInquiries) {
         try {
-            inquiryItems = await pbAdmin.collection('inquiries').getList(1, 20, {
-                filter: `created >= "${isoPeriodStart}"`,
+            const rawInqs = await pbAdmin.collection('inquiries').getList(1, 30, {
+                filter: `created >= "${isoPeriodStart}" && status != "converted" && status != "rejected"`,
                 sort: '-created',
                 requestKey: null
             }).then(r => r.items).catch(() => []);
+
+            inquiryItems = rawInqs.filter(i => {
+                const st = (i.status || '').toLowerCase().trim();
+                return st !== 'converted' && st !== 'rejected' && st !== 'gelöst';
+            });
         } catch (e) {
             console.warn("[Feedback Digest] 'inquiries' Abfrage:", e.message);
         }
     }
 
-    // 1.5 Terminanfragen (appointment_requests)
+    // 1.5 Terminanfragen (Nur Status 'requested')
     if (includeAppointmentRequests) {
         try {
-            appointmentRequestItems = await pbAdmin.collection('appointment_requests').getList(1, 20, {
-                filter: `status = "requested" || created >= "${isoPeriodStart}"`,
+            const rawAppts = await pbAdmin.collection('appointment_requests').getList(1, 30, {
+                filter: `status = "requested" && created >= "${isoPeriodStart}"`,
                 sort: '-created',
                 requestKey: null
             }).then(r => r.items).catch(() => []);
+
+            appointmentRequestItems = rawAppts.filter(ar => ar.status === 'requested');
         } catch (e) {
             console.warn("[Feedback Digest] 'appointment_requests' Abfrage:", e.message);
         }
@@ -200,136 +206,72 @@ export async function generateWeeklyFeedbackDigest(options = {}) {
         ).join('\n') + '\n\n';
     }
 
-    // 2. Gemini API Synthese
+    // 2. Gemini API Synthese via Token-Saver Engine
     const apiKey = process.env.GEMINI_API_KEY;
     const kw = getWeekNumber(now);
     const year = now.getFullYear();
-    const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
+    const staticSystemPart = `Du bist der leitende Softwarearchitekt und Core System Auditor für die App "OrgaFlow" (Stack: SvelteKit 2 mit Svelte 5 Runes, PocketBase, TypeScript, Tailwind CSS).
+Deine Aufgabe: Aggregierte offene Nutzer-Rückmeldungen, ungelöste Verbesserungsvorschläge, offene Bugreports und Anfragen der vergangenen ${days} Tage analysieren und daraus einen priorisierten, hochpräzisen Entwickler-Ausbesserungsprompt generieren, SPEZIFISCH FÜR GEMINI CODE ASSIST (AGENT) IN ANTIGRAVITY.
 
-    const systemPrompt = `Du bist der leitende Softwarearchitekt und Core System Auditor für die App "OrgaFlow" (Stack: SvelteKit 2 mit Svelte 5 Runes, PocketBase, TypeScript, Tailwind CSS).
-Deine Aufgabe ist es, aggregierte Nutzer-Rückmeldungen, Verbesserungsvorschläge, Bugreports, Helpdesk-Logs und Support-Anfragen der vergangenen ${days} Tage zu analysieren und daraus einen priorisierten, hochpräzisen Entwickler-Ausbesserungsprompt zu generieren, der SPEZIFISCH FÜR GEMINI CODE ASSIST (AGENT) IN ANTIGRAVITY formuliert ist.
+STRIKTE FORMAT- UND TEXTSTIL-VORGABEN (unveränderlich):
+1. REINER FLIESSTEXT: Der gesamte Prompt muss AUSNAHMSLOS ALS KOHÄRENTER, PROFESSIONELLER FLIESSTEXT in zusammenhängenden, flüssigen Textabsätzen ausformuliert sein.
+2. KEINE LISTEN: Verwende KEINE Aufzählungszeichen, KEINE Bullet-Points (- oder *), KEINE Kacheln und KEINE Checkboxen.
+3. Nur thematische Markdown-Überschriften (# und ##) zur Gliederung verwenden. Unter jeder Überschrift folgt zusammenhängender Fließtext.
+4. AUSSCHLIESSLICH OFFENE VORGÄNGE: Nur aktuell noch offene, ungelöste Probleme ansprechen. Erledigte oder bereits gelöste Punkte dürfen nicht erwähnt werden. Liegen keine offenen Fehler vor, fokussiere den Fließtext auf präventive Code-Hygiene, Performance und Refactoring.
+5. Ausschließlich an den Entwickler-Agenten "Gemini Code Assist (Agent) in Antigravity" richten.
+6. Svelte 5 Runes ($state, $derived, $props, $effect). Tailwind CSS. Barrierefreie Touch-Flächen (mindestens 44×44 px / h-11). KI-Blacklist: Nie "KI"/"AI" in sichtbaren Ansichten.
+7. Am Ende im Fließtext verbindlich erwähnen: npm run check, npm run build, robocopy frontend\\pb_public backend\\pb_public /MIR.
 
-STRIKTE VORGABEN:
-1. Der generierte Prompt richtet sich AUSSCHLIESSLICH an den Entwickler-Agenten "Gemini Code Assist (Agent) in Antigravity".
-2. Lasse Abschnitte für Team Chat & Support Briefings sowie Kundenantwort-Entwürfe KOMPLETT WEG!
-3. Formuliere technisch präzise mit konkreten Dateipfaden und Svelte 5 Runes ($state, $derived, $props, $effect). Kein veraltetes let/export let.
-4. Tailwind CSS für Design (keine ad-hoc Inline-Styles). Barrierefreie Touch-Flächen (mindestens 44x44px / h-11).
-5. Strikte KI-Blacklist: Das Wort "KI" oder "AI" darf in sichtbaren Ansichten oder Berichten NIE erscheinen.
-6. Gib am Ende verbindlich die genauen Verifikations-Befehle an (npm run check, npm run build, robocopy frontend\\pb_public backend\\pb_public /MIR).
-
-STRIKTE FORMAT-VORGABEN:
-Ordne alle abgeleiteten Aufgaben, Fehlerbehebungen und Optimierungsvorschläge verbindlich in folgende standardisierte Struktur ein:
-
+GLIEDERUNG (ausschließlich Fließtext-Absätze unter diesen Überschriften):
 # Wöchentlicher System-Ausbesserungsprompt für Gemini Code Assist (Agent) in Antigravity (KW ${kw} / ${year})
-
-## 1. Executive Summary & Feedback-Audit
-- **Analysierte Quellen:** ${feedbackItems.length} Feedbacks, ${proposalItems.length} Verbesserungsvorschläge, ${chatItems.length} Chat-/Support-Nachrichten, ${inquiryItems.length} Kundenanfragen, ${appointmentRequestItems.length} Terminanfragen, ${systemMailItems.length} System-Mails.
-- **Gesamteinschätzung:** [Zusammenfassung der Zufriedenheit und Hauptschmerzpunkte in 2-3 prägnanten Sätzen]
-- **Kritischste Brennpunkte:** [Stichpunkte zu den drängendsten Problemen]
-
----
-
+## 1. Executive Summary & Audit offener Punkte
 ## Bereich 1: Core Engine, API-Resilienz & Asynchronität
-- Harte Timeouts bei externen Services (SMTP, Push) und Fehlerbehandlung.
-- Double-Submission-Locks & asynchrone State-Flags (isSubmitting).
-- Robuste Token-Validierung und Realtime-Abonnement-Verwaltung.
-
----
-
 ## Bereich 2: PocketBase Datenmodell, Integrität & Sicherheit
-- HRBAC-Absicherung (Inhaber/Superadmin vs. Betriebsleiter vs. Pflegekräfte vs. Klienten).
-- Schema-Integrität und Cascade-Delete-Sicherheit.
-- Audit-Logging bei datenschutzrelevanten Aktionen.
-
----
-
 ## Bereich 3: Abrechnungswesen, Dokumenten-Engine & GoBD-Konformität
-- Korrekte Buchhaltungssätze, Stornierungen und Rechnungsstatus-Workflow.
-- HTML-Token-Parser für Vorlagen (§ 39 Verhinderungspflege & § 45b Entlastungsbetrag).
-- Pixelgenaue DIN-A4-Druckansichten ohne Seitenumbrüche.
-
----
-
 ## Bereich 4: Mobile Ergonomie, Touch-UX & Dashboard-Logik
-- Daumenzonen-Optimierung für mobile Betreuer im Außendienst (Mindesthöhe 44x44px / h-11).
-- Safe-Area-Insets für moderne Smartphones via env(safe-area-inset-bottom).
-- Schneller Folgetermin-Workflow direkt nach Einsatzerfassung.
-
----
-
 ## Bereich 5: Performance, Code-Hygiene & Klientenportal-Audit
-- Barrierearmes Klientenportal: Durchgängig formelle Sie-Form („Ihr Profil“, „Ihre Termine“).
-- Strikte KI-Blacklist: Vollständige Verbannung von „KI“/„AI“/„Prompt“ aus Kunden-Ansichten.
-- Sauberes Unsubscribe aller Realtime-Listener beim Zerstören von Komponenten.
+## 3. Priorisierte Umsetzungsreihenfolge
+## 4. Test- & Verifikationskriterien`;
 
----
+    // --- DYNAMISCHER DATEN-TEIL (nie gecacht, immer am Ende) ---
+    const dynamicDataPart = `STATISTIK DIESER PERIODE (Ausschließlich offene Einträge):
+- Offene Feedbacks: ${feedbackItems.length}
+- Offene Verbesserungsvorschläge: ${proposalItems.length}
+- Offene Chat-/Support-Nachrichten: ${chatItems.length}
+- Offene Kundenanfragen: ${inquiryItems.length}
+- Offene Terminanfragen: ${appointmentRequestItems.length}
+- System-Mails: ${systemMailItems.length}
 
-## 3. Priorisierte Umsetzungsreihenfolge (Top 5 Maßnahmen)
-1. [P0 / Höchste Priorität]
-2. [P1 / Hohe Priorität]
-3. [P2 / Mittlere Priorität]
-4. [P3 / Mittlere Priorität]
-5. [P4 / Quick Win]
+${totalRawCount === 0 ? 'HINWEIS: Es liegen aktuell keine ungelösten Fehlermeldungen vor. Bitte erstelle den Fließtext-Prompt mit Schwerpunkt auf Systempflege, Code-Hygiene, Stabilität und Refactoring.' : 'HIER SIND DIE OFFENEN ROHDATEN:\n' + aggregatedContext}`;
 
----
+    const { systemPart, userPart } = buildCacheOptimizedPrompt(staticSystemPart, dynamicDataPart, { skipEnvelope: true });
 
-## 4. Test- & Verifikationskriterien
-- TypeScript- & Svelte-Check ausführen: \`cd frontend && npm run check\`
-- Frontend Build-Validierung: \`cd frontend && npm run build\`
-- Asset-Synchronisation: \`robocopy frontend\\pb_public backend\\pb_public /MIR\`
-- DevTools-Simulation (Responsive & Touch Target Audit).`;
-
-    // Performante Modell-Kaskade mit neuestem Modell als Standard: gemini-3.8-flash
-    const modelNames = [
-        'gemini-3.8-flash',
-        'gemini-3.5-flash',
-        'gemini-flash-latest'
-    ];
+    // --- GEMINI AUFRUF via Token-Saver Engine ---
     let generatedPrompt = "";
 
-    if (genAI) {
-        for (const modelName of modelNames) {
-            try {
-                console.log(`[Feedback Digest] Rufe Gemini Modell '${modelName}' auf...`);
-                const model = genAI.getGenerativeModel({
-                    model: modelName,
-                    generationConfig: {
-                        temperature: 0.2,
-                        maxOutputTokens: 2048,
-                    }
-                });
-                
-                const generatePromise = model.generateContent([
-                    { text: systemPrompt },
-                    { text: `HIER SIND DIE AGGREGIERTEN ROHDATEN:\n\n${aggregatedContext}` }
-                ]);
-
-                const timeoutPromise = new Promise((_, reject) => 
-                    setTimeout(() => reject(new Error(`Timeout bei Modell '${modelName}' nach 10s`)), 10000)
-                );
-
-                const result = await Promise.race([generatePromise, timeoutPromise]);
-                generatedPrompt = result.response.text();
-                if (generatedPrompt && generatedPrompt.length > 200) {
-                    console.log(`[Feedback Digest] Erfolgreich generiert via '${modelName}' (${generatedPrompt.length} Zeichen).`);
-                    break;
-                }
-            } catch (err) {
-                console.warn(`[Feedback Digest] Fehler bei Modell '${modelName}':`, err.message);
-                if (err.message.includes('429') || err.message.includes('Quota exceeded')) {
-                    console.log("[Feedback Digest] Quota erreicht - wechsle direkt zur dynamischen System-Synthese.");
-                    break;
-                }
-            }
+    if (apiKey) {
+        try {
+            const result = await callGeminiWithFallback({
+                apiKey,
+                systemPart,
+                userPart,
+                timeoutMs: 45000,
+                temperature: 0.2,
+                maxOutputTokens: 8192,
+                label: 'Feedback Digest',
+            });
+            generatedPrompt = result.text;
+        } catch (err) {
+            console.warn('[Feedback Digest] Alle Modelle fehlgeschlagen:', err.message);
         }
     }
 
     // Fallback-Synthese: Wenn Gemini Quota-Limit erreicht oder API nicht erreichbar ist,
-    // synthetisieren wir den Prompt direkt aus allen realen Vorgängen der Datenbank!
+    // synthetisieren wir den Prompt direkt als Fließtext aus den offenen Vorgängen!
     if (!generatedPrompt) {
-        console.warn("[Feedback Digest] Erzeuge dynamische System-Synthese direkt aus Vorgängen & Datenquellen...");
+        console.warn("[Feedback Digest] Erzeuge dynamische System-Synthese als Fließtext...");
 
-        // 1. Kategorisierung der echten Verbesserungsvorschläge
+        // Kategorisierung der offenen Verbesserungsvorschläge
         const pCore = proposalItems.filter(p => !p.category || p.category.includes('Core') || p.category.includes('API'));
         const pUI = proposalItems.filter(p => p.category && (p.category.includes('UI') || p.category.includes('Design')));
         const pFin = proposalItems.filter(p => p.category && (p.category.includes('Finanzen') || p.category.includes('Haushalt') || p.category.includes('Abrechnung')));
@@ -337,79 +279,56 @@ Ordne alle abgeleiteten Aufgaben, Fehlerbehebungen und Optimierungsvorschläge v
         const pMobile = proposalItems.filter(p => p.category && (p.category.includes('Termin') || p.category.includes('Außendienst') || p.category.includes('Mobile')));
         const pSec = proposalItems.filter(p => p.category && (p.category.includes('Sicherheit') || p.category.includes('Audit')));
 
-        // Bug-Reports aus Live-Chat
         const chatBugs = chatItems.filter(c => c.text?.includes('🚨 [BUG REPORT]') || c.text?.toLowerCase().includes('bug') || c.text?.toLowerCase().includes('fehler'));
-        
-        // Negative Feedbacks
         const criticalFeedbacks = feedbackItems.filter(f => f.rating && f.rating <= 5);
 
-        // Sortiere Vorgänge nach Priorität für Top-5
+        const formatProposalsAsFliesstext = (items, fallbackParagraph) => {
+            if (items.length > 0) {
+                return items.map(p => {
+                    const desc = p.description ? p.description.trim() : 'Keine detaillierte Beschreibung hinterlegt.';
+                    const sol = p.solution_concept ? ` Als Lösungskonzept ist vorgesehen: ${p.solution_concept.trim()}` : '';
+                    return `Im Aufgabenbereich „${p.title}“ (Priorität: ${p.priority || 'mittel'}, Bereich: ${p.category || 'System'}, gemeldet von ${p.author_name || 'Team'}) steht folgende Anforderung zur Umsetzung an: ${desc}${sol}`;
+                }).join('\n\n');
+            }
+            return fallbackParagraph;
+        };
+
         const sortedProposals = [...proposalItems].sort((a, b) => {
             const prioScore = { 'critical': 4, 'high': 3, 'medium': 2, 'low': 1 };
             return (prioScore[b.priority] || 2) - (prioScore[a.priority] || 2);
         });
 
-        const topProposals = sortedProposals.slice(0, 5);
-
-        const formatProposalBullet = (p) => {
-            return `- **[${p.priority ? p.priority.toUpperCase() : 'NORMAL'}] ${p.title}** (Bereich: ${p.category || 'Core'}, Erfasser: ${p.author_name || 'Admin'}):\n  ${p.description || 'Keine Beschreibung.'}${p.solution_concept ? `\n  *Lösungskonzept:* ${p.solution_concept}` : ''}`;
-        };
-
-        const renderSectionProposals = (items, fallbackText) => {
-            if (items.length > 0) {
-                return items.map(formatProposalBullet).join('\n\n');
-            }
-            return fallbackText;
-        };
+        const topProposalsText = sortedProposals.length > 0
+            ? sortedProposals.slice(0, 5).map((p, idx) => `Priorität ${idx + 1} besitzt die Umsetzung von „${p.title}“ (${p.category || 'System'}), wobei das Hauptaugenmerk auf folgender Vorgabe liegt: ${p.solution_concept || p.description || 'Sorgfältige technische Realisierung gemäß Spezifikation.'}`).join('\n\n')
+            : 'In der aktuellen Umsetzungsreihenfolge stehen die kontinuierliche Stärkung der HRBAC-Matrix und Rollenisolierung, die Absicherung aller Formulare gegen Double-Submissions sowie die Überprüfung von Timeouts und Ladezuständen an oberster Stelle.';
 
         generatedPrompt = `# Wöchentlicher System-Ausbesserungsprompt für Gemini Code Assist (Agent) in Antigravity (KW ${kw} / ${year})
 
-## 1. Executive Summary & Feedback-Audit
-- **Analysierte Quellen:** ${feedbackItems.length} Feedbacks, ${proposalItems.length} Verbesserungsvorschläge, ${chatItems.length} Chat-/Support-Nachrichten, ${inquiryItems.length} Kundenanfragen, ${appointmentRequestItems.length} Terminanfragen, ${systemMailItems.length} System-Mails.
-- **Gesamteinschätzung:** Die Auswertung der vergangenen ${days} Tage bündelt ${proposalItems.length} offene Verbesserungsvorschläge und ${feedbackItems.length} Nutzerfeedbacks. Der Fokus dieses Ausbesserungszyklus liegt auf der direkten Abarbeitung der gemeldeten Anforderungen in den Modulen Core Engine, Finanzen, Dokumenten-Engine und mobile Außendienst-Ergonomie.
-- **Kritischste Brennpunkte:** ${sortedProposals.slice(0, 3).map(p => p.title).join(' • ') || 'HRBAC-Zugriffssicherheit, Double-Submission-Schutz und Mobile Touch-Ergonomie'}.
-
----
+## 1. Executive Summary & Audit offener Punkte
+Die automatische System-Analyse der vergangenen ${days} Tage umfasst insgesamt ${totalRawCount} offene Vorgänge, darunter ${proposalItems.length} ungelöste Verbesserungsvorschläge, ${feedbackItems.length} offene Nutzerfeedbacks sowie ${chatItems.length} relevante Chat-Einträge. Sämtliche bereits gelösten oder erledigten Anfragen wurden vollständig herausgefiltert, sodass dieser Auftrag ausschließlich reale, unerledigte Handlungsfelder adressiert. Der Schwerpunkt liegt auf der direkten Behebung gemeldeter Anforderungen in den Kernbereichen API-Resilienz, Datenintegrität, Abrechnung und mobile Ergonomie.
 
 ## Bereich 1: Core Engine, API-Resilienz & Asynchronität
-${renderSectionProposals(pCore, `- **Service-Resilienz & Timeouts:** Harte Timeouts bei externen Microservice- und Mailbox-Aufrufen auf 15 Sekunden begrenzen.\n- **Double-Submission-Schutz:** Sperrung aller Aktionsbuttons mit isSubmitting-State und Lade-Spinnern.\n- **Token- und Session-Validierung:** Konsistente Überprüfung von Authentifizierungs-Headern bei allen API-Endpoints.`)}
-${chatBugs.length > 0 ? `\n### Gemeldete Chat-Bugs & Supportfälle:\n` + chatBugs.map(b => `- 🚨 ${b.text}`).join('\n') : ''}
-
----
+${formatProposalsAsFliesstext(pCore, 'In der Core Engine stehen die Absicherung externer Microservice-Aufrufe mit harten Timeouts von 15 Sekunden sowie der Schutz sämtlicher asynchroner Aktionen durch Double-Submission-Flags im Fokus. Alle API-Endpoints müssen Authentifizierungs-Header einheitlich prüfen und Netzwerkunterbrechungen mit aussagekräftigen, benutzerfreundlichen Rückmeldungen abfangen.')}
+${chatBugs.length > 0 ? '\n\nZu den gemeldeten Support- und Bug-Fällen aus dem Chat gehört folgender ungelöster Sachverhalt: ' + chatBugs.map(b => b.text).join(' ') : ''}
 
 ## Bereich 2: PocketBase Datenmodell, Integrität & Sicherheit
-${renderSectionProposals(pSec, `- **HRBAC-Sicherheitsmatrix:** Strikte Durchsetzung von Inhaber-, Betriebsleiter-, Betreuer- und Klienten-Rollen in den PocketBase API-Rules.\n- **Cascade-Delete-Sicherheit:** Absicherung von Abhängigkeiten zwischen Klienten, Kontakten, Terminen und Abrechnungen.\n- **Audit-Logging:** Vollständige Protokollierung datenschutzrelevanter Zugriffe gemäß DSGVO & SGB XI.`)}
-
----
+${formatProposalsAsFliesstext(pSec, 'Im Datenmodell liegt der Fokus auf der strikten Durchsetzung der HRBAC-Sicherheitsmatrix in den PocketBase API-Rules. Beziehungen zwischen Klienten, Kontakten, Terminen und Abrechnungen sind gegen unbeabsichtigte Löschkaskaden abzusichern. Datenschutzrelevante Zugriffe müssen gemäß DSGVO und SGB XI revisionssicher protokolliert werden.')}
 
 ## Bereich 3: Abrechnungswesen, Dokumenten-Engine & GoBD-Konformität
-${renderSectionProposals([...pFin, ...pDoc], `- **GoBD-Konforme Stornos:** Buchungen im Status 'Storniert' unveränderbar archivieren und aus aktiven Summen herausrechnen.\n- **DIN 5008 Vorlagen:** Normgerechte Positionierung von Anschriftfeld, Bezugszeichen und Firmenlogo.\n- **Token-Ersetzung:** Zuverlässige Ersetzung aller Platzhalter für § 39 Verhinderungspflege und § 45b Entlastungsbetrag.`)}
-
----
+${formatProposalsAsFliesstext([...pFin, ...pDoc], 'Im Abrechnungswesen ist sicherzustellen, dass stornierte Buchungen unveränderbar archiviert und aus den aktiven Summen herausgerechnet werden. Bei den Druckvorlagen nach DIN 5008 müssen Anschriftfelder, Bezugszeichen und Firmenlogo millimetergenau platziert werden, während die Platzhalter für § 39 Verhinderungspflege und § 45b Entlastungsbetrag fehlerfrei befüllt werden.')}
 
 ## Bereich 4: Mobile Ergonomie, Touch-UX & Dashboard-Logik
-${renderSectionProposals([...pUI, ...pMobile], `- **Daumenzonen-Optimierung:** Alle interaktiven Flächen für Betreuer im Außendienst auf mind. 44x44px (h-11) vergrößern.\n- **Safe-Area-Insets:** Einbindung von env(safe-area-inset-bottom) für Mobilgeräte ohne Home-Button.\n- **Folgetermin-Workflow:** Direkte Anlage des nächsten Einsatzes unmittelbar nach Abschluss der Leistungsdokumentation.`)}
-
----
+${formatProposalsAsFliesstext([...pUI, ...pMobile], 'Für den Außendienst auf Smartphones und Tablets müssen sämtliche interaktiven Klick- und Touchflächen eine Mindestgröße von 44 mal 44 Pixeln aufweisen. Zudem sind Safe-Area-Insets für moderne Mobilgeräte ohne physischen Home-Button einzubinden und der Folgetermin-Workflow direkt im Anschluss an die Leistungsdokumentation bereitzustellen.')}
 
 ## Bereich 5: Performance, Code-Hygiene & Klientenportal-Audit
-- **Klientenportal-Förmlichkeit:** Durchgängig formelle Sie-Form („Ihr Profil“, „Ihre Termine“, „Ihre Abrechnungen“).
-- **Strikte KI-Blacklist:** Vollständige Verbannung von „KI“/„AI“/„Prompt“ aus allen sichtbaren Kundenansichten und Berichten.
-- **Memory-Leak-Prävention:** Sauberes Unsubscribe aller PocketBase Realtime-Listener beim Zerstören von Svelte-Komponenten.
-${criticalFeedbacks.length > 0 ? `\n### Relevante Kunden-Feedbacks:\n` + criticalFeedbacks.map(f => `- ⭐ [${f.rating}/10] ${f.message || 'Ohne Text'} (${f.name_first || ''} ${f.name_last || 'Klient'})`).join('\n') : ''}
+Im Klientenportal muss durchgängig die formelle Sie-Form eingehalten werden. Jegliche Entwicklerbegriffe oder KI-Bezeichnungen sind in sichtbaren Oberflächen strikt untersagt. Zur Vermeidung von Speicherlecks sind alle Realtime-Abonnements in Svelte-Komponenten beim Zerstören der Ansichten sauber abzumelden.
+${criticalFeedbacks.length > 0 ? '\n\nAus den offenen Klienten-Feedbacks geht folgende Kritik hervor, die prioritär behoben werden muss: ' + criticalFeedbacks.map(f => `Bewertung ${f.rating}/10: „${f.message || 'Kein Text'}“`).join(' ') : ''}
 
----
-
-## 3. Priorisierte Umsetzungsreihenfolge (Top 5 Maßnahmen)
-${topProposals.length > 0 ? topProposals.map((p, i) => `${i + 1}. **[${p.priority ? p.priority.toUpperCase() : 'PRIO'}] ${p.title}** (${p.category || 'System'}): ${p.solution_concept || p.description || 'Vollständige Umsetzung nach Spezifikation'}`).join('\n') : `1. **[P0]** HRBAC-Matrix und Rollenisolierung im Klienten- und Mitarbeiterportal finalisieren.\n2. **[P1]** Double-Submission-Locks in allen Buchungs- und Terminformularen einbinden.\n3. **[P2]** Ausbesserungsprompt- und Lösungskonzept-Generierung fehlertolerant gegen API-Limits absichern.\n4. **[P3]** Mobile Touch-Ziele (mind. 44x44px / h-11) und Safe-Area-Insets im Außendienst-Modul nachrüsten.\n5. **[P4]** DIN-5008-Druckvorlagen und Token-Parser für § 39 und § 45b SGB XI optimieren.`}
-
----
+## 3. Priorisierte Umsetzungsreihenfolge
+${topProposalsText}
 
 ## 4. Test- & Verifikationskriterien
-- TypeScript- & Svelte-Check ausführen: \`cd frontend && npm run check\`
-- Frontend Build-Validierung: \`cd frontend && npm run build\`
-- Asset-Synchronisation: \`robocopy frontend\\pb_public backend\\pb_public /MIR\`
-- DevTools-Simulation (Responsive Viewport 375px & Touch Target Audit).`;
+Nach der Durchführung der Ausbesserungen führt der Entwickler-Agent die folgenden Verifikationsschritte aus: Zunächst wird mit dem Befehl „cd frontend && npm run check“ eine vollständige Typprüfung durchgeführt. Anschließend erfolgt der Produktiv-Build mittels „cd frontend && npm run build“. Schließlich werden die kompilierten Artefakte mit „robocopy frontend\\pb_public backend\\pb_public /MIR“ synchronisiert und im Browser die Touch-Flächen sowie das responsive Verhalten bei 375 Pixel Viewport-Breite geprüft.`;
     }
 
     // 3. Ergebnis in PocketBase 'system_prompts' speichern (Strikt: Nur 1 Prompt pro KW!)

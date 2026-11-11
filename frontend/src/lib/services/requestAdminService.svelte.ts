@@ -1,4 +1,6 @@
 import { pb } from "$lib/services/pocketbase";
+import { toastStore } from "$lib/services/toastService.svelte";
+import { hapticFeedback } from "$lib/services/hapticFeedback";
 
 export function useRequestAdmin() {
     let requests = $state<any[]>([]);
@@ -27,19 +29,19 @@ export function useRequestAdmin() {
     async function init() {
         isLoading = true;
         try {
-            // Nutzer-Rechte und zugehörige Firma prüfen
             const user = pb.authStore.model;
-            const isSuper = pb.authStore.isSuperuser || user?.role === 'superadmin';
+            const isSuper = pb.authStore.isSuperuser || user?.role === 'superadmin' || user?.role === 'developer' || user?.role === 'owner';
             
             let userCompanyId = '';
             if (user?.company) {
                 userCompanyId = Array.isArray(user.company) ? user.company[0] : user.company;
             }
 
-            // Filter String bauen (Superadmins sehen alles, andere nur ihre Firma)
-            let filterStr = (!isSuper && userCompanyId) ? `company ~ "${userCompanyId}"` : '';
+            // Öffentliche Anfragen haben evtl. noch keine Company, daher auch company = "" erlauben
+            let filterStr = (!isSuper && userCompanyId) 
+                ? `(company = "" || company = null || company ~ "${userCompanyId}")` 
+                : '';
 
-            // Beide Quellen parallel abrufen: appointment_requests und inquiries
             const [appReqRes, inqRes] = await Promise.allSettled([
                 pb.collection('appointment_requests').getList(1, 50, {
                     sort: '-created',
@@ -55,7 +57,6 @@ export function useRequestAdmin() {
             const appItems = appReqRes.status === 'fulfilled' ? appReqRes.value.items.map(r => ({ ...r, _collection: 'appointment_requests' })) : [];
             const inqItems = inqRes.status === 'fulfilled' ? inqRes.value.items.map(normalizeInquiry) : [];
 
-            // Zusammenführen und absteigend nach Erstellungsdatum sortieren
             requests = [...appItems, ...inqItems].sort((a, b) => new Date(b.created).getTime() - new Date(a.created).getTime());
 
             // 1. Realtime-Abo für appointment_requests
@@ -63,6 +64,8 @@ export function useRequestAdmin() {
                 const rec = { ...e.record, _collection: 'appointment_requests' };
                 if (e.action === 'create') {
                     requests = [rec, ...requests];
+                    hapticFeedback.success();
+                    toastStore.info(`🔔 Neue Anfrage von ${rec.sender_name || 'Neukunde'} eingegangen!`);
                 } else if (e.action === 'update') {
                     const idx = requests.findIndex(r => r.id === e.record.id);
                     if (idx !== -1) requests[idx] = rec;
@@ -79,6 +82,8 @@ export function useRequestAdmin() {
                 const rec = normalizeInquiry(e.record);
                 if (e.action === 'create') {
                     requests = [rec, ...requests];
+                    hapticFeedback.success();
+                    toastStore.info(`🔔 Neue Web-Anfrage eingegangen!`);
                 } else if (e.action === 'update') {
                     const idx = requests.findIndex(r => r.id === e.record.id);
                     if (idx !== -1) requests[idx] = rec;
@@ -106,16 +111,22 @@ export function useRequestAdmin() {
         }
     }
 
-    async function updateStatus(id: string, status: 'requested' | 'accepted' | 'denied') {
+    async function updateStatus(id: string, status: 'requested' | 'accepted' | 'denied', clientId?: string) {
         const item = requests.find(r => r.id === id);
+        const payload: any = { status };
+        if (clientId) payload.client_id = clientId;
+
         if (item?._collection === 'inquiries') {
             const mapped = status === 'accepted' ? 'converted' : (status === 'denied' ? 'rejected' : 'new');
             await pb.collection('inquiries').update(id, { status: mapped }, { requestKey: null });
             item.status = status;
             item.rawStatus = mapped;
         } else {
-            await pb.collection('appointment_requests').update(id, { status }, { requestKey: null });
-            if (item) item.status = status;
+            await pb.collection('appointment_requests').update(id, payload, { requestKey: null });
+            if (item) {
+                item.status = status;
+                if (clientId) item.client_id = clientId;
+            }
         }
     }
 

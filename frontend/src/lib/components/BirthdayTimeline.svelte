@@ -75,16 +75,16 @@
 <div class="orga-card-white overflow-hidden shadow-sm">
 	<button
 		type="button"
-		class="w-full text-left px-5 sm:px-6 py-4 border-b border-neutral-100 bg-neutral-50/50 flex items-center justify-between"
+		class="w-full text-left px-5 sm:px-6 py-4 border-b border-neutral-100 dark:border-slate-800 bg-neutral-50/50 dark:bg-slate-800/40 flex items-center justify-between"
 		onclick={() => (isExpanded = !isExpanded)}
 		aria-expanded={isExpanded}
 		aria-label={isExpanded ? 'Geburtstags-Timeline einklappen' : 'Geburtstags-Timeline aufklappen'}
 	>
-		<h2 class="text-base sm:text-lg font-bold text-neutral-900 flex items-center gap-2">
+		<h2 class="text-base sm:text-lg font-bold text-neutral-900 dark:text-white flex items-center gap-2">
 			<span class="text-xl">🎁</span> Anstehende Geburtstage
 		</h2>
 		<span
-			class="text-xs font-semibold text-neutral-500 hover:text-neutral-800 hover:bg-neutral-100 px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1.5"
+			class="text-xs font-semibold text-neutral-500 dark:text-slate-400 hover:text-neutral-800 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-slate-700 px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1.5"
 		>
 			{#if isExpanded}
 				Einklappen <ChevronUp class="w-3 h-3" />
@@ -97,13 +97,13 @@
 	{#if isExpanded}
 		<div transition:slide={{ duration: 200 }} class="relative w-full overflow-x-auto custom-scrollbar">
 			{#if upcomingBirthdays.length === 0}
-				<div class="p-8 text-center text-neutral-400 font-medium italic text-sm">
+				<div class="p-8 text-center text-neutral-400 dark:text-slate-500 font-medium italic text-sm">
 					Keine Geburtstage von aktiven Klienten hinterlegt.
 				</div>
 			{:else}
 				<div class="flex items-center min-w-max relative z-10 px-8 h-40">
 					<!-- Die durchgehende horizontale Linie -->
-					<div class="absolute top-1/2 left-0 right-0 h-1 bg-amber-100 -translate-y-1/2 z-0"></div>
+					<div class="absolute top-1/2 left-0 right-0 h-1 bg-amber-100 dark:bg-amber-900/40 -translate-y-1/2 z-0"></div>
 
 					<!-- Die Meilensteine -->
 					{#each upcomingBirthdays as bday (bday?.client?.id)}
@@ -115,10 +115,10 @@
 							<!-- Datum über der Linie -->
 							<div
 								class="absolute bottom-full mb-2 text-[10px] font-bold px-2.5 py-0.5 rounded-full border shadow-sm whitespace-nowrap transition-colors {bday.isToday
-									? 'bg-rose-50 border-rose-200 text-rose-600'
+									? 'bg-rose-50 dark:bg-rose-950/60 border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-300'
 									: bday.isTomorrow
-									? 'bg-amber-50 border-amber-200 text-amber-700'
-									: 'bg-white border-neutral-100 text-neutral-500 group-hover:text-brand-600 group-hover:border-brand-200'}"
+									? 'bg-amber-50 dark:bg-amber-950/60 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300'
+									: 'bg-white dark:bg-slate-800 border-neutral-100 dark:border-slate-700 text-neutral-500 dark:text-slate-300 group-hover:text-brand-600 group-hover:border-brand-200'}"
 							>
 								{bday.isToday
 									? 'Heute!'
@@ -129,19 +129,19 @@
 
 							<!-- Das Profilbild auf der Linie -->
 							<div
-								class="w-10 h-10 rounded-full border-[3px] border-white shadow-sm flex items-center justify-center transition-transform group-hover:scale-110 z-10 font-bold text-xs shrink-0 {bday.isToday
-									? 'bg-rose-100 text-rose-700 ring-4 ring-rose-200 border-rose-500 animate-pulse'
-									: 'bg-amber-100 text-amber-700 hover:border-amber-400'}"
+								class="w-10 h-10 rounded-full border-[3px] border-white dark:border-slate-900 shadow-sm flex items-center justify-center transition-transform group-hover:scale-110 z-10 font-bold text-xs shrink-0 {bday.isToday
+									? 'bg-rose-100 dark:bg-rose-900/50 text-rose-700 dark:text-rose-200 ring-4 ring-rose-200 dark:ring-rose-900/50 border-rose-500 animate-pulse'
+									: 'bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-200 hover:border-amber-400'}"
 							>
 								{(bday.client.name_first?.charAt(0) || '')}{(bday.client.name_last?.charAt(0) || '')}
 							</div>
 
 							<!-- Minimaler Text unter der Linie -->
 							<div class="absolute top-full mt-2 text-center w-24 px-1">
-								<p class="text-xs font-bold text-neutral-800 truncate group-hover:text-brand-600 transition-colors">
+								<p class="text-xs font-bold text-neutral-800 dark:text-slate-100 truncate group-hover:text-brand-600 transition-colors">
 									{bday.client.name_first} {bday.client.name_last?.charAt(0)}.
 								</p>
-								<p class="text-[10px] text-neutral-500 font-semibold">{bday.age} Jahre</p>
+								<p class="text-[10px] text-neutral-500 dark:text-slate-400 font-semibold">{bday.age} Jahre</p>
 							</div>
 						</button>
 					{/each}

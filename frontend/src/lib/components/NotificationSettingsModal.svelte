@@ -1,6 +1,7 @@
 <script lang="ts">
     import { pb } from "$lib/services/pocketbase";
     import { toastStore } from "$lib/services/toastService.svelte";
+    import NotificationTopicsList from "./notifications/NotificationTopicsList.svelte";
     import { onMount } from "svelte";
 
     let dialog: HTMLDialogElement;
@@ -106,23 +107,17 @@
         isLoading = true;
         try {
             if (isSubscribed) {
-                // --- Push DEAKTIVIEREN ---
                 const registration = await navigator.serviceWorker.getRegistration('/sw.js');
                 if (registration) {
                     const sub = await registration.pushManager.getSubscription();
                     if (sub) {
                         await sub.unsubscribe();
-                        
-                        // Abonnement aus der PocketBase Datenbank löschen
                         const user = pb.authStore.model;
                         if (user) {
                             const collection = pb.authStore.isSuperuser ? '_superusers' : 'users';
-                            // Frischen Datensatz laden, um Überschreiben anderer Geräte zu verhindern
                             const freshUser = await pb.collection(collection).getOne(user.id, { requestKey: null });
-                            
                             let existingSubs = freshUser.push_subscriptions || [];
                             if (typeof existingSubs === 'string') { try { existingSubs = JSON.parse(existingSubs); } catch(e){ existingSubs = []; } }
-                            
                             existingSubs = existingSubs.filter((s: any) => s.endpoint !== sub.endpoint);
                             await pb.collection(collection).update(user.id, { push_subscriptions: existingSubs });
                             freshUser.push_subscriptions = existingSubs;
@@ -133,42 +128,25 @@
                 isSubscribed = false;
                 toastStore.info("Push-Benachrichtigungen deaktiviert.");
             } else {
-                // --- Push AKTIVIEREN ---
                 const permission = await Notification.requestPermission();
                 if (permission !== 'granted') {
                     toastStore.warning("Berechtigung für Benachrichtigungen wurde im Browser blockiert.");
                     isLoading = false;
                     return;
                 }
-
-                const registration = await navigator.serviceWorker.register('/sw.js');
-                
-                // Da der Public Key absolut öffentlich ist, können wir ihn hier sicher hartkodieren und das Svelte-Umgebungsvariablen-Problem umgehen:
+                await navigator.serviceWorker.register('/sw.js');
                 const vapidPublicKey = "BDX77m5HXgMy7eT8QB86A4a6RCfeSr6KroakoYqsbSHAiTdPo3Bq3E3yUbIGhFYr8JQA9CzBPYQdr1j7IhUUVpw";
-
-                if (!vapidPublicKey) {
-                    toastStore.warning('VAPID Public Key fehlt in den Einstellungen (.env).');
-                    isLoading = false;
-                    return;
-                }
-
-                const subscription = await registration.pushManager.subscribe({
+                const subscription = await (await navigator.serviceWorker.getRegistration('/sw.js'))?.pushManager.subscribe({
                     userVisibleOnly: true,
                     applicationServerKey: urlB64ToUint8Array(vapidPublicKey)
                 });
-
-                // Abonnement in PocketBase speichern
                 const user = pb.authStore.model;
-                if (user) {
+                if (user && subscription) {
                     const collection = pb.authStore.isSuperuser ? '_superusers' : 'users';
-                    // Frischen Datensatz laden, um das neue Gerät anzuhängen anstatt zu überschreiben
                     const freshUser = await pb.collection(collection).getOne(user.id, { requestKey: null });
-                    
                     let existingSubs = freshUser.push_subscriptions || [];
                     if (typeof existingSubs === 'string') { try { existingSubs = JSON.parse(existingSubs); } catch(e){ existingSubs = []; } }
-                    
-                    const subExists = existingSubs.some((s: any) => s.endpoint === subscription.endpoint);
-                    if (!subExists) {
+                    if (!existingSubs.some((s: any) => s.endpoint === subscription.endpoint)) {
                         const subJSON = JSON.parse(JSON.stringify(subscription));
                         subJSON.preferences = $state.snapshot(prefs);
                         existingSubs.push(subJSON);
@@ -193,32 +171,17 @@
         try {
             const user = pb.authStore.model;
             if (!user) return;
-            
-            // Nutzt relativ zur aktuellen Domain (verhindert www. vs non-www Weiterleitungs-Fehler)
             const microserviceUrl = import.meta.env.DEV ? 'http://localhost:3000' : '';
-            
             const res = await fetch(`${microserviceUrl}/api/emails/portal/push`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${pb.authStore.token}`
-                },
-                body: JSON.stringify({
-                    userId: user.id,
-                    title: 'Test erfolgreich! 🚀',
-                    body: 'Dieses Gerät ist perfekt mit dem Server verbunden.',
-                    url: '/dashboard'
-                })
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${pb.authStore.token}` },
+                body: JSON.stringify({ userId: user.id, title: 'Test erfolgreich! 🚀', body: 'Dieses Gerät ist perfekt mit dem Server verbunden.', url: '/dashboard' })
             });
-            
             const data = await res.json();
             if (data.pushResults) {
                 const errors = data.pushResults.filter((r: any) => r.status === 'error');
-                if (errors.length > 0) {
-                    toastStore.error(`Apple/Google hat blockiert: ${errors[0].error}`);
-                } else {
-                    toastStore.success('Signal erfolgreich bei Apple/Google abgeliefert!');
-                }
+                if (errors.length > 0) toastStore.error(`Apple/Google hat blockiert: ${errors[0].error}`);
+                else toastStore.success('Signal erfolgreich bei Apple/Google abgeliefert!');
             } else {
                 toastStore.warning(data.error || 'Antwort unklar.');
             }
@@ -230,73 +193,40 @@
     }
 </script>
 
-<dialog bind:this={dialog} class="p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-full max-w-md m-0 sm:m-auto max-h-none sm:max-h-fit rounded-none sm:rounded-3xl" onclick={(e) => { if (e.target === dialog) close(); }}>
-    <div class="bg-white sm:rounded-3xl w-full h-dvh sm:h-auto sm:max-h-[90dvh] flex flex-col relative overflow-hidden shadow-2xl">
+<dialog bind:this={dialog} class="zero-inner-scroll-modal p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-full max-w-md mx-auto my-6 sm:my-10 rounded-3xl" onclick={(e) => { if (e.target === dialog) close(); }}>
+    <div class="bg-white rounded-3xl w-full flex flex-col relative shadow-2xl">
         <div class="p-6 md:p-8 shrink-0 relative border-b border-neutral-100">
-            <button aria-label="Schließen" onclick={close} class="absolute top-6 right-6 w-10 h-10 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-colors z-10 active:scale-95"><svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
-        <h2 class="text-xl font-bold text-neutral-900 mb-2 flex items-center gap-2"><span>🔔</span> Benachrichtigungen</h2>
-        <p class="text-sm text-neutral-500 mb-6">Passen Sie an, worüber dieses Gerät Sie informieren darf.</p>
+            <button aria-label="Schließen" onclick={close} class="absolute top-6 right-6 w-10 h-10 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-full flex items-center justify-center transition-colors z-10 active:scale-95 cursor-pointer"><svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
+            <h2 class="text-xl font-bold text-neutral-900 mb-2 flex items-center gap-2"><span>🔔</span> Benachrichtigungen</h2>
+            <p class="text-sm text-neutral-500 mb-2">Passen Sie an, worüber dieses Gerät Sie informieren darf.</p>
         </div>
         
-        <div class="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-8 bg-neutral-50/30">
+        <div class="flex-1 p-6 md:p-8 bg-neutral-50/30">
         {#if !isSupported}
             <div class="bg-rose-50 border border-rose-100 p-4 rounded-xl text-rose-700 text-sm font-medium mb-6">Ihr aktueller Browser unterstützt keine Push-Benachrichtigungen. (Nutzen Sie Safari auf iOS ab Version 16.4 oder Google Chrome).</div>
         {:else}
-            <!-- Genereller Push Schalter -->
             <div class="bg-neutral-50 rounded-2xl p-4 sm:p-5 border border-neutral-100 flex items-center justify-between gap-4 mb-6">
                 <div>
                     <p class="font-bold text-neutral-900 text-sm">Push-Benachrichtigungen (Gerät)</p>
                     <p class="text-xs text-neutral-500 mt-0.5">{isSubscribed ? 'Aktiviert für dieses Gerät' : 'Auf diesem Gerät deaktiviert'}</p>
                 </div>
-                <!-- svelte-ignore a11y_consider_explicit_label -->
-                <button type="button" onclick={togglePush} disabled={isLoading} class="relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center justify-center rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none {isSubscribed ? 'bg-emerald-500' : 'bg-neutral-300'} disabled:opacity-50" role="switch" aria-checked={isSubscribed}><span class="pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out {isSubscribed ? 'translate-x-5' : 'translate-x-0'}"></span></button>
+                <button type="button" aria-label="Push-Benachrichtigungen ein- oder ausschalten" onclick={togglePush} disabled={isLoading} class="relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center justify-center rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none {isSubscribed ? 'bg-emerald-500' : 'bg-neutral-300'} disabled:opacity-50" role="switch" aria-checked={isSubscribed}><span class="pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out {isSubscribed ? 'translate-x-5' : 'translate-x-0'}"></span></button>
             </div>
 
-            <h3 class="font-bold text-neutral-900 text-sm mb-3 border-b border-neutral-100 pb-2">Welche Ereignisse dürfen gemeldet werden?</h3>
-            <div class="space-y-2 mb-6">
-                <label class="flex items-center justify-between p-3 bg-white rounded-xl border border-neutral-200 cursor-pointer hover:border-brand-300 transition-colors">
-                    <div>
-                        <p class="font-bold text-neutral-800 text-sm">📬 Terminanfragen</p>
-                        <p class="text-xs text-neutral-500 mt-0.5">Bei neuen Anfragen über die Webseite</p>
-                    </div>
-                    <input type="checkbox" bind:checked={prefs.requests} class="w-5 h-5 text-brand-600 rounded focus:ring-brand-500 border-neutral-300">
-                </label>
-                <label class="flex items-center justify-between p-3 bg-white rounded-xl border border-neutral-200 cursor-pointer hover:border-brand-300 transition-colors">
-                    <div>
-                        <p class="font-bold text-neutral-800 text-sm">✉️ E-Mails</p>
-                        <p class="text-xs text-neutral-500 mt-0.5">Wenn neue E-Mails im Posteingang landen</p>
-                    </div>
-                    <input type="checkbox" bind:checked={prefs.emails} class="w-5 h-5 text-brand-600 rounded focus:ring-brand-500 border-neutral-300">
-                </label>
-                <label class="flex items-center justify-between p-3 bg-white rounded-xl border border-neutral-200 cursor-pointer hover:border-brand-300 transition-colors">
-                    <div>
-                        <p class="font-bold text-neutral-800 text-sm">💬 Team-Chat</p>
-                        <p class="text-xs text-neutral-500 mt-0.5">Bei Erwähnungen oder im Flüstermodus</p>
-                    </div>
-                    <input type="checkbox" bind:checked={prefs.chats} class="w-5 h-5 text-brand-600 rounded focus:ring-brand-500 border-neutral-300">
-                </label>
-                <label class="flex items-center justify-between p-3 bg-white rounded-xl border border-neutral-200 cursor-pointer hover:border-brand-300 transition-colors">
-                    <div>
-                        <p class="font-bold text-neutral-800 text-sm">✨ System-Updates</p>
-                        <p class="text-xs text-neutral-500 mt-0.5">Wenn neue OrgaFlow-Funktionen verfügbar sind</p>
-                    </div>
-                    <input type="checkbox" bind:checked={prefs.updates} class="w-5 h-5 text-brand-600 rounded focus:ring-brand-500 border-neutral-300">
-                </label>
-            </div>
+            <NotificationTopicsList bind:prefs />
             
             {#if isSubscribed}
                 <div class="mb-6 p-4 bg-blue-50 border border-blue-100 rounded-xl animate-enter">
                     <p class="text-xs text-blue-800 mb-3 font-medium">Testen Sie die Verbindung zum Server:</p>
-                    <button type="button" onclick={testPush} disabled={isLoading} class="w-full py-2 bg-white border border-blue-200 text-blue-700 font-bold rounded-lg hover:bg-blue-100 transition-colors shadow-sm text-sm active:scale-95">📲 Test-Nachricht senden</button>
+                    <button type="button" onclick={testPush} disabled={isLoading} class="w-full py-2 bg-white border border-blue-200 text-blue-700 font-bold rounded-lg hover:bg-blue-100 transition-colors shadow-sm text-sm active:scale-95 cursor-pointer">📲 Test-Nachricht senden</button>
                 </div>
             {/if}
         {/if}
         </div>
 
-        <div class="border-t border-neutral-100 p-4 sm:p-6 md:p-8 bg-white/95 backdrop-blur-md flex flex-row gap-2 sm:gap-3 shrink-0 justify-end sticky bottom-0 z-20 pb-[max(env(safe-area-inset-bottom,0px),1rem)]">
-            <button type="button" onclick={close} aria-label="Speichern und Schließen" class="orga-button-primary shadow-indigo-600/20 flex-1 sm:flex-none py-3 sm:py-2.5 px-4 sm:px-6 active:scale-95 text-xs sm:text-sm flex justify-center items-center gap-1.5">
-                <span class="sm:hidden text-lg">💾</span>
-                <span class="hidden sm:inline">Speichern & Schließen</span>
+        <div class="border-t border-neutral-100 p-4 sm:p-6 md:p-8 bg-white/95 backdrop-blur-md flex flex-row gap-2 sm:gap-3 shrink-0 justify-end">
+            <button type="button" onclick={close} aria-label="Speichern und Schließen" class="orga-button-primary shadow-indigo-600/20 flex-1 sm:flex-none py-3 sm:py-2.5 px-4 sm:px-6 active:scale-95 text-xs sm:text-sm flex justify-center items-center gap-1.5 cursor-pointer">
+                <span>Speichern & Schließen</span>
             </button>
         </div>
     </div>

@@ -1,14 +1,61 @@
 import PocketBase from 'pocketbase';
-import { env } from '$env/dynamic/public';
+import { Capacitor } from '@capacitor/core';
+import { Preferences } from '@capacitor/preferences';
 
-// Im Entwicklungsmodus (npm run dev) greift SvelteKit auf Port 8090 zu.
-// Im Live-Betrieb (Build in pb_public) läuft SvelteKit über PocketBase selbst, daher reicht ein relativer Pfad ("/").
-const pbUrl = import.meta.env.DEV 
-    ? (env.PUBLIC_POCKETBASE_URL && env.PUBLIC_POCKETBASE_URL.startsWith('https') ? env.PUBLIC_POCKETBASE_URL : (env.PUBLIC_POCKETBASE_URL || 'http://127.0.0.1:8090')) 
-    : '/';
+const PROD_BACKEND_URL = 'https://www.ihre-seniorenassistenz.com';
+
+// Im Browser nutzen wir den aktuellen Origin, damit Anfragen transparent über den Vite-Proxy laufen.
+// Auf nativen Mobilgeräten (Capacitor) greifen wir direkt auf den gesicherten Produktionsserver zu.
+function getPocketBaseUrl(): string {
+    if (typeof window !== 'undefined' && Capacitor.isNativePlatform()) {
+        return PROD_BACKEND_URL;
+    }
+    const publicUrl = import.meta.env?.PUBLIC_POCKETBASE_URL;
+    if (publicUrl && typeof publicUrl === 'string' && publicUrl.startsWith('https://')) {
+        return publicUrl;
+    }
+    if (typeof window !== 'undefined') {
+        return window.location.origin;
+    }
+    if (typeof process !== 'undefined' && process.env?.POCKETBASE_URL) {
+        return process.env.POCKETBASE_URL;
+    }
+    return 'http://127.0.0.1:8090';
+}
+
+const pbUrl = getPocketBaseUrl();
 
 export const pb = new PocketBase(pbUrl);
 pb.autoCancellation(false);
+
+// Dauerhafte Persistierung für native Mobilgeräte gegen Speicherbereinigung
+if (typeof window !== 'undefined' && Capacitor.isNativePlatform()) {
+    try {
+        Preferences.get({ key: 'pb_native_auth' }).then(({ value }) => {
+            if (value && !pb.authStore.isValid) {
+                try {
+                    const parsed = JSON.parse(value);
+                    if (parsed?.token) {
+                        pb.authStore.save(parsed.token, parsed.record || parsed.model);
+                    }
+                } catch (e) {}
+            }
+        });
+    } catch (e) {}
+
+    pb.authStore.onChange((token, model) => {
+        try {
+            if (token) {
+                Preferences.set({
+                    key: 'pb_native_auth',
+                    value: JSON.stringify({ token, model })
+                });
+            } else {
+                Preferences.remove({ key: 'pb_native_auth' });
+            }
+        } catch (e) {}
+    });
+}
 
 // Funktion, um die PocketBase-Session am Leben zu halten
 export function keepPocketBaseAlive() {
@@ -54,10 +101,12 @@ pb.beforeSend = async function (url, options) {
         });
     }
 
-    // 8-Sekunden-Timeout-Handling für schreibende Mutationen (Double-Submission- & Hang-Schutz)
+    // Timeout-Handling für schreibende Mutationen (Double-Submission- & Hang-Schutz)
+    // Bei FormData (Dateiuploads wie PDFs/Bilder) 60s, sonst 15s Timeout, um vorzeitige Abbrüche ("unexpected EOF") zu verhindern
     if (options.method && options.method !== 'GET' && !options.signal) {
         if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
-            options.signal = AbortSignal.timeout(8000);
+            const isFormData = options.body instanceof FormData;
+            options.signal = AbortSignal.timeout(isFormData ? 60000 : 15000);
         }
     }
 
@@ -74,7 +123,7 @@ pb.beforeSend = async function (url, options) {
             }
 
             // Relative URL für den Microservice generieren (Lokal vs. Live)
-            const microserviceUrl = (typeof window !== 'undefined' && !window.location.hostname.includes('ihre-seniorenassistenz.com')) 
+            const microserviceUrl = (typeof window !== 'undefined' && !window.location.hostname.includes('ihre-seniorenassistenz.com') && !Capacitor.isNativePlatform()) 
                 ? `http://${window.location.hostname}:3000/portal/frontend-audit` 
                 : 'https://ihre-seniorenassistenz.com/api/emails/portal/frontend-audit';
 
@@ -115,4 +164,3 @@ export async function withMutationTimeout<T>(
         clearTimeout(timer);
     }
 }
-

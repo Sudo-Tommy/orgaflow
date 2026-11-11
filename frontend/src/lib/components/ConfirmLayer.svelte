@@ -12,9 +12,9 @@
     });
 </script>
 
-<dialog bind:this={dialog} class="p-0 bg-transparent backdrop:bg-slate-950/65 backdrop:backdrop-blur-md w-full max-w-sm mx-auto my-auto rounded-3xl border-none outline-none shadow-2xl" onclick={(e) => { if (e.target === dialog) confirmStore.respond(false); }}>
+<dialog bind:this={dialog} class="zero-inner-scroll-modal p-0 bg-transparent backdrop:bg-slate-950/65 backdrop:backdrop-blur-md w-full max-w-sm mx-auto my-auto rounded-3xl border-none outline-none shadow-2xl" onclick={(e) => { if (e.target === dialog) confirmStore.respond(false); }}>
     {#if confirmStore.isVisible}
-        <div class="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl shadow-2xl p-6 sm:p-8 w-full flex flex-col gap-4 animate-enter">
+        <div class="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl shadow-2xl p-5 sm:p-6 w-full flex flex-col gap-3.5 animate-enter">
             <div class="flex items-center gap-3 mb-2 {confirmStore.isDanger ? 'text-rose-900 dark:text-rose-200' : 'text-slate-900 dark:text-slate-100'}">
                 <div class="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shrink-0 shadow-inner {confirmStore.isDanger ? 'bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400' : 'bg-brand-50 dark:bg-brand-950/50 text-brand-600 dark:text-brand-400'}">
                     {confirmStore.isDanger ? '⚠️' : '🤔'}

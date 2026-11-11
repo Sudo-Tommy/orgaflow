@@ -10,10 +10,10 @@
  * - Klare Strukturierung: Ausgangslage, Lösungsansatz, Maßnahmenplan, Qualitätskriterien
  */
 
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { buildCacheOptimizedPrompt, callGeminiWithFallback } from './tokenSaverEngine.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -46,37 +46,26 @@ export async function generateSolutionConcept(params = {}) {
     }
 
     const apiKey = process.env.GEMINI_API_KEY;
-    const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
-    const candidateModels = [
-        "gemini-3.8-flash",
-        "gemini-3.5-flash",
-        "gemini-flash-latest"
-    ];
 
-    const systemPrompt = `Du bist der Chef-Systemarchitekt und Prozessberater für "OrgaFlow", die Enterprise-Software für Seniorenbetreuung und Pflegedienste.
+    // --- TOKEN-SAVER ENGINE: Statische Rollen-Instruktion (cach-bar) ---
+    const staticSystemInstruction = `Du bist der Chef-Systemarchitekt und Prozessberater für "OrgaFlow", die Enterprise-Software für Seniorenbetreuung und Pflegedienste.
 Technologiestack: SvelteKit 2 mit Svelte 5 Runes ($state, $derived, $props), Tailwind CSS, PocketBase, Node.js Microservice.
 
-Deine Aufgabe ist es, für eine gegebene Problemstellung oder ein Anliegen ein sofort umsetzbares, professionelles und strukturiertes LÖSUNGS- UND MASSNAHMENKONZEPT zu formulieren.
+Aufgabe: Für eine Problemstellung ein sofort umsetzbares, professionelles LOSUNGS- UND MASSNAHMENKONZEPT formulieren.
 
-STRENGSTE RICHTLINIEN:
-1. Erwähne NIEMALS die Wörter "KI", "AI", "künstliche Intelligenz", "LLM", "Prompt" oder "Sprachmodell" im generierten Lösungsansatz.
-2. Verwende eine sachliche, präzise Fachsprache (Pflegealltag & moderne Webentwicklung).
-3. Achte auf Barrierefreiheit (mindestens 44x44px Touch-Ziele auf Mobilgeräten) und GoBD-/Datenschutz-Konformität.
-4. Halte dich exakt an die geforderte Gliederung:
+STRENGSTE RICHTLINIEN (unveränderlich):
+1. Nie "KI", "AI", "künstliche Intelligenz", "LLM", "Prompt" oder "Sprachmodell" erwähnen.
+2. Sachliche, präzise Fachsprache (Pflegealltag & moderne Webentwicklung).
+3. Barrierefreiheit: 44×44 px Touch-Ziele, GoBD-/Datenschutz-Konformität.
+4. Exakt diese Gliederung – keine weiteren Abschnitte:
+   1. Kernziel & Lösungsansatz (1-2 Sätze)
+   2. Technische & funktionale Umsetzung (Komponenten, Schnittstellen)
+   3. Konkrete Handlungsschritte & Maßnahmen (nummeriert)
+   4. Qualitätssicherung & Ergonomie (Ergebnis, Validierung)
+Ohne einleitende oder abschließende Grussfloskeln.`;
 
-GLIEDERUNG DES LÖSUNGSKONZEPTS:
-1. Kernziel & Lösungsansatz:
-   - Präzise Zusammenfassung der Lösung (1-2 prägnante Sätze).
-2. Technische & funktionale Umsetzung:
-   - Betroffene Komponenten, UI-Elemente und Schnittstellen/Datenmodelle.
-3. Konkrete Handlungsschritte & Maßnahmen:
-   - Nummerierte, sofort ausführbare Einzelschritte.
-4. Qualitätssicherung & Ergonomie:
-   - Erwartetes Ergebnis, Barrierefreiheit (Touch-Targets, Tastaturbedienung) und Validierung.
-
-Schreibe direkt das Konzept ohne einleitende oder abschließende Grußfloskeln.`;
-
-    const userPrompt = `Analysiere folgende Ausgangslage und erstelle das Lösungs- und Maßnahmenkonzept:
+    // --- DYNAMISCHER TASK-TEIL (immer am Ende – nie gecacht) ---
+    const dynamicTaskPrompt = `Analysiere folgende Ausgangslage und erstelle das Lösungs- und Maßnahmenkonzept:
 
 Titel: ${title || 'Ohne Titel'}
 Themenbereich / Kategorie: ${category}
@@ -88,45 +77,26 @@ ${description}
 
 Erstelle das detaillierte Konzept:`;
 
+    const { systemPart, userPart } = buildCacheOptimizedPrompt(staticSystemInstruction, dynamicTaskPrompt);
+
     let generatedText = '';
     let lastError = null;
 
-    if (genAI) {
-        for (const modelName of candidateModels) {
-            try {
-                const model = genAI.getGenerativeModel({
-                    model: modelName,
-                    generationConfig: {
-                        temperature: 0.2,
-                        maxOutputTokens: 2048,
-                    }
-                });
-
-                const generatePromise = model.generateContent([
-                    { text: systemPrompt },
-                    { text: userPrompt }
-                ]);
-
-                const timeoutPromise = new Promise((_, reject) => 
-                    setTimeout(() => reject(new Error(`Timeout bei Modell '${modelName}' nach 10s`)), 10000)
-                );
-
-                const result = await Promise.race([generatePromise, timeoutPromise]);
-                const response = await result.response;
-                generatedText = response.text();
-
-                if (generatedText && generatedText.trim()) {
-                    console.log(`[SolutionConceptService] Erfolgreich via '${modelName}' generiert.`);
-                    break;
-                }
-            } catch (err) {
-                console.warn(`[SolutionConceptService] Fehler mit Modell ${modelName}:`, err.message);
-                lastError = err;
-                if (err.message.includes('429') || err.message.includes('Quota exceeded')) {
-                    console.log("[SolutionConceptService] Quota erreicht - wechsle direkt zur System-Synthese.");
-                    break;
-                }
-            }
+    if (apiKey) {
+        try {
+            const result = await callGeminiWithFallback({
+                apiKey,
+                systemPart,
+                userPart,
+                timeoutMs: 25000,
+                temperature: 0.2,
+                maxOutputTokens: 4096,
+                label: 'SolutionConcept',
+            });
+            generatedText = result.text;
+        } catch (err) {
+            lastError = err;
+            console.warn('[SolutionConceptService] Alle Modelle fehlgeschlagen:', err.message);
         }
     }
 

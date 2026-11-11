@@ -1,10 +1,11 @@
 import { dev } from '$app/environment';
+import { pb } from '$lib/services/pocketbase';
 
 /**
  * Ermittelt die Basis-URLs für die PDF-Generierung.
  * In lokaler Umgebung (localhost/127.0.0.1) wird direkt der Node-Microservice (Port 3000)
  * sowie der SvelteKit Dev-Server / Proxy als Fallback angesprochen.
- * In Produktion wird über den Nginx-Proxy (/api/emails/generate-pdf bzw. /api/generate-pdf) geroutet.
+ * In Produktion wird über den Nginx-Proxy (/api/emails/generate-pdf) geroutet.
  */
 export function getPdfGenerationEndpoints(): string[] {
     const endpoints: string[] = [];
@@ -17,16 +18,16 @@ export function getPdfGenerationEndpoints(): string[] {
             endpoints.push(`http://${hostname}:3000/api/emails/generate-pdf`);
             endpoints.push(`http://${hostname}:3000/api/generate-pdf`);
             // Dann relative URLs (falls Nginx oder Vite-Proxy aktiv ist)
-            endpoints.push('/api/generate-pdf');
             endpoints.push('/api/emails/generate-pdf');
+            endpoints.push('/api/generate-pdf');
         } else {
-            // Live-Produktion: Über Nginx-Proxy
+            // Live-Produktion: Über Nginx-Proxy (/api/emails/ leitet auf Port 3000)
             endpoints.push('/api/emails/generate-pdf');
             endpoints.push('/api/generate-pdf');
         }
     } else {
-        endpoints.push('/api/generate-pdf');
         endpoints.push('/api/emails/generate-pdf');
+        endpoints.push('/api/generate-pdf');
     }
 
     return endpoints;
@@ -46,16 +47,29 @@ export async function generatePdfBlob(payload: GeneratePdfOptions): Promise<Blob
     const endpoints = getPdfGenerationEndpoints();
     let lastError: any = null;
 
+    const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+    };
+    if (pb.authStore.token) {
+        headers['Authorization'] = `Bearer ${pb.authStore.token}`;
+    }
+
     for (const url of endpoints) {
         try {
             const resp = await fetch(url, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers,
                 body: JSON.stringify(payload)
             });
 
             if (resp.ok) {
                 return await resp.blob();
+            }
+
+            // Falls Authentifizierungsfehler vorliegt, nicht zu ungültigen Fallback-URLs wechseln
+            if (resp.status === 401 || resp.status === 403) {
+                const errJson = await resp.json().catch(() => ({}));
+                throw new Error(errJson.error || `Zugriff verweigert (HTTP ${resp.status}). Bitte erneut anmelden.`);
             }
 
             // Falls die Route auf diesem Port nicht existiert (404), nächsten Endpunkt versuchen
@@ -67,6 +81,9 @@ export async function generatePdfBlob(payload: GeneratePdfOptions): Promise<Blob
             throw new Error(errJson.error || `Server meldet Fehler bei PDF-Erstellung (HTTP ${resp.status})`);
         } catch (err: any) {
             lastError = err;
+            if (err.message && (err.message.includes('Zugriff verweigert') || err.message.includes('HTTP 401') || err.message.includes('HTTP 403'))) {
+                throw err;
+            }
             // Falls Netzwerkfehler / ERR_CONNECTION_REFUSED -> nächsten Endpunkt testen
         }
     }

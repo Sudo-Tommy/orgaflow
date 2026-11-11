@@ -18,6 +18,9 @@ router.post(['/api/emails/portal/request-otp', '/portal/request-otp'], async (re
         const pb = await getAdminPb();
         const found = await findPortalUserByEmail(email, pb);
         if (!found) return res.status(404).json({ error: 'Diese E-Mail-Adresse ist nicht hinterlegt.' });
+        if (found.userType === 'contact' && !found.user.portal_active) {
+            return res.status(403).json({ error: 'Ihr Portal-Zugang ist derzeit noch nicht freigeschaltet. Bitte wenden Sie sich an uns.' });
+        }
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
         const expires = new Date(Date.now() + 10 * 60 * 1000).toISOString();
         await pb.collection('otp_codes').create({ email, code: otp, expires, user_id: found.user.id, user_type: found.userType });
@@ -36,6 +39,9 @@ router.post(['/api/emails/portal/verify-otp', '/portal/verify-otp'], async (req,
         const now = new Date().toISOString().replace('T', ' ');
         const rec = await pb.collection('otp_codes').getFirstListItem(`email = "${email.toLowerCase()}" && code = "${otp}" && expires > "${now}"`);
         const userRec = await pb.collection(rec.user_type === 'client' ? 'clients' : 'contacts').getOne(rec.user_id).catch(() => ({}));
+        if (rec.user_type === 'contact' && !userRec.portal_active) {
+            return res.status(403).json({ error: 'Ihr Portal-Zugang ist derzeit noch nicht freigeschaltet. Bitte wenden Sie sich an uns.' });
+        }
         const token = createPortalToken({ id: rec.user_id, email: rec.email, ...userRec }, rec.user_type, '7d');
         await pb.collection('otp_codes').delete(rec.id);
         res.json({ success: true, token });
@@ -51,6 +57,9 @@ router.post(['/api/emails/portal/auth-with-pin', '/portal/auth-with-pin'], async
         const pb = await getAdminPb();
         const found = await findPortalUserByPin(email, pin, pb);
         if (!found) return res.status(401).json({ error: 'Ungültige E-Mail-Adresse oder PIN.' });
+        if (found.userType === 'contact' && !found.user.portal_active) {
+            return res.status(403).json({ error: 'Ihr Portal-Zugang ist derzeit noch nicht freigeschaltet. Bitte wenden Sie sich an uns.' });
+        }
         const token = createPortalToken(found.user, found.userType, '30d');
         res.json({ success: true, token, user: { id: found.user.id, type: found.userType, email: found.user.email, name_first: found.user.name_first, name_last: found.user.name_last } });
     } catch (err) {
@@ -65,6 +74,9 @@ router.post(['/api/emails/portal/auth-with-code', '/portal/auth-with-code'], asy
         const pb = await getAdminPb();
         const found = await findPortalUserByCode(code, pb);
         if (!found) return res.status(401).json({ error: 'Ungültiger oder abgelaufener QR-Code.' });
+        if (found.userType === 'contact' && !found.user.portal_active) {
+            return res.status(403).json({ error: 'Ihr Portal-Zugang ist derzeit noch nicht freigeschaltet. Bitte wenden Sie sich an uns.' });
+        }
         const token = createPortalToken(found.user, found.userType, '30d');
         res.json({ success: true, token, user: { id: found.user.id, type: found.userType, email: found.user.email, name_first: found.user.name_first, name_last: found.user.name_last } });
     } catch (err) {
@@ -72,10 +84,31 @@ router.post(['/api/emails/portal/auth-with-code', '/portal/auth-with-code'], asy
     }
 });
 
+router.get(['/api/emails/portal/validate-session', '/portal/validate-session'], async (req, res) => {
+    const auth = await resolvePortalAuth(req.headers.authorization, { allowBlocked: true });
+    if (!auth) {
+        return res.status(401).json({ valid: false, error: 'Sitzung abgelaufen oder ungültig.' });
+    }
+    if (auth.isBlocked) {
+        return res.status(403).json({
+            valid: false,
+            isBlocked: true,
+            error: auth.blockedReason || 'Ihr Portal-Zugang ist derzeit noch nicht freigeschaltet. Bitte wenden Sie sich an uns.'
+        });
+    }
+    return res.json({
+        valid: true,
+        type: auth.type,
+        id: auth.clientId || auth.contactId || auth.pb?.authStore?.model?.id,
+        name: auth.name,
+        email: auth.email
+    });
+});
+
 router.post(['/api/emails/portal/admin/access-data', '/portal/admin/access-data'], async (req, res) => {
     const auth = await resolvePortalAuth(req.headers.authorization);
     if (!auth || auth.type !== 'admin') return res.status(403).json({ error: 'Nur für Administratoren zugänglich.' });
-    const { clientId, type = 'client', action = 'get', customPin } = req.body;
+    const { clientId, type = 'client', action = 'get', customPin, portalActive } = req.body;
     if (!clientId) return res.status(400).json({ error: 'Klienten-ID fehlt.' });
     try {
         const pb = auth.pb || await getAdminPb();
@@ -85,8 +118,9 @@ router.post(['/api/emails/portal/admin/access-data', '/portal/admin/access-data'
         if (action === 'generate' || !rec.portal_pin) updates.portal_pin = Math.floor(100000 + Math.random() * 900000).toString();
         else if (action === 'set' && customPin) updates.portal_pin = String(customPin).trim();
         if (!rec.portal_code || action === 'generate' || action === 'generate_code') updates.portal_code = 'sec_' + crypto.randomBytes(16).toString('hex');
+        if (portalActive !== undefined) updates.portal_active = !!portalActive;
         if (Object.keys(updates).length) rec = await pb.collection(col).update(clientId, updates, { requestKey: null });
-        res.json({ success: true, clientId: rec.id, name_first: rec.name_first || '', name_last: rec.name_last || '', email: rec.email || '', portal_pin: rec.portal_pin, portal_code: rec.portal_code });
+        res.json({ success: true, clientId: rec.id, name_first: rec.name_first || '', name_last: rec.name_last || '', email: rec.email || '', portal_pin: rec.portal_pin, portal_code: rec.portal_code, portal_active: !!rec.portal_active });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

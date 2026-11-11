@@ -3,7 +3,12 @@
     import { orgaStore } from "$lib/stores/orgaStore.svelte";
     import { confirmStore } from "$lib/services/confirmService.svelte";
 
-    let { appointment } = $props<{ appointment: any }>();
+    interface Props {
+        appointment: any;
+        onSaved?: (record: any) => void;
+    }
+
+    let { appointment, onSaved }: Props = $props();
     
     // svelte-ignore non_reactive_update
     let dialog: HTMLDialogElement;
@@ -26,9 +31,14 @@
 
     // Hilfsfunktion: Kombiniert das Datum des Termins mit der eingegebenen Uhrzeit
     function combineDateAndTime(timeString: string) {
-        if (!timeString || !appointment?.appointment) return null;
-        const baseDate = new Date(appointment.appointment);
-        if (isNaN(baseDate.getTime())) return null;
+        if (!timeString) return null;
+        let baseDate: Date;
+        if (appointment?.appointment) {
+            baseDate = new Date(appointment.appointment);
+            if (isNaN(baseDate.getTime())) baseDate = new Date();
+        } else {
+            baseDate = new Date();
+        }
 
         const [hours, minutes] = timeString.split(':').map(Number);
         const d = new Date(baseDate);
@@ -73,31 +83,78 @@
                 end: combineDateAndTime(endTime)
             };
 
+            let savedRecord: any = null;
+
             if (editId) {
                 // Bestehenden Datensatz aktualisieren
-                await pb.collection('time_records').update(editId, payload);
+                savedRecord = await pb.collection('time_records').update(editId, payload);
+                if (orgaStore.time_records?.data) {
+                    const idx = orgaStore.time_records.data.findIndex((r: any) => r.id === editId);
+                    if (idx !== -1) {
+                        orgaStore.time_records.data[idx] = { ...orgaStore.time_records.data[idx], ...savedRecord };
+                    }
+                }
             } else {
                 // 1. Neuen Zeiteintrag in der Collection anlegen
-                const newRecord = await pb.collection('time_records').create(payload);
+                savedRecord = await pb.collection('time_records').create(payload);
+                if (orgaStore.time_records?.data) {
+                    orgaStore.time_records.data = [savedRecord, ...orgaStore.time_records.data];
+                }
     
-                // 2. Den neuen Eintrag mit dem Termin verknüpfen
-                const existing = appointment.time_record || [];
-                await pb.collection('appointments').update(appointment.id, {
-                    time_record: [...existing, newRecord.id]
-                });
+                // 2. Den neuen Eintrag mit dem Termin verknüpfen (sicher parsen, falls time_record ein JSON-String ist)
+                let existingIds: string[] = [];
+                const raw = appointment.time_record;
+                if (Array.isArray(raw)) {
+                    existingIds = raw.map((x: any) => typeof x === 'string' ? x : x?.id).filter(Boolean);
+                } else if (typeof raw === 'string' && raw.trim() && raw !== '[]') {
+                    try {
+                        const parsed = JSON.parse(raw);
+                        if (Array.isArray(parsed)) {
+                            existingIds = parsed.map((x: any) => typeof x === 'string' ? x : x?.id).filter(Boolean);
+                        } else {
+                            existingIds = [raw];
+                        }
+                    } catch {
+                        existingIds = [raw];
+                    }
+                }
+
+                if (!existingIds.includes(savedRecord.id)) {
+                    existingIds.push(savedRecord.id);
+                }
+
+                if (appointment?.id && !appointment.id.startsWith('google_')) {
+                    await pb.collection('appointments').update(appointment.id, {
+                        time_record: existingIds
+                    });
+                }
+
+                appointment.time_record = existingIds;
             }
 
-            // Realtime Update im Store erzwingen, um Relationen in der Ansicht live zu aktualisieren
-            setTimeout(async () => {
-                const updatedApp = await pb.collection('appointments').getOne(appointment.id, { 
-                    expand: 'user,client,drive_record,time_record,tasks,expenditures,appointment_at', requestKey: null
-                }) as any;
-                const index = orgaStore.appointments?.data.findIndex(a => a.id === appointment.id) ?? -1;
-                if (index !== -1 && orgaStore.appointments) {
-                    orgaStore.appointments.data[index] = updatedApp;
+            // Realtime Update im Store erzwingen, ohne Relation-Expands zu überschreiben
+            try {
+                if (appointment?.id && !appointment.id.startsWith('google_')) {
+                    const updatedApp = await pb.collection('appointments').getOne(appointment.id, { 
+                        expand: 'user,client,address,drive_record,time_record,tasks,expenditures,appointment_at', requestKey: null
+                    }) as any;
+                    const index = orgaStore.appointments?.data.findIndex(a => a.id === appointment.id) ?? -1;
+                    if (index !== -1 && orgaStore.appointments) {
+                        const currentApp = orgaStore.appointments.data[index];
+                        orgaStore.appointments.data[index] = {
+                            ...updatedApp,
+                            expand: {
+                                ...(currentApp?.expand || {}),
+                                ...(updatedApp.expand || {})
+                            }
+                        };
+                    }
                 }
-            }, 400);
+            } catch (err) {
+                console.warn('Could not refresh appointment relation in store:', err);
+            }
 
+            onSaved?.(savedRecord);
             close();
         } catch (err: any) {
             console.error(err);

@@ -1,12 +1,24 @@
 <script lang="ts">
     import { getProcessSteps } from "$lib/services/landingContentService";
-    const steps = getProcessSteps();
+    import { landingCmsStore } from "$lib/services/landingCmsStore.svelte";
+
+    const defaultSteps = getProcessSteps();
+
+    let headline = $derived(landingCmsStore.content.process?.headline || "Unser gemeinsamer Weg");
+    let subtitle = $derived(landingCmsStore.content.process?.subtitle || "Ganz entspannt und völlig ohne Hektik: So sieht ein typischer Ablauf aus, wenn wir zum Beispiel gemeinsam Ihren Arztbesuch oder den Formular-Dschungel meistern.");
+    let steps = $derived.by(() => {
+        const raw = landingCmsStore.content.process?.steps;
+        if (Array.isArray(raw) && raw.length > 0) {
+            return raw;
+        }
+        return defaultSteps;
+    });
 </script>
 
 <div class="w-full bg-amber-50/40 dark:bg-slate-900/40 py-20 px-4 border-y border-amber-100/50 dark:border-slate-800 transition-colors">
     <div class="max-w-5xl mx-auto text-center mb-16">
-        <h2 class="text-3xl md:text-4xl font-bold text-neutral-900 dark:text-white mb-4">Unser gemeinsamer Weg</h2>
-        <p class="text-lg text-neutral-500 dark:text-slate-400 max-w-2xl mx-auto">Ganz entspannt und völlig ohne Hektik: So sieht ein typischer Ablauf aus, wenn wir zum Beispiel gemeinsam Ihren Arztbesuch oder den Formular-Dschungel meistern.</p>
+        <h2 class="text-3xl md:text-4xl font-bold text-neutral-900 dark:text-white mb-4">{headline}</h2>
+        <p class="text-lg text-neutral-500 dark:text-slate-400 max-w-2xl mx-auto">{subtitle}</p>
     </div>
 
     <div class="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-6">

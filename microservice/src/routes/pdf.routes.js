@@ -7,18 +7,18 @@ import { stampExistingInvoicePdf } from '../services/pdf/invoiceStornoPdfService
 
 const router = Router();
 
-router.post(['/api/emails/vma/pdf', '/api/vma/pdf', '/portal/vma/pdf'], requireAuth, (req, res) => {
+router.post(['/api/emails/vma/pdf', '/api/vma/pdf', '/portal/vma/pdf'], requireAuth, async (req, res) => {
     try {
-        generateVmaPdf(req.body, res);
+        await generateVmaPdf(req.body, res);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-router.post(['/api/emails/generate-pdf', '/api/generate-pdf', '/generate-pdf'], requireAuth, (req, res) => {
+router.post(['/api/emails/generate-pdf', '/api/generate-pdf', '/generate-pdf'], requireAuth, async (req, res) => {
     try {
         if (!req.body?.templateJson) return res.status(400).json({ error: 'templateJson erforderlich.' });
-        generateDocumentPdf(req.body, res);
+        await generateDocumentPdf(req.body, res);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

@@ -94,10 +94,13 @@
         
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><label for="prof-username" class="block text-sm font-semibold text-neutral-700 mb-1.5">Benutzername</label><input id="prof-username" type="text" bind:value={formData.username} class="orga-input-clear" disabled={isLoading} /></div>
-            <div><label for="prof-phone" class="block text-sm font-semibold text-neutral-700 mb-1.5">Telefon (Optional)</label><input id="prof-phone" type="text" bind:value={formData.phone} class="orga-input-clear" disabled={isLoading} /></div>
+            <div><label for="prof-email" class="block text-sm font-semibold text-neutral-700 mb-1.5">E-Mail Adresse</label><input id="prof-email" type="email" bind:value={formData.email} class="orga-input-clear" required disabled={isLoading} /></div>
         </div>
         
-        <div><label for="prof-email" class="block text-sm font-semibold text-neutral-700 mb-1.5">E-Mail Adresse</label><input id="prof-email" type="email" bind:value={formData.email} class="orga-input-clear" required disabled={isLoading} /></div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div><label for="prof-tel" class="block text-sm font-semibold text-neutral-700 mb-1.5">Telefon / Festnetz</label><input id="prof-tel" type="tel" bind:value={formData.tel} placeholder="z. B. 040 1234567" class="orga-input-clear" disabled={isLoading} /></div>
+            <div><label for="prof-handy" class="block text-sm font-semibold text-neutral-700 mb-1.5">Mobiltelefon / Handy</label><input id="prof-handy" type="tel" bind:value={formData.handy} placeholder="z. B. 0170 1234567" class="orga-input-clear" disabled={isLoading} /></div>
+        </div>
         
         <div class="pt-4 flex justify-end">
             <button type="submit" disabled={isLoading} class="orga-button-primary w-full sm:w-auto shadow-indigo-600/20 py-3 sm:py-2.5">
