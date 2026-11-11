@@ -2,6 +2,7 @@ import { pb } from "$lib/services/pocketbase";
 import { orgaStore } from "$lib/stores/orgaStore.svelte";
 import { toastStore } from "$lib/services/toastService.svelte";
 import stornoStampPng from "$lib/assets/storno-stamp.png";
+import { getMicroserviceHost } from "$lib/services/apiConfig";
 
 /**
  * Verarbeitet die Stempelung einer stornierten Rechnung mit dem "STORNIERT"-Stempel.
@@ -17,7 +18,7 @@ export async function stampInvoiceAsStorniert(invoiceId: string): Promise<{ succ
 
     // 1. Primärer Versuch: Microservice
     try {
-        const microserviceUrl = import.meta.env.DEV ? 'http://localhost:3000' : '';
+        const microserviceUrl = getMicroserviceHost();
         const token = pb.authStore?.token || '';
         const headers: Record<string, string> = {
             'Content-Type': 'application/json'

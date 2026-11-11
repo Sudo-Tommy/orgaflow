@@ -2,6 +2,7 @@
     import { onMount } from "svelte";
     import { toastStore } from "$lib/services/toastService.svelte";
     import { resolveDocumentUrl, downloadFileAsBlob } from "$lib/utils/documentUrl";
+    import { openPdfDocument } from "$lib/utils/pdfViewerHelper";
     import ImageZoomViewer from "$lib/components/ui/ImageZoomViewer.svelte";
 
     let dialog: HTMLDialogElement | undefined = $state();
@@ -112,7 +113,7 @@
                         <p class="text-slate-900 dark:text-slate-100 font-bold text-xl mb-2">PDF-Dokument bereit</p>
                         <p class="text-slate-500 dark:text-slate-400 text-sm mb-8 max-w-xs leading-relaxed">Auf Mobilgeräten oder als App installiert, können PDFs oft nicht sicher direkt in der Vorschau angezeigt werden.</p>
                         <div class="flex flex-col gap-3 w-full max-w-xs">
-                            <button onclick={() => window.open(pdfUrl, "_blank")} class="orga-button-primary bg-indigo-600 hover:bg-indigo-700 w-full min-h-[44px] py-3 text-sm flex items-center justify-center gap-2 cursor-pointer active:scale-95 touch-manipulation"><span class="text-lg">🌐</span> Im Browser öffnen</button>
+                            <button onclick={() => openPdfDocument(pdfUrl, downloadName)} class="orga-button-primary bg-indigo-600 hover:bg-indigo-700 w-full min-h-[44px] py-3 text-sm flex items-center justify-center gap-2 cursor-pointer active:scale-95 touch-manipulation"><span class="text-lg">📄</span> PDF anzeigen / öffnen</button>
                             <button onclick={handleDownload} disabled={isDownloading} class="orga-button-ghost w-full min-h-[44px] py-3 text-sm flex items-center justify-center gap-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 cursor-pointer active:scale-95 touch-manipulation disabled:opacity-60 disabled:cursor-not-allowed">
                                 {#if isDownloading}
                                     <div class="w-4 h-4 border-2 border-slate-400 border-t-slate-600 dark:border-t-slate-300 rounded-full animate-spin"></div>

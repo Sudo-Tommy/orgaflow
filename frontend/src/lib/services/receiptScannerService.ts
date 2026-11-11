@@ -1,4 +1,5 @@
 import { pb } from "./pocketbase";
+import { getMicroserviceHost } from "$lib/services/apiConfig";
 
 export interface ReceiptScanResult {
     croppedFile: File;
@@ -39,7 +40,7 @@ export async function processReceiptCanvas(
     let aiData: any = null;
 
     try {
-        const microserviceUrl = import.meta.env.DEV ? 'http://localhost:3000' : '';
+        const microserviceUrl = getMicroserviceHost();
         const res = await fetch(`${microserviceUrl}/api/emails/ai/receipt`, {
             method: 'POST',
             headers: {

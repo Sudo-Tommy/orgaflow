@@ -1,6 +1,7 @@
 import { pb } from "$lib/services/pocketbase";
 import { resolveCompanyData, resolveUserData, wrapOrgaFlowEmailHtml, buildTextSignature } from "./emailCompanyService";
 import { sendEmail } from "./emailService";
+import { getAbsoluteFileUrl } from "$lib/utils/pdfViewerHelper";
 
 export function blobToBase64(blob: Blob): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -37,8 +38,8 @@ export async function sendInvoiceEmailPayload(params: {
 
     const attachments = [];
     for (const pdf of selectedPdfFiles) {
-        let fileUrl = pb.files.getURL(pdf.record, pdf.filename);
-        if (pb.authStore.token) fileUrl += (fileUrl.includes('?') ? '&' : '?') + 'token=' + pb.authStore.token;
+        let rawUrl = pb.files.getURL(pdf.record, pdf.filename);
+        let fileUrl = getAbsoluteFileUrl(rawUrl);
         const response = await fetch(fileUrl);
         const blob = await response.blob();
         const base64 = await blobToBase64(blob);

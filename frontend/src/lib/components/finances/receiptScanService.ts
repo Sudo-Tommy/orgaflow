@@ -1,4 +1,5 @@
 import { pb } from '$lib/services/pocketbase';
+import { getMicroserviceHost } from '$lib/services/apiConfig';
 
 export interface ScannedReceiptData {
     title?: string;
@@ -46,7 +47,7 @@ export async function processAndScanReceipt(file: File): Promise<{ compressedFil
         reader.readAsDataURL(compressedFile);
     });
 
-    const microserviceUrl = import.meta.env.DEV ? 'http://localhost:3000' : '';
+    const microserviceUrl = getMicroserviceHost();
     const res = await fetch(`${microserviceUrl}/api/emails/ai/receipt`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${pb.authStore.token}` },

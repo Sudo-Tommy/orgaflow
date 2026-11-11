@@ -3,8 +3,9 @@ import { dev } from '$app/environment';
 import { orgaStore } from '$lib/stores/orgaStore.svelte';
 import { resolveCompanyData, resolveUserData, wrapOrgaFlowEmailHtml, buildTextSignature } from '$lib/services/emailCompanyService';
 import { upsertSentMailboxRecord, base64ToFile } from '$lib/services/emailSenderHelper';
+import { getMicroserviceUrl } from '$lib/services/apiConfig';
 
-export const MICROSERVICE_URL = dev ? 'http://127.0.0.1:3000/api/emails' : '/api/emails';
+export const MICROSERVICE_URL = getMicroserviceUrl();
 
 export interface SendEmailPayload {
     to: string;

@@ -8,6 +8,7 @@
     import { goto } from "$app/navigation";
     import { page } from "$app/stores";
     import { getPdfUrl } from "$lib/utils/invoiceHelpers";
+    import { openPdfDocument } from "$lib/utils/pdfViewerHelper";
     import { buildCorrectionEmailContent } from "$lib/services/invoiceCorrectionHelper";
     import { Inbox } from "lucide-svelte";
     import { compareInvoicesByDateDesc, type InvoicePayload } from "$lib/utils/invoice";
@@ -76,7 +77,7 @@
     function previewPdf(record: InvoicePayload, index: number, prefix?: string) {
         const url = getPdfUrl(record, index, pb);
         if (!url) return;
-        window.open(url, '_blank', 'noopener,noreferrer');
+        openPdfDocument(url, record.invoice_nr);
     }
 
     function handleUpdateStatus(id: string, newStatus: string) {

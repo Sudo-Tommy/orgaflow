@@ -9,6 +9,8 @@
     import InvoiceBudgetBreakdown from "$lib/components/clients/InvoiceBudgetBreakdown.svelte";
     import { stampInvoiceAsStorniert } from "$lib/services/invoiceStornoStampService";
     import { executeInvoiceStorno } from "$lib/services/invoiceStornoService";
+    import { openPdfDocument } from "$lib/utils/pdfViewerHelper";
+    import { isNativeApp } from "$lib/services/apiConfig";
     import InvoiceStornoModal from "./InvoiceStornoModal.svelte";
     import InvoiceDetailActions from "./InvoiceDetailActions.svelte";
     import InvoicePositionsTable from "./InvoicePositionsTable.svelte";
@@ -116,6 +118,13 @@
     async function downloadPdfFile(index: number = 0, typeName: string = 'Rechnung') {
         const url = getPdfUrl(index);
         if (!url || !invoice) return;
+        const filename = (Array.isArray(invoice.pdf) ? invoice.pdf[index] : invoice.pdf) || `${typeName}_${invoice.invoice_nr}.pdf`;
+        
+        if (isNativeApp()) {
+            openPdfDocument(url, filename);
+            return;
+        }
+
         isDownloadingPdf = true;
         try {
             const res = await fetch(url);
@@ -124,14 +133,13 @@
             const blobUrl = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = blobUrl;
-            const filename = Array.isArray(invoice.pdf) ? invoice.pdf[index] : invoice.pdf;
-            a.download = filename || `${typeName}_${invoice.invoice_nr}.pdf`;
+            a.download = filename;
             document.body.appendChild(a);
             a.click();
             setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(blobUrl); }, 100);
             toastStore.success(`${filename} heruntergeladen.`);
         } catch (e: any) {
-            window.open(url, '_blank');
+            openPdfDocument(url, filename);
         } finally {
             isDownloadingPdf = false;
         }

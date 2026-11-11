@@ -1,14 +1,21 @@
 import { dev } from '$app/environment';
 import { pb } from '$lib/services/pocketbase';
+import { isNativeApp, PROD_ORIGIN } from '$lib/services/apiConfig';
 
 /**
  * Ermittelt die Basis-URLs für die PDF-Generierung.
- * In lokaler Umgebung (localhost/127.0.0.1) wird direkt der Node-Microservice (Port 3000)
- * sowie der SvelteKit Dev-Server / Proxy als Fallback angesprochen.
+ * Auf nativen Mobilgeräten wird direkt die gesicherte Produktions-URL angesprochen.
+ * In lokaler Umgebung wird direkt der Node-Microservice (Port 3000) angesprochen.
  * In Produktion wird über den Nginx-Proxy (/api/emails/generate-pdf) geroutet.
  */
 export function getPdfGenerationEndpoints(): string[] {
     const endpoints: string[] = [];
+
+    if (isNativeApp()) {
+        endpoints.push(`${PROD_ORIGIN}/api/emails/generate-pdf`);
+        endpoints.push(`${PROD_ORIGIN}/api/generate-pdf`);
+        return endpoints;
+    }
 
     if (typeof window !== 'undefined') {
         const hostname = window.location.hostname || '127.0.0.1';
