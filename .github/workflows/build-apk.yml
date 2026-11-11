@@ -38,7 +38,9 @@ jobs:
 
       - name: Build Web Application
         working-directory: frontend
-        run: npx vite build
+        run: |
+          npx svelte-kit sync
+          npx vite build
 
       - name: Copy Assets & Sync Capacitor Android
         working-directory: frontend
