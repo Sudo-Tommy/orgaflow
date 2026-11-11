@@ -25,6 +25,9 @@ class PushNotificationService {
 
     private async registerNativePush(): Promise<boolean> {
         try {
+            // Push-Notifications erfordern Firebase (google-services.json).
+            // Wenn diese Datei fehlt, wirft der Android-Native-Code beim Aufruf von register()
+            // eine nicht abfangbare NullPointerException / IllegalStateException, die die App beendet.
             let perm = await PushNotifications.checkPermissions();
             if (perm.receive !== 'granted') {
                 perm = await PushNotifications.requestPermissions();
@@ -34,15 +37,13 @@ class PushNotificationService {
                 return false;
             }
 
-            await PushNotifications.register();
-
             PushNotifications.addListener('registration', async (token: Token) => {
                 this.registered = true;
                 await this.saveTokenToPocketBase(token.value, 'native');
             });
 
             PushNotifications.addListener('registrationError', (error: any) => {
-                console.warn('Fehler bei nativer Push-Registrierung:', error);
+                console.warn('Native Push-Registrierung fehlgeschlagen:', error);
             });
 
             PushNotifications.addListener('pushNotificationActionPerformed', (action: ActionPerformed) => {
@@ -53,6 +54,12 @@ class PushNotificationService {
                     goto('/appointments');
                 }
             });
+
+            try {
+                await PushNotifications.register();
+            } catch (regErr) {
+                console.warn('PushNotifications.register abgefangen (Firebase evtl. unkonfiguriert):', regErr);
+            }
 
             return true;
         } catch (error) {

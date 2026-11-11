@@ -6,10 +6,11 @@ const config: CapacitorConfig = {
   webDir: 'pb_public',
   server: {
     androidScheme: 'https',
-    cleartext: false,
+    cleartext: true,
     allowNavigation: [
       'https://www.ihre-seniorenassistenz.com',
-      'https://ihre-seniorenassistenz.com'
+      'https://ihre-seniorenassistenz.com',
+      '*.ihre-seniorenassistenz.com'
     ]
   },
   plugins: {
