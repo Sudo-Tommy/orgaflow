@@ -6,7 +6,7 @@
 	"scripts": {
 		"dev": "vite dev",
 		"build": "vite build",
-		"postbuild": "node -e \"console.log('Postbuild finished')\"",
+		"postbuild": "node -e \"const fs = require('fs'); const path = require('path'); const dest = path.resolve('../backend/pb_public'); if (fs.existsSync(dest)) { fs.cpSync('pb_public', dest, { recursive: true }); console.log('Successfully synced pb_public to backend/pb_public'); }\"",
 		"build:mobile": "vite build && npx cap sync",
 		"cap:sync": "npx cap sync",
 		"cap:android": "npx cap open android",
