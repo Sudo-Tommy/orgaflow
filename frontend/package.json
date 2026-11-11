@@ -6,7 +6,7 @@
 	"scripts": {
 		"dev": "vite dev",
 		"build": "vite build",
-		"postbuild": "node -e \"const fs = require('fs'); const path = require('path'); const src = path.resolve('pb_public'); const dst = path.resolve('../backend/pb_public'); if (fs.existsSync(src)) { const appDst = path.join(dst, '_app'); if (fs.existsSync(appDst)) fs.rmSync(appDst, { recursive: true, force: true }); fs.cpSync(src, dst, { recursive: true }); }\"",
+		"postbuild": "node -e \"import('fs').then(fs => import('path').then(path => { const src = path.resolve('pb_public'); const dst = path.resolve('../backend/pb_public'); if (fs.existsSync(src)) { if (!fs.existsSync(dst)) fs.mkdirSync(dst, { recursive: true }); const appDst = path.join(dst, '_app'); if (fs.existsSync(appDst)) fs.rmSync(appDst, { recursive: true, force: true }); fs.cpSync(src, dst, { recursive: true }); } }))\"",
 		"build:mobile": "vite build && npx cap sync",
 		"cap:sync": "npx cap sync",
 		"cap:android": "npx cap open android",
