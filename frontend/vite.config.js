@@ -2,7 +2,6 @@ import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
 import { enhancedImages } from '@sveltejs/enhanced-img';
 import { defineConfig } from 'vite';
-import { devAgentPlugin } from './vite-plugin-dev-agent.js';
 
 const handleProxyError = (proxy) => {
 	proxy.on('error', (err, req, res) => {
@@ -18,13 +17,20 @@ const handleProxyError = (proxy) => {
 	});
 };
 
-export default defineConfig({
-	plugins: [
-		devAgentPlugin(),
+export default defineConfig(async ({ command }) => {
+	const plugins = [];
+	if (command === 'serve') {
+		const { devAgentPlugin } = await import('./vite-plugin-dev-agent.js');
+		plugins.push(devAgentPlugin());
+	}
+	plugins.push(
 		enhancedImages(),
 		tailwindcss(),
 		sveltekit()
-	],
+	);
+
+	return {
+		plugins,
 
 	server: {
 		port: 5173,
@@ -112,4 +118,5 @@ export default defineConfig({
 	define: {
 		global: 'window'
 	}
+};
 });

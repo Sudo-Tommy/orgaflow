@@ -3,7 +3,14 @@ import { rollbackCheckpoint, openAntigravityChat } from './src/lib/server/devAge
 import PocketBase from 'pocketbase';
 import dotenv from 'dotenv';
 
-dotenv.config();
+try {
+    if (typeof process.loadEnvFile === 'function') {
+        process.loadEnvFile();
+    }
+} catch {}
+try {
+    dotenv?.config?.();
+} catch {}
 
 function parseJsonBody(req) {
     return new Promise((resolve, reject) => {

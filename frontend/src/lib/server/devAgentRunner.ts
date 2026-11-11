@@ -12,7 +12,14 @@ import {
 } from './devAgentTools.js';
 import { toolsDefinition, SYSTEM_INSTRUCTION } from './devAgentSpec.js';
 
-dotenv.config();
+try {
+    if (typeof process.loadEnvFile === 'function') {
+        process.loadEnvFile();
+    }
+} catch {}
+try {
+    dotenv?.config?.();
+} catch {}
 
 const pb = new PocketBase(process.env.POCKETBASE_URL || 'http://127.0.0.1:8090');
 const ACTIVE_MODEL = process.env.GEMINI_DEV_MODEL || 'gemini-3-flash-preview';
