@@ -42,7 +42,7 @@ jobs:
         working-directory: frontend
         run: |
           mkdir -p ../backend/pb_public
-          npm run build
+          npm run build -- --debug
 
       - name: Sync Capacitor Android
         working-directory: frontend
