@@ -1,7 +1,5 @@
-import { PushNotifications, type Token, type ActionPerformed } from '@capacitor/push-notifications';
 import { Capacitor } from '@capacitor/core';
 import { pb } from '$lib/services/pocketbase';
-import { goto } from '$app/navigation';
 
 /**
  * Service für native und Web-Push-Benachrichtigungen.

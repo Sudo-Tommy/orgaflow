@@ -2,7 +2,6 @@
     import { onMount } from 'svelte';
     import { Camera } from '@capacitor/camera';
     import { Geolocation } from '@capacitor/geolocation';
-    import { PushNotifications } from '@capacitor/push-notifications';
     import { Preferences } from '@capacitor/preferences';
     import { Capacitor } from '@capacitor/core';
     import { Camera as CameraIcon, MapPin, Bell, ShieldCheck, Check } from 'lucide-svelte';
@@ -35,9 +34,11 @@
                 await Geolocation.requestPermissions({ permissions: ['location'] });
             } catch (e) {}
 
-            // 3. Benachrichtigungen
+            // 3. Benachrichtigungen (nur Web-API, ohne FCM-Zwang)
             try {
-                await PushNotifications.requestPermissions();
+                if (typeof window !== 'undefined' && 'Notification' in window) {
+                    await Notification.requestPermission();
+                }
             } catch (e) {}
 
             await Preferences.set({ key: ONBOARDING_KEY, value: 'true' });

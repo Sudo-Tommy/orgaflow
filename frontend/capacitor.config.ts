@@ -6,24 +6,15 @@ const config: CapacitorConfig = {
   webDir: 'pb_public',
   server: {
     androidScheme: 'https',
-    cleartext: true,
-    allowNavigation: [
-      'https://www.ihre-seniorenassistenz.com',
-      'https://ihre-seniorenassistenz.com',
-      '*.ihre-seniorenassistenz.com'
-    ]
+    cleartext: true
   },
   plugins: {
     SplashScreen: {
-      launchShowDuration: 1500,
+      launchShowDuration: 0,
       launchAutoHide: true,
       backgroundColor: '#0f172a',
-      androidScaleType: 'CENTER_CROP',
-      splashFullScreen: true,
-      splashImmersive: true
-    },
-    StatusBar: {
-      overlaysWebView: true
+      splashFullScreen: false,
+      splashImmersive: false
     }
   }
 };

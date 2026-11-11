@@ -14,8 +14,9 @@ public class MainActivity extends BridgeActivity {
             Log.e(TAG, "Abgefangene Thread-Ausnahme in [" + thread.getName() + "]: ", throwable);
             if (throwable != null) {
                 String msg = String.valueOf(throwable.getMessage());
-                if (msg.contains("Firebase") || msg.contains("google-services")) {
-                    Log.w(TAG, "Unkritischen Firebase-Fehler abgefangen. App läuft stabil weiter.");
+                String cls = throwable.getClass().getName();
+                if (msg.contains("Firebase") || msg.contains("google-services") || msg.contains("SplashScreen") || cls.contains("firebase")) {
+                    Log.w(TAG, "Unkritischen Plugin-Fehler abgefangen. App läuft stabil weiter.");
                     return;
                 }
             }
@@ -24,6 +25,7 @@ public class MainActivity extends BridgeActivity {
             }
         });
 
+        setTheme(R.style.AppTheme_NoActionBar);
         super.onCreate(savedInstanceState);
     }
 }
