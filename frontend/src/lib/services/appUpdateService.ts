@@ -134,7 +134,11 @@ export function isNewerVersion(remote: unknown, local: unknown): boolean {
 export class AppUpdateService {
     readonly defaultVersion = '1.0.0';
     readonly defaultDownloadUrl = 'https://www.ihre-seniorenassistenz.com/downloads/seniorenassistenz.apk';
-    readonly defaultEndpoint = 'https://www.ihre-seniorenassistenz.com/api/mobile/version.json';
+    readonly defaultEndpoints = [
+        'https://www.ihre-seniorenassistenz.com/version.json',
+        'https://www.ihre-seniorenassistenz.com/api/mobile/version.json',
+        '/version.json'
+    ];
 
     async getCurrentVersion(): Promise<string> {
         try {
@@ -161,27 +165,29 @@ export class AppUpdateService {
             };
         }
 
-        const endpoint = options?.endpoint ?? this.defaultEndpoint;
+        const endpoints = options?.endpoint ? [options.endpoint] : this.defaultEndpoints;
 
-        try {
-            const response = await fetch(endpoint, { cache: 'no-store' });
-            if (!response.ok) {
-                return { hasUpdate: false, availableVersion: null, currentVersion };
+        for (const ep of endpoints) {
+            try {
+                const response = await fetch(ep, { cache: 'no-store' });
+                if (!response.ok) continue;
+
+                const data = await response.json();
+                const remoteVersion = data?.version;
+
+                if (isNewerVersion(remoteVersion, currentVersion)) {
+                    return {
+                        hasUpdate: true,
+                        availableVersion: remoteVersion,
+                        downloadUrl: data?.apkUrl || this.defaultDownloadUrl,
+                        currentVersion
+                    };
+                } else if (remoteVersion) {
+                    return { hasUpdate: false, availableVersion: null, currentVersion };
+                }
+            } catch {
+                // Silently continue to next endpoint
             }
-
-            const data = await response.json();
-            const remoteVersion = data?.version;
-
-            if (isNewerVersion(remoteVersion, currentVersion)) {
-                return {
-                    hasUpdate: true,
-                    availableVersion: remoteVersion,
-                    downloadUrl: data?.apkUrl || this.defaultDownloadUrl,
-                    currentVersion
-                };
-            }
-        } catch {
-            // Silently ignore offline network failures
         }
 
         return {
@@ -194,7 +200,18 @@ export class AppUpdateService {
     openDownload(url?: string): void {
         const targetUrl = url || this.defaultDownloadUrl;
         if (typeof window !== 'undefined') {
-            window.open(targetUrl, '_system');
+            try {
+                const a = document.createElement('a');
+                a.href = targetUrl;
+                a.download = 'Seniorenassistenz.apk';
+                a.target = '_blank';
+                a.rel = 'noopener noreferrer';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            } catch {
+                window.open(targetUrl, '_system');
+            }
         }
     }
 }
