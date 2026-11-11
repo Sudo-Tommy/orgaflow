@@ -1,7 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Download, Smartphone, X, CheckCircle2 } from 'lucide-svelte';
+  import { Download, Smartphone, X, ExternalLink } from 'lucide-svelte';
   import { portal } from '$lib/actions/portal';
+
+  // Direkter Download-Link für die kompilierte Android APK aus dem GitHub Release
+  const APK_DOWNLOAD_URL = 'https://github.com/Sudo-Tommy/orgaflow/releases/download/latest-apk/OrgaFlow-latest.apk';
+  const GITHUB_RELEASES_PAGE = 'https://github.com/Sudo-Tommy/orgaflow/releases';
 
   let isInstalled = $state(false);
   let deferredPrompt = $state<any>(null);
@@ -30,7 +34,6 @@
       isInstalled = false;
     };
 
-    // 4. Bei erfolgreicher Installation Button sofort ausblenden
     const handleAppInstalled = () => {
       isInstalled = true;
       deferredPrompt = null;
@@ -54,13 +57,13 @@
         if (choice?.outcome === 'accepted') {
           isInstalled = true;
           deferredPrompt = null;
+          return;
         }
       } catch {
-        showInfoModal = true;
+        // Fallback to modal
       }
-    } else {
-      showInfoModal = true;
     }
+    showInfoModal = true;
   }
 </script>
 
@@ -68,23 +71,23 @@
   <button
     type="button"
     onclick={handleInstallClick}
-    class="min-h-11 px-3.5 py-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white border border-indigo-500/30 text-xs sm:text-sm font-bold rounded-xl shadow-xs transition-all flex items-center gap-2 cursor-pointer active:scale-95 touch-manipulation"
-    title="OrgaFlow als App auf Ihrem Gerät installieren"
+    class="min-h-11 px-3.5 py-2 bg-gradient-to-r from-indigo-600 via-indigo-700 to-violet-700 hover:from-indigo-700 hover:to-violet-800 text-white border border-indigo-400/30 text-xs sm:text-sm font-bold rounded-2xl shadow-sm hover:shadow-md transition-all flex items-center gap-2 cursor-pointer active:scale-95 touch-manipulation"
+    title="OrgaFlow als App installieren oder APK herunterladen"
   >
     <Download class="w-4 h-4 animate-bounce" />
     <span>App herunterladen</span>
   </button>
 {/if}
 
-<!-- Hilfs-Modal für Browser ohne direkten Prompt (z. B. Safari / iOS) -->
+<!-- Installations- und Download-Modal -->
 {#if showInfoModal && !isInstalled}
   <div 
     use:portal
-    class="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-enter"
+    class="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-enter"
     role="dialog"
     aria-modal="true"
   >
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-7 max-w-md w-full shadow-2xl relative text-left">
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-7 max-w-lg w-full shadow-2xl relative text-left">
       <button
         type="button"
         onclick={() => showInfoModal = false}
@@ -94,52 +97,79 @@
         <X class="w-5 h-5" />
       </button>
 
-      <div class="flex items-center gap-3 mb-4">
-        <div class="w-11 h-11 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+      <div class="flex items-center gap-3.5 mb-5">
+        <div class="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 flex items-center justify-center text-indigo-600 dark:text-indigo-400 shrink-0">
           <Smartphone class="w-6 h-6" />
         </div>
         <div>
-          <h3 class="text-base font-black text-slate-900 dark:text-white">OrgaFlow App installieren</h3>
-          <p class="text-xs text-slate-500">Schneller Zugriff & Offline-Nutzung</p>
+          <h3 class="text-base sm:text-lg font-black text-slate-900 dark:text-white">OrgaFlow App herunterladen</h3>
+          <p class="text-xs text-slate-500 dark:text-slate-400">Installation für Android & Tablet</p>
         </div>
       </div>
 
-      <div class="space-y-3 text-xs sm:text-sm text-slate-600 dark:text-slate-300">
-        {#if isIos}
-          <div class="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/80 dark:border-slate-800 space-y-2">
-            <p class="font-bold text-slate-800 dark:text-slate-200">So installieren Sie OrgaFlow auf dem iPhone/iPad:</p>
-            <ol class="list-decimal list-inside space-y-1 text-xs">
-              <li>Tippen Sie unten in Safari auf das <strong>Teilen-Symbol</strong> (Quadrat mit Pfeil nach oben).</li>
-              <li>Wählen Sie <strong>„Zum Home-Bildschirm“</strong> aus.</li>
-              <li>Tippen Sie oben rechts auf <strong>„Hinzufügen“</strong>.</li>
-            </ol>
+      <div class="space-y-4 text-xs sm:text-sm text-slate-600 dark:text-slate-300">
+        <!-- Option 1: Direkter Download der Android APK -->
+        <div class="p-4 bg-gradient-to-br from-indigo-50/80 via-white to-purple-50/60 dark:from-indigo-950/50 dark:via-slate-900 dark:to-purple-950/40 rounded-2xl border-2 border-indigo-300 dark:border-indigo-700/80 space-y-2.5">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-black uppercase tracking-wider text-indigo-700 dark:text-indigo-300">
+              Direkte Android APK (Empfohlen)
+            </span>
+            <span class="px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300">
+              Neuester Build
+            </span>
           </div>
-        {:else}
-          <div class="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/80 dark:border-slate-800 space-y-2">
-            <p class="font-bold text-slate-800 dark:text-slate-200">Installation im Browser:</p>
-            <ol class="list-decimal list-inside space-y-1 text-xs">
-              <li>Öffnen Sie das Browsermenü (drei Punkte oben rechts).</li>
-              <li>Wählen Sie <strong>„App installieren“</strong> oder <strong>„Zum Startbildschirm hinzufügen“</strong>.</li>
-              <li>Bestätigen Sie den Vorgang mit <strong>„Installieren“</strong>.</li>
-            </ol>
-          </div>
-        {/if}
+          <p class="text-xs leading-relaxed text-slate-700 dark:text-slate-300">
+            Laden Sie die fertige Android-Installationsdatei direkt auf Ihr Gerät herunter.
+          </p>
+          <a
+            href={APK_DOWNLOAD_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="inline-flex items-center justify-center gap-2 w-full py-3 px-4 rounded-xl font-black text-sm text-white bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] shadow-md transition-all touch-manipulation"
+          >
+            <Download class="w-4 h-4" />
+            <span>OrgaFlow APK herunterladen</span>
+          </a>
+          <p class="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
+            💡 <em>Hinweis:</em> Falls Android nachfragt, wählen Sie bei der Installation bitte <strong>„Trotzdem installieren“</strong> bzw. erlauben Sie <em>„Unbekannte Apps installieren“</em>.
+          </p>
+        </div>
 
-        <p class="text-xs text-slate-400">
-          Nach der Installation startet OrgaFlow direkt als eigenständige Vollbild-App ohne Browserleisten.
-        </p>
+        <!-- Option 2: Schnelle Browser-Installation (PWA) -->
+        <div class="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200/80 dark:border-slate-800 space-y-1.5">
+          <p class="font-bold text-xs text-slate-800 dark:text-slate-200">Alternative: Direkt im Browser installieren</p>
+          {#if isIos}
+            <ol class="list-decimal list-inside space-y-1 text-xs text-slate-600 dark:text-slate-400">
+              <li>Tippen Sie in Safari auf das <strong>Teilen-Symbol</strong> (Quadrat mit Pfeil).</li>
+              <li>Wählen Sie <strong>„Zum Home-Bildschirm“</strong>.</li>
+            </ol>
+          {:else}
+            <ol class="list-decimal list-inside space-y-1 text-xs text-slate-600 dark:text-slate-400">
+              <li>Tippen Sie oben rechts auf die <strong>3 Punkte</strong> Ihres Browsers.</li>
+              <li>Wählen Sie <strong>„App installieren“</strong> oder <strong>„Zum Startbildschirm hinzufügen“</strong>.</li>
+            </ol>
+          {/if}
+        </div>
       </div>
 
-      <div class="mt-6 flex justify-end">
+      <div class="mt-5 flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-3">
+        <a
+          href={GITHUB_RELEASES_PAGE}
+          target="_blank"
+          rel="noopener noreferrer"
+          class="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 font-medium"
+        >
+          <span>Alle Versionen auf GitHub</span>
+          <ExternalLink class="w-3 h-3" />
+        </a>
         <button
           type="button"
           onclick={() => showInfoModal = false}
-          class="min-h-11 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer"
+          class="min-h-10 px-5 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl transition-colors cursor-pointer"
         >
-          Verstanden
+          Schließen
         </button>
       </div>
     </div>
   </div>
 {/if}
-
