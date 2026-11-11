@@ -3,8 +3,8 @@
   import { Download, Smartphone, X, ExternalLink } from 'lucide-svelte';
   import { portal } from '$lib/actions/portal';
 
-  // Direkter Download-Link für die kompilierte Android APK aus dem GitHub Release
-  const APK_DOWNLOAD_URL = 'https://github.com/Sudo-Tommy/orgaflow/releases/download/latest-apk/OrgaFlow-latest.apk';
+  // Direkter Download-Link für die echte APK vom eigenen PocketBase-Server
+  const APK_DOWNLOAD_URL = '/downloads/seniorenassistenz.apk';
   const GITHUB_RELEASES_PAGE = 'https://github.com/Sudo-Tommy/orgaflow/releases';
 
   let isInstalled = $state(false);
