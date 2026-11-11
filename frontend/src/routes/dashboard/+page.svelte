@@ -133,13 +133,11 @@
 <div class="orga-layout-wrapper">
 	<div class="orga-layout-content">
 		<header class="orga-dashboard-header animate-enter">
-			<div class="relative flex items-center justify-center sm:justify-between w-full min-h-[44px]">
-				<h1 class="orga-dashboard-title text-center sm:text-left">
+			<div class="flex flex-col items-center justify-center text-center w-full">
+				<h1 class="orga-dashboard-title text-center">
 					Dashboard
 				</h1>
-				<div class="absolute right-0 top-1/2 -translate-y-1/2 sm:static sm:translate-y-0">
-					<AppInstallButton />
-				</div>
+				<AppInstallButton />
 			</div>
 		</header>
 		

@@ -2,32 +2,52 @@
   import { onMount } from 'svelte';
   import { Download, Smartphone, X, ExternalLink } from 'lucide-svelte';
   import { portal } from '$lib/actions/portal';
+  import { Capacitor } from '@capacitor/core';
 
   // Direkter Download-Link für die echte APK vom eigenen PocketBase-Server
   const APK_DOWNLOAD_URL = '/downloads/seniorenassistenz.apk';
   const GITHUB_RELEASES_PAGE = 'https://github.com/Sudo-Tommy/orgaflow/releases';
 
-  let isInstalled = $state(false);
+  function checkIsAppInstalled(): boolean {
+    if (typeof window === 'undefined') return false;
+
+    // 1. Nativ via Capacitor (Android APK / iOS)
+    if (Capacitor.isNativePlatform()) return true;
+    if (Boolean((window as any).Capacitor?.isNativePlatform?.())) return true;
+
+    // 2. Installierte PWA (Standalone, Fullscreen oder Minimal-UI)
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
+      window.matchMedia('(display-mode: fullscreen)').matches ||
+      window.matchMedia('(display-mode: minimal-ui)').matches ||
+      (window.navigator as any).standalone === true ||
+      document.referrer.includes('android-app://');
+
+    if (isStandalone) return true;
+
+    // 3. Startparameter von installierten Web-Apps
+    if (window.location.search.includes('source=pwa') || window.location.search.includes('mode=pwa')) {
+      return true;
+    }
+
+    return false;
+  }
+
+  let isInstalled = $state(checkIsAppInstalled());
   let deferredPrompt = $state<any>(null);
   let showInfoModal = $state(false);
   let isIos = $state(false);
 
   onMount(() => {
-    // 1. Prüfen, ob die App bereits im Standalone-Modus (installiert) läuft
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
-      (window.navigator as any).standalone === true ||
-      document.referrer.includes('android-app://');
-
-    if (isStandalone) {
+    if (checkIsAppInstalled()) {
       isInstalled = true;
       return;
     }
 
-    // 2. iOS-Erkennung für spezifische Installations-Hinweise
+    // iOS-Erkennung für spezifische Installations-Hinweise
     const userAgent = window.navigator.userAgent.toLowerCase();
     isIos = /iphone|ipad|ipod/.test(userAgent);
 
-    // 3. Auf Chromium beforeinstallprompt hören
+    // Auf Chromium beforeinstallprompt hören
     const handleBeforeInstall = (e: Event) => {
       e.preventDefault();
       deferredPrompt = e;
@@ -68,15 +88,17 @@
 </script>
 
 {#if !isInstalled}
-  <button
-    type="button"
-    onclick={handleInstallClick}
-    class="min-h-11 px-3.5 py-2 bg-gradient-to-r from-indigo-600 via-indigo-700 to-violet-700 hover:from-indigo-700 hover:to-violet-800 text-white border border-indigo-400/30 text-xs sm:text-sm font-bold rounded-2xl shadow-sm hover:shadow-md transition-all flex items-center gap-2 cursor-pointer active:scale-95 touch-manipulation"
-    title="OrgaFlow als App installieren oder APK herunterladen"
-  >
-    <Download class="w-4 h-4 animate-bounce" />
-    <span>App herunterladen</span>
-  </button>
+  <div class="mt-2.5 flex justify-center w-full">
+    <button
+      type="button"
+      onclick={handleInstallClick}
+      class="min-h-10 px-4 py-2 bg-gradient-to-r from-indigo-600 via-indigo-700 to-violet-700 hover:from-indigo-700 hover:to-violet-800 text-white border border-indigo-400/30 text-xs sm:text-sm font-bold rounded-2xl shadow-sm hover:shadow-md transition-all flex items-center gap-2 cursor-pointer active:scale-95 touch-manipulation"
+      title="Seniorenassistenz als App installieren oder APK herunterladen"
+    >
+      <Download class="w-4 h-4 animate-bounce" />
+      <span>App herunterladen</span>
+    </button>
+  </div>
 {/if}
 
 <!-- Installations- und Download-Modal -->
