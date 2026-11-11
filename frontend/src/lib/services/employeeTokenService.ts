@@ -1,3 +1,4 @@
+﻿import { getPublicOrigin } from '$lib/services/apiConfig';
 import { pb } from '$lib/services/pocketbase';
 import { orgaStore } from '$lib/stores/orgaStore.svelte';
 import { toastStore } from '$lib/services/toastService.svelte';
@@ -28,7 +29,7 @@ export class EmployeeTokenService {
                 token_expires_at: expiresAtIso
             });
 
-            const origin = typeof window !== 'undefined' ? window.location.origin : '';
+            const origin = getPublicOrigin();
             const directUrl = `${origin}/mitarbeiter?token=${encodeURIComponent(token)}`;
 
             await orgaStore.users.init();

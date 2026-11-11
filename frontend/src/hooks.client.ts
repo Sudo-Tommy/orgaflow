@@ -1,4 +1,5 @@
 import type { HandleClientError } from '@sveltejs/kit';
+import '$lib/services/nativeApiShim';
 
 export const handleError: HandleClientError = async ({ error }) => {
     const message = error instanceof Error ? error.message : String(error);

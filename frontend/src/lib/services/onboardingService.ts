@@ -1,3 +1,4 @@
+﻿import { getPublicOrigin } from '$lib/services/apiConfig';
 import { pb } from './pocketbase';
 
 export interface OnboardingTokenInfo {
@@ -76,7 +77,7 @@ function generateSecureToken(): string {
 
 export const onboardingService = {
     async createToken(options: { role?: string; note?: string; validityDays?: number } = {}) {
-        const origin = typeof window !== 'undefined' ? window.location.origin : '';
+        const origin = getPublicOrigin();
         const validityDays = Number(options.validityDays) || 7;
         const safeRole = (['employee', 'developer', 'superadmin'].includes(options.role || '') ? options.role : 'employee') as 'employee' | 'developer' | 'superadmin';
         const secureToken = generateSecureToken();

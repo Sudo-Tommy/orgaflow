@@ -1,5 +1,6 @@
-<script lang="ts">
+﻿<script lang="ts">
     import QRCode from 'qrcode';
+    import { getPublicOrigin } from '$lib/services/apiConfig';
     import { employeeService } from '$lib/services/employeeService.svelte';
     import { toastStore } from '$lib/services/toastService.svelte';
     import { QrCode, Copy, Check, Printer, ShieldAlert, X, Clock } from 'lucide-svelte';
@@ -38,7 +39,7 @@
         copied = false;
         
         if (employee.quick_access_token) {
-            const origin = typeof window !== 'undefined' ? window.location.origin : '';
+            const origin = getPublicOrigin();
             directUrl = `${origin}/mitarbeiter?token=${encodeURIComponent(employee.quick_access_token)}`;
             expiresAt = employee.token_expires_at || '';
             renderQr(directUrl);

@@ -1,7 +1,7 @@
-{
-  "version": "1.0.2",
-  "buildNumber": 3,
+﻿{
+  "version": "1.0.3",
+  "buildNumber": 4,
   "apkUrl": "https://www.ihre-seniorenassistenz.com/downloads/seniorenassistenz.apk",
-  "releaseNotes": "Stabilitäts-Update: Behebt den App-Startabsturz, optimiert PDF-Vorschau und E-Mail-Versand.",
+  "releaseNotes": "Alle Schnittstellen (LexOffice, Google, Mail, KI) funktionieren jetzt in der App.",
   "updatedAt": "2026-11-11T18:05:00Z"
 }

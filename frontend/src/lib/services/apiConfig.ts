@@ -67,3 +67,13 @@ export function getMicroserviceHost(): string {
     }
     return '';
 }
+
+/**
+ * Oeffentliche Basis-URL fuer teilbare Links (QR-Codes, Einladungen).
+ * In der App ist window.location.origin nur "https://localhost" und daher unbrauchbar.
+ */
+export function getPublicOrigin(): string {
+    if (typeof window === 'undefined') return PROD_ORIGIN;
+    if (isNativeApp()) return PROD_ORIGIN;
+    return window.location.origin;
+}
