@@ -123,12 +123,13 @@
           </p>
           <a
             href={APK_DOWNLOAD_URL}
+            download="Seniorenassistenz.apk"
             target="_blank"
             rel="noopener noreferrer"
             class="inline-flex items-center justify-center gap-2 w-full py-3 px-4 rounded-xl font-black text-sm text-white bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] shadow-md transition-all touch-manipulation"
           >
             <Download class="w-4 h-4" />
-            <span>OrgaFlow APK herunterladen</span>
+            <span>Seniorenassistenz APK herunterladen (1-Klick)</span>
           </a>
           <p class="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
             💡 <em>Hinweis:</em> Falls Android nachfragt, wählen Sie bei der Installation bitte <strong>„Trotzdem installieren“</strong> bzw. erlauben Sie <em>„Unbekannte Apps installieren“</em>.
