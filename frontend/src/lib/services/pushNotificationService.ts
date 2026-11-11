@@ -24,48 +24,11 @@ class PushNotificationService {
     }
 
     private async registerNativePush(): Promise<boolean> {
-        try {
-            // Push-Notifications erfordern Firebase (google-services.json).
-            // Wenn diese Datei fehlt, wirft der Android-Native-Code beim Aufruf von register()
-            // eine nicht abfangbare NullPointerException / IllegalStateException, die die App beendet.
-            let perm = await PushNotifications.checkPermissions();
-            if (perm.receive !== 'granted') {
-                perm = await PushNotifications.requestPermissions();
-            }
-
-            if (perm.receive !== 'granted') {
-                return false;
-            }
-
-            PushNotifications.addListener('registration', async (token: Token) => {
-                this.registered = true;
-                await this.saveTokenToPocketBase(token.value, 'native');
-            });
-
-            PushNotifications.addListener('registrationError', (error: any) => {
-                console.warn('Native Push-Registrierung fehlgeschlagen:', error);
-            });
-
-            PushNotifications.addListener('pushNotificationActionPerformed', (action: ActionPerformed) => {
-                const data = action.notification.data;
-                if (data?.url) {
-                    goto(data.url);
-                } else if (data?.appointmentId) {
-                    goto('/appointments');
-                }
-            });
-
-            try {
-                await PushNotifications.register();
-            } catch (regErr) {
-                console.warn('PushNotifications.register abgefangen (Firebase evtl. unkonfiguriert):', regErr);
-            }
-
-            return true;
-        } catch (error) {
-            console.warn('Native Push-Notifications nicht verfügbar:', error);
-            return false;
-        }
+        // Native Push-Benachrichtigungen via FCM erfordern zwingend eine gültige google-services.json.
+        // Da kein Firebase-Projekt im Build hinterlegt ist, darf PushNotifications.register()
+        // keinesfalls nativ aufgerufen werden, da Android andernfalls hart mit IllegalStateException abstürzt.
+        console.info('Native FCM Push deaktiviert (keine google-services.json konfiguriert).');
+        return false;
     }
 
     private async registerWebPush(): Promise<boolean> {

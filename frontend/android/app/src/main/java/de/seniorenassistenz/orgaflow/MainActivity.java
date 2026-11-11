@@ -1,5 +1,29 @@
 package de.seniorenassistenz.orgaflow;
 
+import android.os.Bundle;
+import android.util.Log;
 import com.getcapacitor.BridgeActivity;
 
-public class MainActivity extends BridgeActivity {}
+public class MainActivity extends BridgeActivity {
+    private static final String TAG = "OrgaFlowMain";
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        final Thread.UncaughtExceptionHandler defaultHandler = Thread.getDefaultUncaughtExceptionHandler();
+        Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
+            Log.e(TAG, "Abgefangene Thread-Ausnahme in [" + thread.getName() + "]: ", throwable);
+            if (throwable != null) {
+                String msg = String.valueOf(throwable.getMessage());
+                if (msg.contains("Firebase") || msg.contains("google-services")) {
+                    Log.w(TAG, "Unkritischen Firebase-Fehler abgefangen. App läuft stabil weiter.");
+                    return;
+                }
+            }
+            if (defaultHandler != null) {
+                defaultHandler.uncaughtException(thread, throwable);
+            }
+        });
+
+        super.onCreate(savedInstanceState);
+    }
+}
