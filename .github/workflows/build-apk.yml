@@ -1,0 +1,86 @@
+name: Build Android APK
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    name: Build & Package OrgaFlow APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Setup Java JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Frontend Dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build Web Application
+        working-directory: frontend
+        run: npm run build
+
+      - name: Sync Capacitor Android
+        working-directory: frontend
+        run: npx cap sync android
+
+      - name: Grant Execute Permission for Gradlew
+        working-directory: frontend/android
+        run: chmod +x gradlew
+
+      - name: Build Debug APK
+        working-directory: frontend/android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Rename APK for Distribution
+        run: |
+          mkdir -p dist-apk
+          cp frontend/android/app/build/outputs/apk/debug/app-debug.apk dist-apk/OrgaFlow-latest.apk
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OrgaFlow-Android-APK
+          path: dist-apk/OrgaFlow-latest.apk
+          retention-days: 30
+
+      - name: Create or Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/main'
+        with:
+          tag_name: latest-apk
+          name: "OrgaFlow Android App (Neuester Build)"
+          body: |
+            Automatischer Android-Build aus dem Branch `main`.
+            
+            ### Installation auf Smartphone & Tablet:
+            1. Lade `OrgaFlow-latest.apk` herunter.
+            2. Tippe auf die Datei, um die Installation zu starten.
+            3. Falls nötig, in Android *„Unbekannte Apps installieren“* erlauben.
+          files: dist-apk/OrgaFlow-latest.apk
+          prerelease: false
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
