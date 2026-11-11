@@ -40,7 +40,11 @@ jobs:
 
       - name: Build Web Application
         working-directory: frontend
-        run: npm run build
+        run: |
+          node -v
+          npm -v
+          ls -la
+          npm run build || (echo "BUILD FAILED WITH CODE $?" && false)
 
       - name: Sync Capacitor Android
         working-directory: frontend
