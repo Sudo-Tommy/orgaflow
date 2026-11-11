@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { Download, Smartphone, X, CheckCircle2 } from 'lucide-svelte';
+  import { portal } from '$lib/actions/portal';
 
   let isInstalled = $state(false);
   let deferredPrompt = $state<any>(null);
@@ -78,7 +79,8 @@
 <!-- Hilfs-Modal für Browser ohne direkten Prompt (z. B. Safari / iOS) -->
 {#if showInfoModal && !isInstalled}
   <div 
-    class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-enter"
+    use:portal
+    class="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-enter"
     role="dialog"
     aria-modal="true"
   >
