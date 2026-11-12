@@ -28,6 +28,8 @@ public class MainActivity extends BridgeActivity {
         setTheme(R.style.AppTheme_NoActionBar);
         registerPlugin(AppSecurityPlugin.class);
         registerPlugin(ShareTargetPlugin.class);
+        registerPlugin(MlKitScannerPlugin.class);
+        registerPlugin(MlKitOcrPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

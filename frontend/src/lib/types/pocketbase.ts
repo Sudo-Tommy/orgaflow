@@ -34,7 +34,22 @@ export type CollectionName =
     | 'system_prompts'
     | 'employee_clients'
     | 'employee_contacts'
-    | 'improvement_proposals';
+    | 'improvement_proposals'
+    | 'rbac_levels'
+    | 'rbac_permissions'
+    | 'rbac_config';
+
+export interface PendingFileLink {
+    field: string;
+    pendingFileId: string;
+    append?: boolean;
+}
+
+export interface OfflineParentLink {
+    parentCollection: string;
+    parentId: string;
+    parentField: string;
+}
 
 export interface OfflineQueueItem {
     id: string;
@@ -42,9 +57,30 @@ export interface OfflineQueueItem {
     action: 'create' | 'update' | 'delete';
     recordId?: string;
     data?: any;
+    fileLinks?: PendingFileLink[];
+    parentLink?: OfflineParentLink;
+    label?: string;
     timestamp: number;
     retryCount: number;
     error?: string;
+}
+
+export interface PendingOfflineFile {
+    id: string;
+    queueId: string;
+    fileName: string;
+    mimeType: string;
+    blob: Blob;
+    createdAt: number;
+}
+
+export interface SyncLogEntry {
+    id: string;
+    collection: string;
+    action: string;
+    status: 'synced' | 'conflict_server_won' | 'error';
+    message: string;
+    timestamp: number;
 }
 
 export interface CachedRecord<T = any> {

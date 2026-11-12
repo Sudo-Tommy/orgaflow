@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { Capacitor } from "@capacitor/core";
     import { documentScannerService, type ScannedPage } from "$lib/services/documentScannerService";
     import { confirmStore } from "$lib/services/confirmService.svelte";
     import { toastStore } from "$lib/services/toastService.svelte";
@@ -34,6 +35,19 @@
         const capturedPages: ScannedPage[] = [];
 
         try {
+            if (Capacitor.isNativePlatform()) {
+                const smart = await documentScannerService.scanSmartDocument({
+                    pageLimit: 15,
+                    allowGallery: true,
+                    documentTitle
+                });
+                if (!smart) return;
+                const file = new File([smart.pdfBlob], smart.fileName, { type: 'application/pdf' });
+                toastStore.success(`${smart.pageCount === 1 ? '1 Seite' : smart.pageCount + ' Seiten'} automatisch entzerrt & als PDF gespeichert.`);
+                onScanComplete(file);
+                return;
+            }
+
             while (true) {
                 const page = await documentScannerService.capturePage();
                 if (!page) {

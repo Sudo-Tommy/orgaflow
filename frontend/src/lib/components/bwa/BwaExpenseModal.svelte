@@ -2,6 +2,7 @@
     import { pb } from "$lib/services/pocketbase";
     import { toastStore } from "$lib/services/toastService.svelte";
     import { orgaStore } from "$lib/stores/orgaStore.svelte";
+    import { processAndScanReceipt } from "$lib/components/finances/receiptScanService";
     
     let { bwa, isGodMode, currentUser } = $props<any>();
     
@@ -48,34 +49,28 @@
         const file = target.files[0];
         isScanningReceipt = true;
         try {
-            const compressedFile = await new Promise<File>((resolve) => {
-                if (!file.type.startsWith('image/')) return resolve(file);
-                const reader = new FileReader();
-                reader.onload = (event) => {
-                    const img = new Image();
-                    img.onload = () => {
-                        const canvas = document.createElement('canvas');
-                        let width = img.width; let height = img.height;
-                        if (width > height && width > 1200) { height *= 1200 / width; width = 1200; } else if (height > 1200) { width *= 1200 / height; height = 1200; }
-                        canvas.width = width; canvas.height = height; const ctx = canvas.getContext('2d');
-                        if (ctx) ctx.drawImage(img, 0, 0, width, height);
-                        canvas.toBlob((blob) => { if (blob) resolve(new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".jpg", { type: 'image/jpeg' })); else resolve(file); }, 'image/jpeg', 0.85);
-                    }; img.src = event.target?.result as string;
-                }; reader.readAsDataURL(file);
-            });
-            expReceiptFile = compressedFile; 
-            const base64 = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve((reader.result as string).split(',')[1]); reader.onerror = reject; reader.readAsDataURL(compressedFile); });
-            const res = await fetch(import.meta.env.DEV ? 'http://localhost:3000/api/emails/ai/receipt' : '/api/emails/ai/receipt', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${pb.authStore.token}` }, body: JSON.stringify({ imageBase64: base64, mimeType: compressedFile.type }) });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || "Fehler bei der KI-Analyse");
-            if (data.title) expTitle = data.title; if (data.supplier) expSupplier = data.supplier; if (data.amount) expAmount = parseFloat(data.amount);
-            if (data.netto) expNetto = parseFloat(data.netto); if (data.tax_sum) expTaxSum = parseFloat(data.tax_sum); if (data.tax_rate) expTaxRate = parseFloat(data.tax_rate);
-            if (data.invoice_nr) expInvoiceNr = data.invoice_nr; if (data.is_installment) expIsInstallment = data.is_installment; if (data.installment_current) expInstallmentCurrent = parseInt(data.installment_current);
-            if (data.installment_total_count) expInstallmentTotal = parseInt(data.installment_total_count); if (data.installment_total_amount) expInstallmentTotalAmount = parseFloat(data.installment_total_amount);
+            const { compressedFile, data } = await processAndScanReceipt(file);
+            expReceiptFile = compressedFile;
+            if (data.title) expTitle = data.title;
+            if (data.supplier) expSupplier = data.supplier;
+            if (data.amount) expAmount = data.amount;
+            if (data.netto) expNetto = data.netto;
+            if (data.tax_sum) expTaxSum = data.tax_sum;
+            if (data.tax_rate) expTaxRate = data.tax_rate;
+            if (data.invoice_nr) expInvoiceNr = data.invoice_nr;
             if (data.date) expDate = data.date;
-            if (data.category && ["Miete / Büro", "Software / IT", "Marketing", "Fahrzeuge", "Personal", "Sonstiges"].includes(data.category)) expCategory = data.category;
-            toastStore.success("Beleg erfolgreich ausgelesen!");
-        } catch (err: any) { toastStore.error(err.message || "Beleg konnte nicht gelesen werden."); } finally { isScanningReceipt = false; target.value = ''; }
+            if (data.category && ["Miete / Büro", "Software / IT", "Marketing", "Fahrzeuge", "Personal", "Sonstiges"].includes(data.category)) {
+                expCategory = data.category;
+            }
+            toastStore.success(data.source === 'ocr'
+                ? 'Beleg lokal ausgelesen – bitte Werte kurz prüfen und bestätigen.'
+                : 'Beleg erfolgreich ausgelesen – bitte prüfen.');
+        } catch (err: any) {
+            toastStore.error(err.message || "Beleg konnte nicht gelesen werden.");
+        } finally {
+            isScanningReceipt = false;
+            target.value = '';
+        }
     }
 
     async function submitExpense(e: Event) {
@@ -90,8 +85,10 @@
             fd.append('is_recurring', expIsRecurring.toString()); if (expIsRecurring) fd.append('interval', expInterval);
             fd.append('is_installment', expIsInstallment.toString()); if (expIsInstallment) { fd.append('installment_current', expInstallmentCurrent !== "" ? expInstallmentCurrent.toString() : '0'); fd.append('installment_total_count', expInstallmentTotal !== "" ? expInstallmentTotal.toString() : '0'); fd.append('installment_total_amount', expInstallmentTotalAmount !== "" ? expInstallmentTotalAmount.toString() : '0'); }
             if (expReceiptFile) fd.append('receipt', expReceiptFile);
-            await bwa.addExpense(fd); expenseDialog?.close(); toastStore.success("Ausgabe und Beleg erfolgreich erfasst!");
-        } catch (err) { alert("Fehler beim Speichern der Ausgabe."); }
+            const mode = await bwa.addExpense(fd);
+            expenseDialog?.close();
+            toastStore.success(mode === 'offline' ? "Ausgabe & Beleg offline gespeichert – wird automatisch gesendet." : "Ausgabe und Beleg erfolgreich erfasst!");
+        } catch (err) { toastStore.error("Ausgabe konnte nicht gespeichert werden. Bitte Eingaben prüfen."); }
     }
 </script>
 

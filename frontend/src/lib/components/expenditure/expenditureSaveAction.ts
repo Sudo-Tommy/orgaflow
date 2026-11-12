@@ -1,6 +1,8 @@
 import { pb } from "$lib/services/pocketbase";
 import { orgaStore } from "$lib/stores/orgaStore.svelte";
 import { toastStore } from "$lib/services/toastService.svelte";
+import { connectionManager } from "$lib/services/connectionManager.svelte";
+import { queueOfflineMutation } from "$lib/services/offlineDb";
 import type { ExpenditureState } from "./expenditureState.svelte";
 
 export async function saveExpenditure(
@@ -22,6 +24,19 @@ export async function saveExpenditure(
             formData.append('receipt', '');
         }
 
+        if (!connectionManager.isOnline) {
+            if (state.editId) {
+                await queueOfflineMutation('expenditure', 'update', state.editId, formData, { label: state.titel.trim() });
+            } else {
+                await queueOfflineMutation('expenditure', 'create', undefined, formData, {
+                    label: state.titel.trim(),
+                    parentLink: { parentCollection: 'appointments', parentId: appointment.id, parentField: 'expenditures' }
+                });
+            }
+            toastStore.info("Beleg offline gespeichert – wird automatisch gesendet.");
+            return true;
+        }
+
         if (state.editId) {
             await pb.collection('expenditure').update(state.editId, formData);
         } else {
@@ -32,7 +47,7 @@ export async function saveExpenditure(
             });
         }
 
-        const updatedApp = await pb.collection('appointments').getOne(appointment.id, { 
+        const updatedApp = await pb.collection('appointments').getOne(appointment.id, {
             expand: 'user,client,drive_record,time_record,tasks,expenditures,appointment_at', requestKey: null
         }) as any;
 
@@ -42,6 +57,18 @@ export async function saveExpenditure(
         toastStore.success(state.editId ? "Sonderausgabe gespeichert." : "Sonderausgabe hinzugefügt.");
         return true;
     } catch (err: any) {
+        if (!navigator.onLine || err?.status === 0) {
+            const fd = new FormData();
+            fd.append('titel', state.titel.trim());
+            fd.append('sum', (state.sum === "" ? 0 : state.sum).toString());
+            if (state.receiptFile) fd.append('receipt', state.receiptFile);
+            await queueOfflineMutation('expenditure', state.editId ? 'update' : 'create', state.editId || undefined, fd, {
+                label: state.titel.trim(),
+                parentLink: state.editId ? undefined : { parentCollection: 'appointments', parentId: appointment.id, parentField: 'expenditures' }
+            });
+            toastStore.info("Beleg offline gespeichert – wird automatisch gesendet.");
+            return true;
+        }
         console.error(err);
         state.errorMsg = err.message || "Fehler beim Speichern.";
         toastStore.error(state.errorMsg);

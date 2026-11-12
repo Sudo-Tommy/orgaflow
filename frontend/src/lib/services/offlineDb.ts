@@ -1,10 +1,11 @@
 import Dexie, { type Table } from 'dexie';
-import type { OfflineQueueItem, CachedRecord } from '$lib/types/pocketbase';
-import { pb } from './pocketbase';
+import type { OfflineQueueItem, CachedRecord, PendingOfflineFile, SyncLogEntry, OfflineParentLink } from '$lib/types/pocketbase';
 
 export class OrgaOfflineDatabase extends Dexie {
     cachedRecords!: Table<CachedRecord, string>;
     syncQueue!: Table<OfflineQueueItem, string>;
+    pendingFiles!: Table<PendingOfflineFile, string>;
+    syncLog!: Table<SyncLogEntry, string>;
 
     constructor() {
         super('OrgaFlow_OfflineDB');
@@ -12,17 +13,23 @@ export class OrgaOfflineDatabase extends Dexie {
             cachedRecords: 'id, collection, cachedAt, updatedAt',
             syncQueue: 'id, collection, timestamp, retryCount'
         });
+        this.version(2).stores({
+            cachedRecords: 'id, collection, cachedAt, updatedAt',
+            syncQueue: 'id, collection, timestamp, retryCount',
+            pendingFiles: 'id, queueId, createdAt',
+            syncLog: 'id, timestamp'
+        });
     }
 }
 
-export const offlineDb: OrgaOfflineDatabase | null = 
+export const offlineDb: OrgaOfflineDatabase | null =
     typeof window !== 'undefined' ? new OrgaOfflineDatabase() : null;
 
 export async function getCachedCollection<T>(collection: string): Promise<T[]> {
     if (!offlineDb) return [];
     try {
         const rows = await offlineDb.cachedRecords.where('collection').equals(collection).toArray();
-        return rows.map(r => r.data as T);
+        return rows.map((r) => r.data as T);
     } catch {
         return [];
     }
@@ -36,11 +43,7 @@ function toCloneable<T>(val: T): T {
         const copy: any = {};
         for (const [k, v] of Object.entries(val as any)) {
             if (typeof v !== 'function' && typeof v !== 'symbol') {
-                try {
-                    copy[k] = JSON.parse(JSON.stringify(v));
-                } catch {
-                    copy[k] = String(v);
-                }
+                try { copy[k] = JSON.parse(JSON.stringify(v)); } catch { copy[k] = String(v); }
             }
         }
         return copy;
@@ -54,7 +57,7 @@ export async function setCachedCollection<T extends { id: string; updated?: stri
     if (!offlineDb || !items.length) return;
     try {
         const now = Date.now();
-        const records: CachedRecord<T>[] = items.map(item => ({
+        const records: CachedRecord<T>[] = items.map((item) => ({
             id: `${collection}_${item.id}`,
             collection,
             data: toCloneable(item),
@@ -62,7 +65,6 @@ export async function setCachedCollection<T extends { id: string; updated?: stri
             updatedAt: item.updated || ''
         }));
         await offlineDb.transaction('rw', offlineDb.cachedRecords, async () => {
-            // Alte Einträge der Collection entfernen und neu schreiben
             await offlineDb!.cachedRecords.where('collection').equals(collection).delete();
             await offlineDb!.cachedRecords.bulkPut(records);
         });
@@ -111,66 +113,56 @@ export async function queueOfflineMutation(
     collection: string,
     action: 'create' | 'update' | 'delete',
     recordId?: string,
-    data?: any
+    data?: any,
+    options?: { label?: string; parentLink?: OfflineParentLink }
 ): Promise<void> {
     if (!offlineDb) return;
+    const queueId = `queue_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    const fileLinks: { field: string; pendingFileId: string; append?: boolean }[] = [];
+    let cleanData: Record<string, any> | undefined = undefined;
+
+    if (typeof FormData !== 'undefined' && data instanceof FormData) {
+        cleanData = {};
+        for (const [key, value] of data.entries()) {
+            if (value instanceof Blob) {
+                const fileId = `file_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+                const fileName = (value as File).name || `upload_${Date.now()}.bin`;
+                await offlineDb.pendingFiles.put({
+                    id: fileId,
+                    queueId,
+                    fileName,
+                    mimeType: value.type || 'application/octet-stream',
+                    blob: value,
+                    createdAt: Date.now()
+                });
+                fileLinks.push({ field: key, pendingFileId: fileId, append: key.endsWith('+') });
+            } else {
+                cleanData[key] = value;
+            }
+        }
+    } else if (data) {
+        cleanData = toCloneable(data);
+    }
+
     const item: OfflineQueueItem = {
-        id: `queue_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+        id: queueId,
         collection,
         action,
         recordId,
-        data,
+        data: cleanData,
+        fileLinks: fileLinks.length ? fileLinks : undefined,
+        parentLink: options?.parentLink,
+        label: options?.label,
         timestamp: Date.now(),
         retryCount: 0
     };
     await offlineDb.syncQueue.put(item);
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('orga-offline-queue-changed'));
+    }
 }
 
-export async function processSyncQueue(): Promise<{ processed: number; failed: number }> {
-    if (!offlineDb || (typeof navigator !== 'undefined' && !navigator.onLine)) {
-        return { processed: 0, failed: 0 };
-    }
-
-    const queue = await offlineDb.syncQueue.orderBy('timestamp').toArray();
-    if (!queue.length) return { processed: 0, failed: 0 };
-
-    let processed = 0;
-    let failed = 0;
-
-    for (const item of queue) {
-        try {
-            if (item.action === 'create' && item.data) {
-                await pb.collection(item.collection).create(item.data);
-            } else if (item.action === 'update' && item.recordId && item.data) {
-                await pb.collection(item.collection).update(item.recordId, item.data);
-            } else if (item.action === 'delete' && item.recordId) {
-                await pb.collection(item.collection).delete(item.recordId);
-            }
-            await offlineDb.syncQueue.delete(item.id);
-            processed++;
-        } catch (err: any) {
-            failed++;
-            if (item.retryCount >= 5) {
-                console.error(`Sync-Eintrag ${item.id} nach 5 Versuchen fehlgeschlagen:`, err);
-                await offlineDb.syncQueue.delete(item.id);
-            } else {
-                await offlineDb.syncQueue.update(item.id, {
-                    retryCount: item.retryCount + 1,
-                    error: err?.message || 'Sync-Fehler'
-                });
-            }
-        }
-    }
-    return { processed, failed };
-}
-
-// Globaler Online-Listener zur automatischen Abarbeitung der Sync-Queue
-if (typeof window !== 'undefined') {
-    window.addEventListener('online', () => {
-        processSyncQueue().then(({ processed }) => {
-            if (processed > 0) {
-                console.info(`[Offline-Sync] ${processed} Offline-Aktionen erfolgreich synchronisiert.`);
-            }
-        });
-    });
+export async function processSyncQueue(): Promise<{ processed: number; failed: number; conflicts: string[] }> {
+    const { executeSyncQueue } = await import('$lib/services/sync/offlineSyncProcessor');
+    return executeSyncQueue();
 }

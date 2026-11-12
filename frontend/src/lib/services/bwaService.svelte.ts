@@ -1,5 +1,7 @@
 import { pb } from "$lib/services/pocketbase";
 import { orgaStore } from "$lib/stores/orgaStore.svelte";
+import { getCachedCollection, setCachedCollection, queueOfflineMutation } from "$lib/services/offlineDb";
+import { connectionManager } from "$lib/services/connectionManager.svelte";
 import { computeBwaStats } from "./bwaCalculationHelper";
 import { calculateTaxEstimate } from "./bwaTaxHelper";
 
@@ -30,23 +32,39 @@ export function useBwaService() {
     async function loadExpenses() {
         isLoadingExpenses = true;
         try {
+            const cached = await getCachedCollection<any>('company_expenses');
+            if (cached.length > 0 && companyExpenses.length === 0) companyExpenses = cached;
+
             let filter = "";
             if (selectedCompanyId !== "all") {
                 filter = `company = '${selectedCompanyId}'`;
             }
             const res = await pb.collection('company_expenses').getFullList({ filter, sort: '-date' });
             companyExpenses = res;
-        } catch(e) {
+            if (selectedCompanyId === "all") await setCachedCollection('company_expenses', res);
+        } catch (e) {
             console.warn('[BwaService] Could not load company_expenses:', e);
-            companyExpenses = [];
         } finally {
             isLoadingExpenses = false;
         }
     }
 
-    async function addExpense(payload: FormData | any) {
-        await pb.collection('company_expenses').create(payload);
-        await loadExpenses();
+    async function addExpense(payload: FormData | any): Promise<'online' | 'offline'> {
+        if (!connectionManager.isOnline) {
+            await queueOfflineMutation('company_expenses', 'create', undefined, payload, { label: 'Betriebsausgabe' });
+            return 'offline';
+        }
+        try {
+            await pb.collection('company_expenses').create(payload);
+            await loadExpenses();
+            return 'online';
+        } catch (err: any) {
+            if (typeof navigator !== 'undefined' && (!navigator.onLine || err?.status === 0)) {
+                await queueOfflineMutation('company_expenses', 'create', undefined, payload, { label: 'Betriebsausgabe' });
+                return 'offline';
+            }
+            throw err;
+        }
     }
 
     async function deleteExpense(id: string) {

@@ -125,6 +125,9 @@ export async function sendEmail(payload: SendEmailPayload): Promise<{ messageId:
     if (!pb.authStore.isValid) {
         throw new Error('Nicht autorisiert: Bitte loggen Sie sich ein.');
     }
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        throw new Error('Keine Internetverbindung – E-Mails können erst gesendet werden, wenn wieder Empfang besteht.');
+    }
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 12000);

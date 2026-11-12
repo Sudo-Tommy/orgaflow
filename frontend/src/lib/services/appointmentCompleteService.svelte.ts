@@ -5,6 +5,9 @@ import { confirmStore } from "$lib/services/confirmService.svelte";
 import { hapticFeedback } from "$lib/services/hapticFeedback";
 import { refreshAppointmentInStore } from "$lib/components/appointmentDetail/appointmentDetailService";
 import { rbacService } from "$lib/services/rbacService.svelte";
+import { connectionManager } from "$lib/services/connectionManager.svelte";
+import { queueOfflineMutation } from "$lib/services/offlineDb";
+import { saveAppointmentCompletion } from "$lib/services/sync/offlineAppointmentHelper";
 
 function getLocalDateStr(date: Date) {
     const pad = (n: number) => n.toString().padStart(2, '0');
@@ -71,21 +74,19 @@ export class AppointmentCompleteService {
                 }
             }
             this.appointment = app;
-            
-            this.selectedClientId = Array.isArray(app?.client) && app.client[0] 
-                ? (typeof app.client[0] === 'object' ? app.client[0].id : app.client[0]) 
+            this.selectedClientId = Array.isArray(app?.client) && app.client[0]
+                ? (typeof app.client[0] === 'object' ? app.client[0].id : app.client[0])
                 : (typeof app?.client === 'string' ? app.client : (app?.expand?.client?.id || ""));
-            
             this.billingType = app?.billing_type || (app?.expand?.client?.billing_type || "");
 
             const rawTasks = app?.tasks || [];
-            this.selectedTasks = Array.isArray(rawTasks) 
+            this.selectedTasks = Array.isArray(rawTasks)
                 ? rawTasks.map((t: any) => typeof t === 'string' ? t : t?.id).filter(Boolean)
                 : [];
 
             const d = app?.appointment ? new Date(app.appointment) : new Date();
             this.appDate = getLocalDateStr(d);
-            
+
             const tr = app?.expand?.time_record?.[0];
             if (tr?.start && tr?.end) {
                 this.startTime = roundTimeTo15Min(getLocalTimeStr(new Date(tr.start)));
@@ -121,53 +122,33 @@ export class AppointmentCompleteService {
         this.errorMsg = "";
 
         try {
-            const appId = this.appointment.id;
             const startIso = new Date(`${this.appDate}T${this.startTime}:00`).toISOString();
             const endD = new Date(`${this.appDate}T${this.endTime}:00`);
             if (this.endTime < this.startTime) endD.setDate(endD.getDate() + 1);
-            const endIso = endD.toISOString();
 
-            let trIds = Array.isArray(this.appointment.time_record) ? [...this.appointment.time_record] : [];
-            const existingTrId = this.appointment.expand?.time_record?.[0]?.id || trIds[0];
-            
-            if (existingTrId) {
-                try {
-                    await pb.collection('time_records').update(existingTrId, { start: startIso, end: endIso });
-                } catch {
-                    const newTr = await pb.collection('time_records').create({ start: startIso, end: endIso });
-                    trIds = [newTr.id];
+            const mode = await saveAppointmentCompletion({
+                appointment: this.appointment,
+                existingTrId: this.appointment.expand?.time_record?.[0]?.id || (Array.isArray(this.appointment.time_record) ? this.appointment.time_record[0] : undefined),
+                existingDrId: this.appointment.expand?.drive_record?.[0]?.id || (Array.isArray(this.appointment.drive_record) ? this.appointment.drive_record[0] : undefined),
+                startIso,
+                endIso: endD.toISOString(),
+                driveKm: this.driveKm,
+                isOnline: connectionManager.isOnline,
+                appointmentPayload: {
+                    client: this.selectedClientId ? [this.selectedClientId] : [],
+                    ...(rbacService.canAccessFinances || this.billingType ? { billing_type: this.billingType } : {}),
+                    tasks: this.selectedTasks,
+                    report: this.report.trim(),
+                    status: 'beendet',
+                    finished_at: new Date().toISOString()
                 }
+            });
+
+            if (mode === 'offline') {
+                toastStore.info("Offline gespeichert – wird automatisch gesendet, sobald wieder Empfang besteht.");
             } else {
-                const newTr = await pb.collection('time_records').create({ start: startIso, end: endIso });
-                trIds = [newTr.id];
+                toastStore.success("Termin erfolgreich als beendet markiert!");
             }
-
-            let drIds = Array.isArray(this.appointment.drive_record) ? [...this.appointment.drive_record] : [];
-            if (this.driveKm > 0) {
-                const existingDrId = this.appointment.expand?.drive_record?.[0]?.id || drIds[0];
-                if (existingDrId) {
-                    await pb.collection('drive_records').update(existingDrId, { km: this.driveKm });
-                } else {
-                    const newDr = await pb.collection('drive_records').create({ km: this.driveKm, date: startIso });
-                    drIds = [newDr.id];
-                }
-            }
-
-            const updatePayload: any = {
-                client: this.selectedClientId ? [this.selectedClientId] : [],
-                ...(rbacService.canAccessFinances || this.billingType ? { billing_type: this.billingType } : {}),
-                tasks: this.selectedTasks,
-                report: this.report.trim(),
-                time_record: trIds,
-                drive_record: drIds,
-                status: 'beendet',
-                finished_at: new Date().toISOString()
-            };
-
-            await pb.collection('appointments').update(appId, updatePayload, { requestKey: null });
-            await refreshAppointmentInStore(appId);
-            
-            toastStore.success("Termin erfolgreich als beendet markiert!");
             hapticFeedback.success();
             this.showFollowUp = true;
         } catch (err: any) {
@@ -204,15 +185,17 @@ export class AppointmentCompleteService {
         if (!ok) return;
 
         try {
-            await pb.collection('appointments').update(app.id, {
-                status: 'geplant',
-                finished_at: null
-            }, { requestKey: null });
+            if (!connectionManager.isOnline) {
+                await queueOfflineMutation('appointments', 'update', app.id, { status: 'geplant', finished_at: null }, { label: 'Termin wiedereröffnen' });
+                orgaStore.appointments.optimisticUpdate(app.id, { status: 'geplant' } as any);
+                toastStore.info("Offline vorgemerkt – wird beim nächsten Empfang gesendet.");
+                return;
+            }
+            await pb.collection('appointments').update(app.id, { status: 'geplant', finished_at: null }, { requestKey: null });
             await refreshAppointmentInStore(app.id);
             toastStore.success("Termin wiedereröffnet (Status: Geplant).");
             hapticFeedback.success();
-        } catch (err: any) {
-            console.error("Fehler beim Wiedereröffnen:", err);
+        } catch {
             toastStore.error("Fehler beim Wiedereröffnen des Termins.");
             hapticFeedback.error();
         }

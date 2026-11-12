@@ -20,6 +20,7 @@
 	import { pullToRefresh } from "$lib/actions/pullToRefresh";
 	import { initLayerStackService } from "$lib/services/layerStackService";
 	import NativeAppManager from "$lib/components/app/NativeAppManager.svelte";
+	import OfflineBanner from "$lib/components/app/OfflineBanner.svelte";
 
 	let { children } = $props();
 	let isSuperuser = $derived(devRoleService.isDevAccount || impersonationService.isImpersonating);
@@ -137,12 +138,7 @@
 <!-- Layout Wrapper -->
 <div class="flex h-screen bg-neutral-100 dark:bg-neutral-950 font-sans antialiased text-slate-800 dark:text-neutral-200 overflow-hidden relative">
 
-	{#if !connectionManager.isOnline || connectionManager.isReconnecting}
-		<div class="fixed top-2 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold shadow-lg transition-all {!connectionManager.isOnline ? 'bg-amber-500 text-slate-950' : 'bg-indigo-600 text-white'}">
-			<span class="w-2 h-2 rounded-full {!connectionManager.isOnline ? 'bg-slate-950' : 'bg-white animate-ping'}"></span>
-			<span>{!connectionManager.isOnline ? 'Offline (Aktionen werden lokal gesichert)' : 'Verbindung wird aktualisiert...'}</span>
-		</div>
-	{/if}
+	<OfflineBanner />
 
 	<ActiveTrackingBar />
 

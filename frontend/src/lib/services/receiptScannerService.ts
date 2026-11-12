@@ -1,5 +1,7 @@
 import { pb } from "./pocketbase";
 import { getMicroserviceHost } from "$lib/services/apiConfig";
+import { recognizeTextOnDevice } from "$lib/services/ocr/ocrEngine";
+import { parseDocumentOcrText } from "$lib/services/ocr/receiptParser";
 
 export interface ReceiptScanResult {
     croppedFile: File;
@@ -14,14 +16,10 @@ export async function processReceiptCanvas(
     existingTitle = "",
     existingSum: number | "" = ""
 ): Promise<ReceiptScanResult | null> {
-    const videoWidth = sourceCanvas.width;
-    const videoHeight = sourceCanvas.height;
-
-    // Scale for AI analysis (max 1600px)
     const compCanvas = document.createElement('canvas');
     const MAX_SIZE = 1600;
-    let cWidth = videoWidth;
-    let cHeight = videoHeight;
+    let cWidth = sourceCanvas.width;
+    let cHeight = sourceCanvas.height;
     if (cWidth > cHeight && cWidth > MAX_SIZE) {
         cHeight *= MAX_SIZE / cWidth;
         cWidth = MAX_SIZE;
@@ -31,33 +29,42 @@ export async function processReceiptCanvas(
     }
     compCanvas.width = cWidth;
     compCanvas.height = cHeight;
-    const compCtx = compCanvas.getContext('2d');
-    if (compCtx) compCtx.drawImage(sourceCanvas, 0, 0, cWidth, cHeight);
+    compCanvas.getContext('2d')?.drawImage(sourceCanvas, 0, 0, cWidth, cHeight);
 
-    const base64 = compCanvas.toDataURL('image/jpeg', 0.85).split(',')[1];
+    const dataUrl = compCanvas.toDataURL('image/jpeg', 0.85);
+    const base64 = dataUrl.split(',')[1];
+
+    // 1. Offline-OCR direkt auf dem Gerät (schnell & ohne Netz)
+    const localOcr = await recognizeTextOnDevice({ dataUrl });
+    const parsedLocal = localOcr?.text ? parseDocumentOcrText(localOcr.text) : null;
 
     let cropBounds = [0, 0, 1000, 1000];
     let aiData: any = null;
 
-    try {
-        const microserviceUrl = getMicroserviceHost();
-        const res = await fetch(`${microserviceUrl}/api/emails/ai/receipt`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${pb.authStore.token}`
-            },
-            body: JSON.stringify({ imageBase64: base64, mimeType: 'image/jpeg' })
-        });
+    const isOnline = typeof navigator === 'undefined' || navigator.onLine;
+    const needsAi = isOnline && (!parsedLocal || parsedLocal.confidence < 0.8);
 
-        if (res.ok) {
-            aiData = await res.json();
-            if (Array.isArray(aiData?.box_2d) && aiData.box_2d.length === 4) {
-                cropBounds = aiData.box_2d;
+    if (needsAi) {
+        try {
+            const microserviceUrl = getMicroserviceHost();
+            const res = await fetch(`${microserviceUrl}/api/emails/ai/receipt`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${pb.authStore.token}`
+                },
+                body: JSON.stringify({ imageBase64: base64, mimeType: 'image/jpeg' })
+            });
+
+            if (res.ok) {
+                aiData = await res.json();
+                if (Array.isArray(aiData?.box_2d) && aiData.box_2d.length === 4) {
+                    cropBounds = aiData.box_2d;
+                }
             }
+        } catch (aiErr) {
+            console.warn("KI-Analyse nicht erreichbar, nutze lokale Texterkennung:", aiErr);
         }
-    } catch (aiErr) {
-        console.warn("KI-Kantenerkennung nicht erreichbar, nutze Standard-Sucherbereich:", aiErr);
     }
 
     let [ymin, xmin, ymax, xmax] = cropBounds;
@@ -66,14 +73,8 @@ export async function processReceiptCanvas(
     ymax = Math.max(0, Math.min(1000, Number(ymax) || 1000));
     xmax = Math.max(0, Math.min(1000, Number(xmax) || 1000));
 
-    const widthFrac = (xmax - xmin) / 1000;
-    const heightFrac = (ymax - ymin) / 1000;
-
-    if (widthFrac >= 0.98 && heightFrac >= 0.98) {
-        xmin = 50;
-        xmax = 950;
-        ymin = 50;
-        ymax = 950;
+    if ((xmax - xmin) / 1000 >= 0.98 && (ymax - ymin) / 1000 >= 0.98) {
+        xmin = 50; xmax = 950; ymin = 50; ymax = 950;
     }
 
     const padX = cWidth * 0.015;
@@ -93,30 +94,28 @@ export async function processReceiptCanvas(
     const blob = await new Promise<Blob | null>((resolve) => cropCanvas.toBlob(resolve, 'image/jpeg', 0.88));
     if (!blob) return null;
 
-    const scanFileName = `beleg_scan_${Date.now()}.jpg`;
-    const croppedFile = new File([blob], scanFileName, { type: 'image/jpeg' });
+    const croppedFile = new File([blob], `beleg_scan_${Date.now()}.jpg`, { type: 'image/jpeg' });
     const previewUrl = URL.createObjectURL(croppedFile);
 
-    let detectedTitle: string | undefined;
-    let detectedAmount: number | undefined;
+    const supplier = aiData?.supplier || parsedLocal?.supplier;
+    const rawTitle = aiData?.title || parsedLocal?.supplier;
+    const rawAmount = aiData?.amount !== undefined ? parseFloat(aiData.amount) : parsedLocal?.amount;
 
-    if (aiData) {
-        if (aiData.title && !existingTitle.trim()) {
-            detectedTitle = aiData.supplier ? `${aiData.supplier}: ${aiData.title}` : aiData.title;
-        } else if (aiData.supplier && !existingTitle.trim()) {
-            detectedTitle = aiData.supplier;
-        }
-        if (aiData.amount && (existingSum === "" || existingSum === 0)) {
-            const parsed = parseFloat(aiData.amount);
-            if (!isNaN(parsed)) detectedAmount = parsed;
-        }
+    let detectedTitle: string | undefined;
+    if (!existingTitle.trim()) {
+        if (aiData?.title && supplier && aiData.title !== supplier) detectedTitle = `${supplier}: ${aiData.title}`;
+        else if (rawTitle) detectedTitle = rawTitle;
     }
+
+    const detectedAmount = (existingSum === "" || existingSum === 0) && rawAmount && !isNaN(rawAmount)
+        ? rawAmount
+        : undefined;
 
     return {
         croppedFile,
         previewUrl,
         detectedTitle,
         detectedAmount,
-        detectedSupplier: aiData?.supplier
+        detectedSupplier: supplier
     };
 }

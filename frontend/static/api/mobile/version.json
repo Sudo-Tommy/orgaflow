@@ -1,8 +1,8 @@
 ﻿{
-  "version": "1.1.1",
-  "buildNumber": 6,
+  "version": "1.2.0",
+  "buildNumber": 7,
   "requiresReinstall": true,
   "apkUrl": "https://www.ihre-seniorenassistenz.com/downloads/seniorenassistenz.apk",
-  "releaseNotes": "Benachrichtigungs-Einstellungen über das Glocken-Symbol in der App freigeschaltet.",
-  "updatedAt": "2026-11-12T10:01:00Z"
+  "releaseNotes": "Etappe 2: ML-Kit Dokumentenscanner (Kantenerkennung & Mehrseitig), Offline-OCR für Belege/Rechnungen und vollständiger Offline-Modus mit Sync.",
+  "updatedAt": "2026-11-12T11:55:00Z"
 }
