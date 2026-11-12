@@ -1,8 +1,8 @@
 ﻿{
-  "version": "1.1.0",
-  "buildNumber": 5,
+  "version": "1.1.1",
+  "buildNumber": 6,
   "requiresReinstall": true,
   "apkUrl": "https://www.ihre-seniorenassistenz.com/downloads/seniorenassistenz.apk",
-  "releaseNotes": "Etappe 1 (Release-Signatur): Lokale Termin-Erinnerungen, Fingerabdruck-/Gesichtssperre, PDF-Teilen & Import aus anderen Apps.",
-  "updatedAt": "2026-11-12T09:45:00Z"
+  "releaseNotes": "Benachrichtigungs-Einstellungen über das Glocken-Symbol in der App freigeschaltet.",
+  "updatedAt": "2026-11-12T10:01:00Z"
 }
