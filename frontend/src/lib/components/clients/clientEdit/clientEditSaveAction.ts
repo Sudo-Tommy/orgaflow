@@ -2,6 +2,7 @@ import { pb } from "$lib/services/pocketbase";
 import { orgaStore } from "$lib/stores/orgaStore.svelte";
 import { toastStore } from "$lib/services/toastService.svelte";
 import { employeeService } from "$lib/services/employeeService.svelte";
+import { geocodeAddressOnce } from "$lib/services/trips/geoUtils";
 
 export async function saveClientEdit(
     client: any, 
@@ -49,6 +50,15 @@ export async function saveClientEdit(
         pbFormData.append('hourly_rate', isNaN(hourlyRate) ? '40' : hourlyRate.toString());
         pbFormData.append('templates', data.default_template || '');
         pbFormData.append('billing_type', data.billing_type || '');
+
+        const addressChanged = data.street !== client?.street || data.zip !== client?.zip || data.city !== client?.city || typeof client?.geo_lat !== 'number';
+        if (addressChanged && (data.street || data.city)) {
+            const coords = await geocodeAddressOnce(data.street, data.housenr, data.zip, data.city);
+            if (coords) {
+                pbFormData.append('geo_lat', String(coords.lat));
+                pbFormData.append('geo_lng', String(coords.lng));
+            }
+        }
 
         if (editState.signatureMode === "upload" && editState.uploadedFile) {
             pbFormData.append("sign", editState.uploadedFile);

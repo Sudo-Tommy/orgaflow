@@ -6,6 +6,7 @@
     import ProfileSignatureCard from "$lib/components/profile/ProfileSignatureCard.svelte";
     import ReminderSettings from "$lib/components/settings/ReminderSettings.svelte";
     import LockSettings from "$lib/components/settings/LockSettings.svelte";
+    import BackgroundLocationSetup from "$lib/components/settings/BackgroundLocationSetup.svelte";
     import { onMount } from "svelte";
 
     const profileService = useProfileService();
@@ -41,6 +42,7 @@
         <div class="xl:col-span-1 space-y-8">
             <ProfileInfoCard record={profileService.recordData} />
             <LockSettings />
+            <BackgroundLocationSetup />
             <ProfileSecurityCard passwordData={profileService.passwordData} isLoading={profileService.isLoading} onSave={profileService.savePassword} />
         </div>
     </div>

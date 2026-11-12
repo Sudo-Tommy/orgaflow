@@ -82,6 +82,7 @@ export function createClientEditState() {
                 housenr: target.housenr || "",
                 zip: target.zip || "",
                 city: target.city || "",
+                geofence_radius: typeof target.geofence_radius === 'number' && target.geofence_radius >= 30 ? target.geofence_radius : 150,
                 birthdate: toYMD(target.birthdate),
                 insurance: target.insurance || "",
                 insurance_nr: target.insurance_nr || "",

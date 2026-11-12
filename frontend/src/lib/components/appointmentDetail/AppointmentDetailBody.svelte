@@ -102,6 +102,7 @@
     <!-- 4. Fahrt & Route -->
     {#if s.currentTab === 'travel' || s.currentTab === 'map'}
         <AppointmentTravelSection
+            appointmentId={s.appointment?.id} clientId={s.client?.id}
             driveRecords={s.driveRecords} totalKm={s.totalKm} routeEmbedUrl={s.route.routeEmbedUrl} googleMapsNavUrl={s.route.googleMapsNavUrl}
             activeDestinationTitle={s.route.activeDestinationTitle} activeDestinationAddress={s.route.activeDestinationAddress}
             targetLocationAddress={s.targetLocationAddress} clientAddress={s.clientAddress} routeTargetMode={s.route.routeTargetMode}

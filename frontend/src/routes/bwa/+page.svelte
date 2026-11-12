@@ -90,6 +90,9 @@
         }
         lexofficeService.autoRefreshOnPageVisit(bwa.selectedCompanyId).catch(() => {});
         setTimeout(() => { pageState.updateVma(true); }, 500);
+        if (typeof window !== 'undefined' && window.location.search.includes('newReceipt=1')) {
+            setTimeout(() => expenseModal?.showModal(), 250);
+        }
 
         const handleSync = (e: any) => {
             bwa.selectedCompanyId = e.detail;

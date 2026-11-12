@@ -1,5 +1,6 @@
 <script lang="ts">
-    import { Clock, Car, Plus, Minus } from 'lucide-svelte';
+    import { Clock, Car, Plus, Minus, Navigation } from 'lucide-svelte';
+    import { tripRecorder } from '$lib/services/trips/tripRecorder.svelte';
 
     interface Props {
         durationMinutes: number;
@@ -108,7 +109,7 @@
             </button>
         </div>
 
-        <!-- Schnellwahl km -->
+        <!-- Schnellwahl km & GPS-Fahrt -->
         <div class="flex items-center gap-1.5 flex-wrap pt-1">
             {#each [0, 5, 10, 15, 25] as kmPreset}
                 <button
@@ -123,6 +124,21 @@
                     {kmPreset} km
                 </button>
             {/each}
+            <button
+                type="button"
+                onclick={async () => {
+                    if (tripRecorder.isRecording) {
+                        const res = await tripRecorder.stopTrip(false);
+                        if (res && res.km > 0) kilometers = Math.round((kilometers + res.km) * 10) / 10;
+                    } else {
+                        await tripRecorder.startTrip();
+                    }
+                }}
+                class="min-h-8 px-2.5 py-1 text-[11px] font-bold rounded-lg flex items-center gap-1 cursor-pointer {tripRecorder.isRecording ? 'bg-rose-600 text-white' : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'}"
+            >
+                <Navigation class="w-3 h-3" />
+                <span>{tripRecorder.isRecording ? `Stop (${tripRecorder.kilometers.toFixed(1)} km)` : 'Fahrt starten'}</span>
+            </button>
         </div>
     </div>
 </div>

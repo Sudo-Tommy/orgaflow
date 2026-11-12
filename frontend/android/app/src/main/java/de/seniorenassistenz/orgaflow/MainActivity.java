@@ -30,6 +30,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(ShareTargetPlugin.class);
         registerPlugin(MlKitScannerPlugin.class);
         registerPlugin(MlKitOcrPlugin.class);
+        registerPlugin(WidgetBridgePlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

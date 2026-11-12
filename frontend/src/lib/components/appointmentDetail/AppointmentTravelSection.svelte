@@ -2,9 +2,11 @@
     import { Car, Navigation, MapPin, User, RotateCw, Copy, ExternalLink, Edit3, Trash2 } from "lucide-svelte";
     import { formatMinutes } from "./appointmentRouteService";
     import { toastStore } from "$lib/services/toastService.svelte";
+    import { tripRecorder } from "$lib/services/trips/tripRecorder.svelte";
     import type { RouteTargetMode } from "./appointmentDetailTypes";
 
     interface Props {
+        appointmentId?: string; clientId?: string;
         driveRecords: any[]; totalKm: number; routeEmbedUrl: string; googleMapsNavUrl: string;
         activeDestinationTitle: string; activeDestinationAddress: string; targetLocationAddress: string;
         clientAddress: string; routeTargetMode: RouteTargetMode; isMobile: boolean; isLocatingUser: boolean;
@@ -17,6 +19,7 @@
     }
 
     let {
+        appointmentId, clientId,
         driveRecords, totalKm, routeEmbedUrl, googleMapsNavUrl, activeDestinationTitle,
         activeDestinationAddress, targetLocationAddress, clientAddress, routeTargetMode,
         isMobile, isLocatingUser, userLocation, locationError, routeDistance, routeDuration,
@@ -212,9 +215,12 @@
 
     <!-- 2. Fahrtenbuch -->
     <div class="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border border-neutral-200/90 dark:border-slate-800 shadow-xs">
-        <div class="flex items-center justify-between mb-3 border-b border-neutral-100 dark:border-slate-800 pb-2">
+        <div class="flex items-center justify-between gap-2 flex-wrap mb-3 border-b border-neutral-100 dark:border-slate-800 pb-2">
             <h3 class="text-xs font-bold text-neutral-500 uppercase tracking-wider flex items-center gap-1.5"><Car class="w-4 h-4 text-emerald-600" /> Fahrtenbuch</h3>
-            <button type="button" onclick={() => onOpenDriveModal()} class="min-h-9 px-3 text-xs font-bold text-emerald-800 bg-emerald-50 rounded-xl border border-emerald-200 cursor-pointer">+ Fahrt</button>
+            <div class="flex items-center gap-2">
+                <button type="button" onclick={() => tripRecorder.isRecording ? tripRecorder.stopTrip(true) : tripRecorder.startTrip({ appointmentId, clientId })} class="min-h-9 px-3 text-xs font-bold rounded-xl border cursor-pointer {tripRecorder.isRecording ? 'bg-rose-600 text-white border-rose-600' : 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800'}">{tripRecorder.isRecording ? `Stop (${tripRecorder.kilometers.toFixed(1)} km)` : 'Fahrt starten'}</button>
+                <button type="button" onclick={() => onOpenDriveModal()} class="min-h-9 px-3 text-xs font-bold text-emerald-800 bg-emerald-50 rounded-xl border border-emerald-200 cursor-pointer">+ Fahrt</button>
+            </div>
         </div>
         {#if driveRecords.length === 0}
             <p class="text-center text-xs text-neutral-400 py-4">Keine Fahrten hinterlegt.</p>

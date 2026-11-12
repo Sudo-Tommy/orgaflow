@@ -15,6 +15,7 @@ import './tier1/tier1-appupdate.test';
 import './tier1/tier1-pwainstall.test';
 import './tier1/tier1-reminders.test';
 import './tier1/tier1-ocr-sync.test';
+import './tier1/tier1-trips-widget.test';
 
 import './tier2/tier2-docscanner.test';
 import './tier2/tier2-location.test';

@@ -1,8 +1,8 @@
 ﻿{
-  "version": "1.2.0",
-  "buildNumber": 7,
+  "version": "1.3.0",
+  "buildNumber": 8,
   "requiresReinstall": true,
   "apkUrl": "https://www.ihre-seniorenassistenz.com/downloads/seniorenassistenz.apk",
-  "releaseNotes": "Etappe 2: ML-Kit Dokumentenscanner (Kantenerkennung & Mehrseitig), Offline-OCR für Belege/Rechnungen und vollständiger Offline-Modus mit Sync.",
-  "updatedAt": "2026-11-12T11:55:00Z"
+  "releaseNotes": "Etappe 3 (Vollausbau): Hintergrund-Fahrtenbuch per Knopf, Geofence-Ankunftshinweis, Home-Screen-Widget & App-Shortcuts.",
+  "updatedAt": "2026-11-12T13:35:00Z"
 }

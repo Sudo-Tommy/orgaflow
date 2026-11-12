@@ -92,6 +92,10 @@
             disabled={editState.isLoading}
             searchQueryName={`${editState.formData.name_first || ''} ${editState.formData.name_last || ''}`.trim()}
         />
+        <div class="mt-3 max-w-xs">
+            <label for="edit-geofence-radius" class="block text-xs font-semibold text-neutral-600 dark:text-slate-400 mb-1">Ankunftsradius für Fahrtenbuch (Meter)</label>
+            <input id="edit-geofence-radius" type="number" min="30" max="5000" step="10" bind:value={editState.formData.geofence_radius} class="orga-input-clear text-sm min-h-[42px]" disabled={editState.isLoading} />
+        </div>
     </div>
 
     <!-- Interne Notizen -->

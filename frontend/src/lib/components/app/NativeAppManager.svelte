@@ -1,11 +1,15 @@
 <script lang="ts">
     import { onMount } from 'svelte';
+    import { goto } from '$app/navigation';
+    import { App as CapApp } from '@capacitor/app';
     import { Capacitor } from '@capacitor/core';
     import { backButtonHandler } from '$lib/services/backButtonHandler';
     import { biometricService } from '$lib/services/biometricService';
     import { pushNotificationService } from '$lib/services/pushNotificationService';
     import { reminderScheduler } from '$lib/services/reminders/reminderScheduler';
     import { shareImportService } from '$lib/services/shareImportService.svelte';
+    import { syncTodayWidget } from '$lib/services/widget/widgetSync';
+    import { tripRecorder } from '$lib/services/trips/tripRecorder.svelte';
     import { orgaStore } from '$lib/stores/orgaStore.svelte';
     import MobileOnboardingModal from './MobileOnboardingModal.svelte';
     import AppUpdateBanner from './AppUpdateBanner.svelte';
@@ -35,6 +39,18 @@
         }
     }
 
+    function handleDeepLink(rawUrl?: string) {
+        if (!rawUrl || !rawUrl.startsWith('orgaflow://')) return;
+        const route = rawUrl.replace('orgaflow://', '').replace(/\/+$/, '');
+        if (route === 'termine/heute') {
+            goto('/calendar');
+        } else if (route === 'beleg/neu') {
+            goto('/bwa?newReceipt=1');
+        } else if (route === 'fahrt/start') {
+            tripRecorder.startTrip();
+        }
+    }
+
     onMount(async () => {
         if (Capacitor.isNativePlatform()) {
             backButtonHandler.init();
@@ -46,6 +62,9 @@
             });
             isLocked = biometricService.isLockActive;
             if (isLocked) tryBiometricUnlock();
+
+            CapApp.addListener('appUrlOpen', (ev) => handleDeepLink(ev?.url)).catch(() => {});
+            CapApp.getLaunchUrl().then((res) => handleDeepLink(res?.url)).catch(() => {});
         }
     });
 
@@ -63,6 +82,7 @@
         if (isLoggedIn && Capacitor.isNativePlatform()) {
             const apps = orgaStore.appointments?.data || [];
             const clients = orgaStore.clients?.data || [];
+            syncTodayWidget(apps, clients);
             if (apps.length > 0) {
                 reminderScheduler.scheduleReschedule(apps, clients);
             }

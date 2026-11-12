@@ -21,6 +21,7 @@
 	import { initLayerStackService } from "$lib/services/layerStackService";
 	import NativeAppManager from "$lib/components/app/NativeAppManager.svelte";
 	import OfflineBanner from "$lib/components/app/OfflineBanner.svelte";
+	import ActiveTripBar from "$lib/components/trips/ActiveTripBar.svelte";
 
 	let { children } = $props();
 	let isSuperuser = $derived(devRoleService.isDevAccount || impersonationService.isImpersonating);
@@ -139,6 +140,7 @@
 <div class="flex h-screen bg-neutral-100 dark:bg-neutral-950 font-sans antialiased text-slate-800 dark:text-neutral-200 overflow-hidden relative">
 
 	<OfflineBanner />
+	<ActiveTripBar />
 
 	<ActiveTrackingBar />
 

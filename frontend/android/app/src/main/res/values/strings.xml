@@ -4,4 +4,10 @@
     <string name="title_activity_main">Seniorenassistenz</string>
     <string name="package_name">de.seniorenassistenz.orgaflow</string>
     <string name="custom_url_scheme">de.seniorenassistenz.orgaflow</string>
+    <string name="shortcut_today_short">Heutige Termine</string>
+    <string name="shortcut_today_long">Heutige Termine anzeigen</string>
+    <string name="shortcut_trip_short">Fahrt starten</string>
+    <string name="shortcut_trip_long">Fahrtenbuch-Fahrt starten</string>
+    <string name="shortcut_receipt_short">Neuer Beleg</string>
+    <string name="shortcut_receipt_long">Beleg oder Ausgabe erfassen</string>
 </resources>

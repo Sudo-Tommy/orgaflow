@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="today_appointments"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_today_short"
+        android:shortcutLongLabel="@string/shortcut_today_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="orgaflow://termine/heute"
+            android:targetPackage="de.seniorenassistenz.orgaflow"
+            android:targetClass="de.seniorenassistenz.orgaflow.MainActivity" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="start_trip"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_trip_short"
+        android:shortcutLongLabel="@string/shortcut_trip_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="orgaflow://fahrt/start"
+            android:targetPackage="de.seniorenassistenz.orgaflow"
+            android:targetClass="de.seniorenassistenz.orgaflow.MainActivity" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="new_receipt"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_receipt_short"
+        android:shortcutLongLabel="@string/shortcut_receipt_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="orgaflow://beleg/neu"
+            android:targetPackage="de.seniorenassistenz.orgaflow"
+            android:targetClass="de.seniorenassistenz.orgaflow.MainActivity" />
+    </shortcut>
+</shortcuts>

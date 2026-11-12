@@ -13,6 +13,7 @@ export interface ClientEditFormData {
     housenr: string;
     zip: string;
     city: string;
+    geofence_radius: number;
     birthdate: string;
     insurance: string;
     insurance_nr: string;
@@ -68,6 +69,7 @@ export function getDefaultClientEditFormData(): ClientEditFormData {
         housenr: "",
         zip: "",
         city: "",
+        geofence_radius: 150,
         birthdate: "",
         insurance: "",
         insurance_nr: "",
