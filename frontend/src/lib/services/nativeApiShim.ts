@@ -1,7 +1,8 @@
 ﻿import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
 import { Browser } from '@capacitor/browser';
-import { PROD_ORIGIN } from '$lib/services/apiConfig';
+
+const PROD_ORIGIN = 'https://www.ihre-seniorenassistenz.com';
 
 const LOCAL_HOST_RE = /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|10\.0\.2\.2)(:\d+)?(?=\/|$)/i;
 const MICRO_PORT_RE = /^https?:\/\/[^/]+:3000(?=\/|$)/i;
@@ -79,6 +80,7 @@ function installNativeWindowOpen(): void {
  */
 export function installNativeApiShim(): void {
     if (typeof window === 'undefined' || !Capacitor.isNativePlatform()) return;
+    if (typeof window.fetch !== 'function') return;
     const w = window as any;
     if (w.__orgaNativeShim) return;
     w.__orgaNativeShim = true;

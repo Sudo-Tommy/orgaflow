@@ -18,6 +18,7 @@ export interface AppUpdateCheckResult {
     availableVersion: string | null;
     downloadUrl?: string;
     currentVersion: string;
+    requiresReinstall?: boolean;
 }
 
 export interface CheckUpdateOptions {
@@ -176,11 +177,16 @@ export class AppUpdateService {
                 const remoteVersion = data?.version;
 
                 if (isNewerVersion(remoteVersion, currentVersion)) {
+                    const needsReinstall =
+                        Boolean(data?.requiresReinstall) &&
+                        compareVersions(currentVersion, '1.1.0') < 0 &&
+                        compareVersions(remoteVersion, '1.1.0') >= 0;
                     return {
                         hasUpdate: true,
                         availableVersion: remoteVersion,
                         downloadUrl: data?.apkUrl || this.defaultDownloadUrl,
-                        currentVersion
+                        currentVersion,
+                        requiresReinstall: needsReinstall
                     };
                 } else if (remoteVersion) {
                     return { hasUpdate: false, availableVersion: null, currentVersion };

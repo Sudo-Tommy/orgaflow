@@ -26,6 +26,8 @@ public class MainActivity extends BridgeActivity {
         });
 
         setTheme(R.style.AppTheme_NoActionBar);
+        registerPlugin(AppSecurityPlugin.class);
+        registerPlugin(ShareTargetPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

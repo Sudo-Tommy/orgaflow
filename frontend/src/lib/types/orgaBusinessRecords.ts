@@ -93,6 +93,9 @@ export interface ClientRecord extends BaseRecord {
     contacts?: string[]; // Relation
     templates?: string | string[]; // Relation
     caregiver?: string; // Relation
+    geofence_radius?: number;
+    geo_lat?: number;
+    geo_lng?: number;
 }
 
 export interface DocumentTemplateRecord extends BaseRecord {

@@ -4,6 +4,7 @@
     import { Geolocation } from '@capacitor/geolocation';
     import { Preferences } from '@capacitor/preferences';
     import { Capacitor } from '@capacitor/core';
+    import { reminderScheduler } from '$lib/services/reminders/reminderScheduler';
     import { Camera as CameraIcon, MapPin, Bell, ShieldCheck, Check } from 'lucide-svelte';
 
     const ONBOARDING_KEY = 'orga_mobile_onboarded_v1';
@@ -34,11 +35,9 @@
                 await Geolocation.requestPermissions({ permissions: ['location'] });
             } catch (e) {}
 
-            // 3. Benachrichtigungen (nur Web-API, ohne FCM-Zwang)
+            // 3. Lokale Termin-Erinnerungen
             try {
-                if (typeof window !== 'undefined' && 'Notification' in window) {
-                    await Notification.requestPermission();
-                }
+                await reminderScheduler.requestPermissions();
             } catch (e) {}
 
             await Preferences.set({ key: ONBOARDING_KEY, value: 'true' });

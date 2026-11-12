@@ -2,7 +2,7 @@
     import { onMount } from "svelte";
     import { toastStore } from "$lib/services/toastService.svelte";
     import { resolveDocumentUrl, downloadFileAsBlob } from "$lib/utils/documentUrl";
-    import { openPdfDocument } from "$lib/utils/pdfViewerHelper";
+    import { shareFileFromUrl, openPdfNatively } from "$lib/services/shareService";
     import ImageZoomViewer from "$lib/components/ui/ImageZoomViewer.svelte";
 
     let dialog: HTMLDialogElement | undefined = $state();
@@ -11,6 +11,7 @@
     let title = $state("");
     let downloadName = $state("");
     let isDownloading = $state(false);
+    let isSharing = $state(false);
     let isMobile = $state(false);
 
     let isImage = $derived(/\.(jpg|jpeg|png|gif|webp)$/i.test(downloadName));
@@ -51,6 +52,16 @@
         }
     }
 
+    async function handleShare() {
+        if (!pdfUrl || isSharing) return;
+        isSharing = true;
+        try {
+            await shareFileFromUrl(pdfUrl, downloadName || "dokument.pdf", title);
+        } finally {
+            isSharing = false;
+        }
+    }
+
     function handlePrint() {
         if (!pdfUrl) return;
         if (isImage) {
@@ -87,6 +98,9 @@
                 <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">{downloadName}</p>
             </div>
             <div class="flex items-center gap-2 shrink-0">
+                <button aria-label="Teilen" onclick={handleShare} disabled={isSharing || !pdfUrl} class="min-w-[40px] min-h-[40px] w-10 h-10 bg-violet-100 dark:bg-violet-950/60 hover:bg-violet-200 dark:hover:bg-violet-900 text-violet-700 dark:text-violet-300 rounded-2xl flex items-center justify-center transition-all active:scale-95 touch-manipulation cursor-pointer disabled:opacity-60" title="Teilen (WhatsApp, E-Mail ...)">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
+                </button>
                 <button aria-label="Drucken" onclick={handlePrint} class="min-w-[40px] min-h-[40px] w-10 h-10 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-2xl flex items-center justify-center transition-all active:scale-95 touch-manipulation cursor-pointer" title="Drucken">
                     <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
                 </button>
@@ -113,7 +127,8 @@
                         <p class="text-slate-900 dark:text-slate-100 font-bold text-xl mb-2">PDF-Dokument bereit</p>
                         <p class="text-slate-500 dark:text-slate-400 text-sm mb-8 max-w-xs leading-relaxed">Auf Mobilgeräten oder als App installiert, können PDFs oft nicht sicher direkt in der Vorschau angezeigt werden.</p>
                         <div class="flex flex-col gap-3 w-full max-w-xs">
-                            <button onclick={() => openPdfDocument(pdfUrl, downloadName)} class="orga-button-primary bg-indigo-600 hover:bg-indigo-700 w-full min-h-[44px] py-3 text-sm flex items-center justify-center gap-2 cursor-pointer active:scale-95 touch-manipulation"><span class="text-lg">📄</span> PDF anzeigen / öffnen</button>
+                            <button onclick={() => openPdfNatively(pdfUrl, downloadName || "dokument.pdf")} class="orga-button-primary bg-indigo-600 hover:bg-indigo-700 w-full min-h-[44px] py-3 text-sm flex items-center justify-center gap-2 cursor-pointer active:scale-95 touch-manipulation"><span class="text-lg">📄</span> PDF anzeigen / öffnen</button>
+                            <button onclick={handleShare} disabled={isSharing} class="orga-button-primary bg-violet-600 hover:bg-violet-700 w-full min-h-[44px] py-3 text-sm flex items-center justify-center gap-2 cursor-pointer active:scale-95 touch-manipulation disabled:opacity-60"><span class="text-lg">📤</span> {isSharing ? 'Wird vorbereitet...' : 'Teilen (WhatsApp, E-Mail ...)'}</button>
                             <button onclick={handleDownload} disabled={isDownloading} class="orga-button-ghost w-full min-h-[44px] py-3 text-sm flex items-center justify-center gap-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 cursor-pointer active:scale-95 touch-manipulation disabled:opacity-60 disabled:cursor-not-allowed">
                                 {#if isDownloading}
                                     <div class="w-4 h-4 border-2 border-slate-400 border-t-slate-600 dark:border-t-slate-300 rounded-full animate-spin"></div>

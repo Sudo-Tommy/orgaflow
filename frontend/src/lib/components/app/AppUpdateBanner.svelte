@@ -7,6 +7,7 @@
 
     let availableVersion = $state<string | null>(null);
     let downloadUrl = $state(appUpdateService.defaultDownloadUrl);
+    let requiresReinstall = $state(false);
     let isDismissed = $state(false);
     let isDownloading = $state(false);
     let appStateListener: any = null;
@@ -17,11 +18,13 @@
             const result = await appUpdateService.checkUpdate();
             if (result.hasUpdate && result.availableVersion) {
                 availableVersion = result.availableVersion;
+                requiresReinstall = Boolean(result.requiresReinstall);
                 if (result.downloadUrl) {
                     downloadUrl = result.downloadUrl;
                 }
             } else {
                 availableVersion = null;
+                requiresReinstall = false;
             }
         } catch {
             // Offline oder Fehler ignorieren
@@ -78,8 +81,14 @@
                 <span class="text-xs font-black tracking-wide leading-tight">Neues App-Update bereit</span>
                 <span class="px-1.5 py-0.5 text-[10px] font-bold rounded-md bg-white/20 text-white">v{availableVersion}</span>
             </div>
-            <p class="text-[11px] text-indigo-100/90 truncate mt-0.5">
-                {isDownloading ? 'Download wird gestartet...' : 'Wichtige Verbesserungen & Fixes'}
+            <p class="text-[11px] text-indigo-100/90 mt-0.5 leading-snug">
+                {#if isDownloading}
+                    Download wird gestartet...
+                {:else if requiresReinstall}
+                    Bitte alte App einmal deinstallieren &amp; neu installieren (Daten bleiben erhalten).
+                {:else}
+                    Wichtige Verbesserungen &amp; Fixes
+                {/if}
             </p>
         </div>
 

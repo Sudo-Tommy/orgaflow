@@ -10,6 +10,7 @@
     import { stampInvoiceAsStorniert } from "$lib/services/invoiceStornoStampService";
     import { executeInvoiceStorno } from "$lib/services/invoiceStornoService";
     import { openPdfDocument } from "$lib/utils/pdfViewerHelper";
+    import { shareFileFromUrl } from "$lib/services/shareService";
     import { isNativeApp } from "$lib/services/apiConfig";
     import InvoiceStornoModal from "./InvoiceStornoModal.svelte";
     import InvoiceDetailActions from "./InvoiceDetailActions.svelte";
@@ -173,6 +174,11 @@
                         docGenModal?.open('', 1, clientId, 'rechnung', userId);
                     }} 
                     onDownloadPdf={downloadPdfFile} 
+                    onSharePdf={() => {
+                        const url = getPdfUrl(0);
+                        const name = (Array.isArray(invoice.pdf) ? invoice.pdf[0] : invoice.pdf) || `Rechnung_${invoice.invoice_nr}.pdf`;
+                        shareFileFromUrl(url, name, `Rechnung ${invoice.invoice_nr || ''}`);
+                    }}
                     onSendEmail={() => emailModal?.open(invoice)} 
                     onSendMahnung={() => emailModal?.open(invoice, true, Math.min(3, (invoice.dunning_level || 0) + 1))} 
                     onMarkPaid={() => updateStatus('Abgeschlossen')} 

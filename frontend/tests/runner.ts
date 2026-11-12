@@ -13,6 +13,7 @@ import './tier1/tier1-signature.test';
 import './tier1/tier1-biometric.test';
 import './tier1/tier1-appupdate.test';
 import './tier1/tier1-pwainstall.test';
+import './tier1/tier1-reminders.test';
 
 import './tier2/tier2-docscanner.test';
 import './tier2/tier2-location.test';

@@ -35,6 +35,16 @@ export interface UserRecord extends BaseRecord {
     quick_access_token?: string;
     token_expires_at?: string;
     facility?: string;
+    access_level?: number;
+    custom_permissions?: {
+        grant?: string[];
+        deny?: string[];
+    };
+    notify_offsets?: number[];
+    notify_daily_time?: string;
+    notify_after_end?: boolean;
+    notify_absences?: boolean;
+    lock_timeout_sec?: number;
 }
 
 export interface SuperuserRecord extends BaseRecord {
@@ -123,3 +133,32 @@ export interface ImprovementProposalRecord extends BaseRecord {
     author_name?: string;
     author?: string;
 }
+
+export interface RbacLevelRecord extends BaseRecord {
+    level: number;
+    name: string;
+    description?: string;
+    badge?: string;
+    color?: string;
+    icon?: string;
+    is_system?: boolean;
+}
+
+export interface RbacPermissionRecord extends BaseRecord {
+    code: string;
+    label: string;
+    module: string;
+    module_label?: string;
+    category: 'module' | 'action' | 'field' | 'special';
+    min_level: number;
+    description?: string;
+    sort_order?: number;
+}
+
+export interface RbacConfigRecord extends BaseRecord {
+    key: string;
+    ui_blocked_mode: 'hide' | 'disable';
+    audit_enabled?: boolean;
+    custom_settings?: Record<string, any>;
+}
+

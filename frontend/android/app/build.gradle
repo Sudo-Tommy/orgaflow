@@ -1,14 +1,31 @@
 apply plugin: 'com.android.application'
 
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
 android {
     namespace "de.seniorenassistenz.orgaflow"
     compileSdk rootProject.ext.compileSdkVersion
+    signingConfigs {
+        release {
+            def sf = System.getenv("ORG_KEYSTORE_PATH") ?: keystoreProperties['storeFile']
+            if (sf) {
+                storeFile file(sf.startsWith("/") || sf.contains(":") ? sf : "../" + sf)
+                storePassword System.getenv("ORG_KEYSTORE_PASSWORD") ?: keystoreProperties['storePassword']
+                keyAlias System.getenv("ORG_KEY_ALIAS") ?: keystoreProperties['keyAlias']
+                keyPassword System.getenv("ORG_KEY_PASSWORD") ?: keystoreProperties['keyPassword']
+            }
+        }
+    }
     defaultConfig {
         applicationId "de.seniorenassistenz.orgaflow"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 4
-        versionName "1.0.3"
+        versionCode 5
+        versionName "1.1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -20,6 +37,9 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (signingConfigs.release.storeFile != null && signingConfigs.release.storeFile.exists()) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }

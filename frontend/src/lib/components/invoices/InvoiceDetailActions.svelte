@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { Edit, Download, Mail, XCircle, AlertTriangle, CalendarPlus, Phone, Check } from "lucide-svelte";
+    import { Edit, Download, Share2, Mail, XCircle, AlertTriangle, CalendarPlus, Phone, Check } from "lucide-svelte";
     import { isInvoiceOverdue, extendInvoiceDueDate, getInvoiceClientPhone } from "$lib/services/invoiceQuickActions";
 
     interface Props {
@@ -7,6 +7,7 @@
         isDownloadingPdf: boolean;
         onEdit: () => void;
         onDownloadPdf: (index: number, name: string) => void;
+        onSharePdf?: () => void;
         onSendEmail: () => void;
         onSendMahnung?: () => void;
         onMarkPaid?: () => void;
@@ -19,6 +20,7 @@
         isDownloadingPdf,
         onEdit,
         onDownloadPdf,
+        onSharePdf,
         onSendEmail,
         onSendMahnung,
         onMarkPaid,
@@ -99,15 +101,21 @@
         </div>
     {/if}
 
-    <div class="grid grid-cols-2 sm:grid-cols-4 {getPdfUrl(1) ? 'lg:grid-cols-5' : ''} gap-3">
+    <div class="grid grid-cols-2 sm:grid-cols-5 {getPdfUrl(1) ? 'lg:grid-cols-6' : ''} gap-3">
         <button onclick={onEdit} class="orga-button-ghost bg-white dark:bg-slate-800 dark:border-slate-700 text-slate-700 dark:text-slate-200 flex-col h-24 shadow-sm cursor-pointer">
             <Edit class="w-6 h-6 mb-1 text-violet-500" />
             <span class="text-xs font-bold">Bearbeiten</span>
         </button>
         <button onclick={() => onDownloadPdf(0, 'Rechnung')} disabled={!getPdfUrl(0) || isDownloadingPdf} class="orga-button-ghost bg-white dark:bg-slate-800 dark:border-slate-700 text-slate-700 dark:text-slate-200 flex-col h-24 shadow-sm {!getPdfUrl(0) ? 'opacity-50 pointer-events-none' : 'cursor-pointer'}">
             <Download class="w-6 h-6 mb-1 text-cyan-600" />
-            <span class="text-xs font-bold">{getPdfUrl(1) ? 'Rechnung PDF' : 'Download'}</span>
+            <span class="text-xs font-bold">{getPdfUrl(1) ? 'Rechnung PDF' : 'Öffnen / PDF'}</span>
         </button>
+        {#if onSharePdf}
+            <button onclick={onSharePdf} disabled={!getPdfUrl(0) || isDownloadingPdf} class="orga-button-ghost bg-white dark:bg-slate-800 dark:border-slate-700 text-slate-700 dark:text-slate-200 flex-col h-24 shadow-sm {!getPdfUrl(0) ? 'opacity-50 pointer-events-none' : 'cursor-pointer'}">
+                <Share2 class="w-6 h-6 mb-1 text-indigo-500" />
+                <span class="text-xs font-bold">Teilen</span>
+            </button>
+        {/if}
         {#if getPdfUrl(1)}
             <button onclick={() => onDownloadPdf(1, 'Zeitnachweis')} disabled={isDownloadingPdf} class="orga-button-ghost bg-white dark:bg-slate-800 dark:border-slate-700 text-slate-700 dark:text-slate-200 flex-col h-24 shadow-sm cursor-pointer">
                 <Download class="w-6 h-6 mb-1 text-cyan-600" />

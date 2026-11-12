@@ -50,16 +50,37 @@ jobs:
         working-directory: frontend/android
         run: chmod +x gradlew
 
-      - name: Build Debug APK
+      - name: Decode Release Keystore (if configured)
+        id: keystore
+        if: env.KEYSTORE_BASE64 != ''
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > frontend/android/orgaflow-release.jks
+
+      - name: Build APK (Signed Release or Fallback Debug)
         working-directory: frontend/android
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+          ORG_KEYSTORE_PATH: ${{ secrets.KEYSTORE_BASE64 != '' && 'orgaflow-release.jks' || '' }}
+          ORG_KEYSTORE_PASSWORD: ${{ secrets.ORG_KEYSTORE_PASSWORD }}
+          ORG_KEY_ALIAS: ${{ secrets.ORG_KEY_ALIAS }}
+          ORG_KEY_PASSWORD: ${{ secrets.ORG_KEY_PASSWORD }}
+        run: |
+          if [ -n "$ORG_KEYSTORE_PATH" ]; then
+            ./gradlew assembleRelease --no-daemon --stacktrace
+          else
+            ./gradlew assembleDebug --no-daemon --stacktrace
+          fi
 
       - name: Prepare APK for Release
         run: |
           mkdir -p dist-apk
-          cp frontend/android/app/build/outputs/apk/debug/app-debug.apk dist-apk/OrgaFlow-latest.apk
+          if [ -f frontend/android/app/build/outputs/apk/release/app-release.apk ]; then
+            cp frontend/android/app/build/outputs/apk/release/app-release.apk dist-apk/OrgaFlow-latest.apk
+          else
+            cp frontend/android/app/build/outputs/apk/debug/app-debug.apk dist-apk/OrgaFlow-latest.apk
+          fi
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
